@@ -139,6 +139,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const entriesUnavailableColumnsRef = useRef<Set<string>>(new Set());
 
   const profilesUnavailableRef = useRef(false);
+  const [managedOrgIds, setManagedOrgIds] = useState<string[]>([]);
   const auditEventsUnavailableRef = useRef(false);
   const outputRequestsUnavailableRef = useRef(false);
   const operatorLogsUnavailableRef = useRef(false);
@@ -1035,6 +1036,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (requiresOrgScope && !scopedOrgId) {
         clearScopedDatasets();
         return;
+      }
+
+      if (role === 'admin') {
+        void fetchAvailableOrgs();
       }
 
       const [
@@ -2861,6 +2866,26 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     void appendSystemEvent({ action: 'partner_entry_deleted', entity: 'partner_entry', entity_id: id, amount: existingEntry.amount, details: existingEntry.type });
   };
 
+  const fetchAvailableOrgs = async () => {
+    if (role !== 'admin' || isDemoMode || !supabase) return;
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData.session?.access_token;
+      if (!accessToken) return;
+
+      const { data, error } = await supabase.functions.invoke('manage-org-context', {
+        body: { action: 'list-available-orgs' },
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+
+      if (!error && data?.orgs) {
+        setManagedOrgIds(data.orgs);
+      }
+    } catch (err) {
+      console.error('Failed to fetch available orgs:', err);
+    }
+  };
+
   const updateProfileOrgId = async (orgId: string | null) => {
     if (!canAccessAdminUi) throw new Error('Only admin accounts can switch organization clusters.');
     if (!user) throw new Error('You must be signed in to switch organization context.');
@@ -2871,12 +2896,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     if (!supabase) return;
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({ org_id: orgId })
-      .eq('id', user.id);
+    
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) throw new Error('Authentication session expired.');
 
-    if (profileError) throw normalizeSupabaseWriteError(profileError);
+    const { data, error: functionError } = await supabase.functions.invoke('manage-org-context', {
+      body: { action: 'switch-org', org_id: orgId },
+      headers: { Authorization: `Bearer ${accessToken}` }
+    });
+
+    if (functionError) throw new Error(functionError.message || 'Failed to switch organization cluster.');
     
     // Clear the profiles cache to trigger reload
     profilesUnavailableRef.current = false;
@@ -2946,10 +2976,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addPartnerEntry,
       deletePartnerEntry,
       updateProfileOrgId,
-      managedOrgIds: (user && !isDemoMode) ? Array.from(new Set([
-        activeOrgId || '',
-        ...(workspaces.map(w => w.org_id))
-      ])).filter((id): id is string => !!id) : [],
+      managedOrgIds,
       recordSystemEvent: appendSystemEvent,
       refreshData: fetchData
     };

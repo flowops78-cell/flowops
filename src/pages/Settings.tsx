@@ -612,26 +612,26 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
         {!isDemoMode && user && (
           <div className="section border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 shadow-sm">
-            <h3 className="font-medium mb-3 text-stone-900 dark:text-stone-100 flex items-center gap-2">
+            <h3 className="font-medium mb-3 text-stone-900 dark:text-stone-100 flex items-center gap-2 text-base">
               <ShieldCheck size={18} className="text-emerald-500" />
-              Organization Management
+              Organization & Context
             </h3>
             
             <div className="space-y-4">
               {!activeOrgId ? (
                 <div className="p-4 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/20 text-sm text-amber-800 dark:text-amber-300">
-                  <p className="font-medium mb-1">No Workspace Assigned</p>
-                  <p>You are currently operating in global mode. Features requiring workspace isolation (mutations, specific activities) are locked until you join or create a cluster.</p>
+                  <p className="font-medium mb-1">Global Context Active</p>
+                  <p>Individual workspace features are locked until you join or provision a cluster. This ensures authoritative scoping for all operational data.</p>
                 </div>
               ) : (
                 <div className="flex items-center justify-between p-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/50">
                   <div>
-                    <p className="text-[11px] uppercase tracking-wider text-stone-500 dark:text-stone-400 font-bold">Active Cluster</p>
-                    <p className="font-mono text-sm break-all">{activeOrgId}</p>
+                    <p className="text-[10px] uppercase tracking-wider text-stone-500 dark:text-stone-400 font-bold">Active Cluster</p>
+                    <p className="font-mono text-[13px] text-stone-900 dark:text-stone-200 break-all">{activeOrgId}</p>
                   </div>
                   <button 
-                    onClick={() => { if(window.confirm('Detach from this workspace? You will be in global mode.')) void updateProfileOrgId(null); }}
-                    className="text-xs text-red-600 hover:text-red-700 font-medium"
+                    onClick={() => { if(window.confirm('Detach from this workspace?')) void updateProfileOrgId(null); }}
+                    className="text-xs text-red-600 hover:text-red-700 font-medium px-2 py-1"
                   >
                     Detach
                   </button>
@@ -639,7 +639,10 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               )}
 
               <div className="space-y-2">
-                <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Join Existing Cluster</label>
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Workspace Deployment</label>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-500 font-medium">Secured RPC</span>
+                </div>
                 <div className="flex gap-2">
                   <select 
                     className="control-input text-sm"
@@ -650,26 +653,26 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                       void updateProfileOrgId(val); 
                     }}
                   >
-                    <option value="" disabled>Select a cluster to join...</option>
+                    <option value="" disabled>Select a deployment to join...</option>
                     {managedOrgIds.map((id: string) => (
-                      <option key={id} value={id}>{id.slice(0, 8)}...{id.slice(-8)}</option>
+                      <option key={id} value={id}>{id.slice(0, 8)}...{id.slice(-8)} (Authoritative)</option>
                     ))}
                   </select>
                 </div>
-                <p className="text-[10px] text-stone-500 dark:text-stone-400 italic">Discovered {managedOrgIds.length} active workspace clusters in system.</p>
+                <p className="text-[10px] text-stone-500 dark:text-stone-400 italic">Discovered {managedOrgIds.length} active workspace deployments via backend oracle.</p>
               </div>
 
               <div className="pt-2">
                 <button 
                   onClick={() => {
                     const newId = crypto.randomUUID();
-                    if (window.confirm('Create and join a fresh workspace cluster?')) {
+                    if (window.confirm('Provision and join a fresh workspace cluster?')) {
                       void updateProfileOrgId(newId);
                     }
                   }}
-                  className="w-full interactive-3d bg-stone-900 dark:bg-emerald-600 text-white p-2.5 rounded-xl text-sm font-medium hover:bg-stone-800 dark:hover:bg-emerald-500 transition-colors"
+                  className="w-full interactive-3d bg-stone-900 dark:bg-emerald-600 text-white p-2.5 rounded-xl text-sm font-medium hover:bg-stone-800 dark:hover:bg-emerald-500 transition-colors shadow-sm"
                 >
-                  Generate New Workspace Cluster
+                  Provision Fresh Workspace
                 </button>
               </div>
             </div>
