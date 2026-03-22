@@ -352,17 +352,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!supabase) return null;
 
     const { data: sessionData } = await supabase.auth.getSession();
-    let accessToken = sessionData.session?.access_token ?? null;
+    const session = sessionData.session;
 
-    if (!accessToken) {
+    if (session?.refresh_token) {
       const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-      if (refreshError) {
-        throw new Error(`Authentication session expired: ${refreshError.message}`);
+      if (!refreshError && refreshData.session?.access_token) {
+        return refreshData.session.access_token;
       }
-      accessToken = refreshData.session?.access_token ?? null;
+
+      if (!session.access_token) {
+        throw new Error(`Authentication session expired: ${refreshError?.message ?? 'missing session token'}`);
+      }
     }
 
-    return accessToken;
+    return session?.access_token ?? null;
   };
 
   const FREEFORM_AUDIT_DETAIL_MAX_LENGTH = 120;

@@ -150,13 +150,15 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
   const getAccessToken = React.useCallback(async () => {
     if (!supabase) return null;
-    let { data: sessionData } = await supabase.auth.getSession();
-    let accessToken = sessionData.session?.access_token;
-    if (!accessToken) {
-      const { data: refreshData } = await supabase.auth.refreshSession();
-      accessToken = refreshData.session?.access_token;
+    const { data: sessionData } = await supabase.auth.getSession();
+    const session = sessionData.session;
+    if (session?.refresh_token) {
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+      if (!refreshError && refreshData.session?.access_token) {
+        return refreshData.session.access_token;
+      }
     }
-    return accessToken ?? null;
+    return session?.access_token ?? null;
   }, []);
 
   const clearGlobalData = async () => {
