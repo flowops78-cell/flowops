@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { LayoutGrid, UserRound } from 'lucide-react';
+import { LayoutGrid, Handshake } from 'lucide-react';
 import { cn } from '../lib/utils';
 import ContextBreadcrumbs from '../components/ContextBreadcrumbs';
 import { cycleSectionValue, SECTION_SHORTCUT_EVENT, SectionShortcutDirection } from '../lib/sectionShortcuts';
@@ -47,7 +47,7 @@ export default function ActivityMonitor() {
   }, [allowedTabs]);
 
   const breadcrumbItems = activeTab === 'crm'
-    ? [tx('Activity'), tx('Entities')]
+    ? [tx('Activity'), tx('Partners')]
     : [tx('Activity'), tx('Overview')];
 
   return (
@@ -84,8 +84,8 @@ export default function ActivityMonitor() {
                   : 'toggle-indirect-idle'
               )}
             >
-              <UserRound size={16} />
-              {tx('Entities')}
+              <Handshake size={16} />
+              {tx('Partners')}
             </button>
           )}
         </div>

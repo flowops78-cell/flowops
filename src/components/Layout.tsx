@@ -34,7 +34,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { to: '/activity', icon: <History size={18} />, label: 'Activities', hint: 'Activity records and participant overview' },
         { to: '/channels', icon: <Circle size={18} />, label: 'Channels', hint: 'Channel tracking and settings overview' },
         { to: '/contacts', icon: <Handshake size={18} />, label: 'Partners', hint: 'Partner network and relationship tracking' },
-        { to: '/team', icon: <UserCog size={18} />, label: 'Team', hint: 'Team management and operator coverage' },
+        { to: '/team', icon: <Users size={18} />, label: 'Team', hint: 'Team management and operator coverage' },
         { to: '/settings', icon: <Settings size={18} />, label: 'Config', hint: 'System preferences and access control' },
       ],
     },
@@ -48,7 +48,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { to: '/activity', icon: <History size={18} />, label: 'Activities' },
         { to: '/channels', icon: <Circle size={18} />, label: 'Channels' },
         { to: '/contacts', icon: <Handshake size={18} />, label: 'Partners' },
-        { to: '/team', icon: <UserCog size={18} />, label: 'Operations' },
+        { to: '/team', icon: <Users size={18} />, label: 'Operations' },
       ],
     },
   ];

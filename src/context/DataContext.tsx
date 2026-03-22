@@ -2656,7 +2656,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const deletePartner = async (id: string) => {
-    requirePermission(canManageValue, 'Only admin/operator can remove entities.');
+    requirePermission(canManageValue, 'Only admin/operator can remove partners.');
     const existingPartner = partners.find(item => item.id === id);
     if (!existingPartner) return;
 
