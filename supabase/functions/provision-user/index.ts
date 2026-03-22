@@ -148,7 +148,7 @@ Deno.serve(async (request) => {
 
   const headerBearerToken = parseBearerToken(request.headers.get('Authorization'));
   const payloadBearerToken = (payload.access_token ?? '').trim() || null;
-  const bearerToken = headerBearerToken || payloadBearerToken;
+  const bearerToken = payloadBearerToken || headerBearerToken;
   if (!bearerToken) {
     return json(401, { error: 'Missing bearer token.' }, origin);
   }
