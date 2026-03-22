@@ -90,6 +90,8 @@ interface DataContextType {
   deletePartner: (id: string) => Promise<void>;
   addPartnerEntry: (entry: Omit<PartnerEntry, 'id' | 'created_at'>) => Promise<void>;
   deletePartnerEntry: (id: string) => Promise<void>;
+  updateProfileOrgId: (orgId: string | null) => Promise<void>;
+  managedOrgIds: string[];
   recordSystemEvent: (event: Omit<SystemEvent, 'id' | 'timestamp' | 'actor_role'>) => Promise<void>;
 
   refreshData: () => Promise<void>;
@@ -2859,6 +2861,28 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     void appendSystemEvent({ action: 'partner_entry_deleted', entity: 'partner_entry', entity_id: id, amount: existingEntry.amount, details: existingEntry.type });
   };
 
+  const updateProfileOrgId = async (orgId: string | null) => {
+    if (!canAccessAdminUi) throw new Error('Only admin accounts can switch organization clusters.');
+    if (!user) throw new Error('You must be signed in to switch organization context.');
+
+    if (isDemoMode) {
+      setActiveOrgId(orgId);
+      return;
+    }
+
+    if (!supabase) return;
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({ org_id: orgId })
+      .eq('id', user.id);
+
+    if (profileError) throw normalizeSupabaseWriteError(profileError);
+    
+    // Clear the profiles cache to trigger reload
+    profilesUnavailableRef.current = false;
+    await fetchData();
+  };
+
   const contextValue: DataContextType = {
       units,
       workspaces,
@@ -2921,6 +2945,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       deletePartner,
       addPartnerEntry,
       deletePartnerEntry,
+      updateProfileOrgId,
+      managedOrgIds: (user && !isDemoMode) ? Array.from(new Set([
+        activeOrgId || '',
+        ...(workspaces.map(w => w.org_id))
+      ])).filter((id): id is string => !!id) : [],
       recordSystemEvent: appendSystemEvent,
       refreshData: fetchData
     };

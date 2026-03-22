@@ -1,4 +1,5 @@
 import React from 'react';
+import { ShieldCheck, LogOut, CheckCircle2, AlertTriangle, Key } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAppRole } from '../context/AppRoleContext';
 import { useAuth } from '../context/AuthContext';
@@ -100,6 +101,8 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     operatorLogs,
     recordSystemEvent,
     refreshData,
+    updateProfileOrgId,
+    managedOrgIds,
   } = useData();
   const { role, canAccessAdminUi } = useAppRole();
   const { notify } = useNotification();
@@ -128,7 +131,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [pendingApprovedRoles, setPendingApprovedRoles] = React.useState<Record<string, DbRole>>({});
   const [metaOrgAccounts, setMetaOrgAccounts] = React.useState<ManagedMetaOrgAccount[]>([]);
   const [managedMetaOrgId, setManagedMetaOrgId] = React.useState<string | null>(null);
-  const [managedOrgIds, setManagedOrgIds] = React.useState<string[]>([]);
+  const [metaManagedOrgIds, setMetaManagedOrgIds] = React.useState<string[]>([]);
   const [metaOrgAdminsLoading, setMetaOrgAdminsLoading] = React.useState(false);
   const [metaOrgAdminsNotice, setMetaOrgAdminsNotice] = React.useState<string | null>(null);
   const [pendingMetaOrgRoles, setPendingMetaOrgRoles] = React.useState<Record<string, Extract<DbRole, 'admin' | 'operator'>>>({});
@@ -305,7 +308,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       const detailedError = (error as any)?.message ?? String(error);
       setMetaOrgAccounts([]);
       setManagedMetaOrgId(null);
-      setManagedOrgIds([]);
+      setMetaManagedOrgIds([]);
       setMetaOrgAdminsNotice(`Unable to load meta-org admins: ${detailedError}`);
       setMetaOrgAdminsLoading(false);
       return;
@@ -313,7 +316,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
     setMetaOrgAccounts(data?.accounts ?? []);
     setManagedMetaOrgId(data?.meta_org_id ?? null);
-    setManagedOrgIds(data?.managed_org_ids ?? []);
+    setMetaManagedOrgIds(data?.managed_org_ids ?? []);
     setMetaOrgAdminsLoading(false);
   }, [activeOrgId, canManageMetaOrgAdmins, getAccessToken]);
 
@@ -607,32 +610,68 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
           </div>
         </div>
 
-        {!isDemoMode && user && !activeOrgId && (
-          <div className="section border border-amber-200 bg-amber-50/70 dark:border-amber-900/60 dark:bg-amber-950/20">
-            <h3 className="font-medium mb-2 text-amber-900 dark:text-amber-100">Organization Setup Required</h3>
-            <div className="space-y-3 text-sm text-amber-900/90 dark:text-amber-100/90">
-              <p>
-                This account does not have a workspace assignment yet. The app currently reads organization scope from
-                <span className="font-mono"> public.profiles.org_id</span>, and there is no self-service editor for it in the UI yet.
-              </p>
-              <p>
-                Current profile ID: <span className="font-mono break-all">{profileId || 'Unavailable until signed in'}</span>
-              </p>
-              <div>
-                <p className="font-medium mb-1">1. Confirm your profile row</p>
-                <pre className="rounded-lg bg-stone-950 text-stone-100 p-3 overflow-x-auto text-xs leading-5">{profileLookupSql}</pre>
+        {!isDemoMode && user && (
+          <div className="section border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 shadow-sm">
+            <h3 className="font-medium mb-3 text-stone-900 dark:text-stone-100 flex items-center gap-2">
+              <ShieldCheck size={18} className="text-emerald-500" />
+              Organization Management
+            </h3>
+            
+            <div className="space-y-4">
+              {!activeOrgId ? (
+                <div className="p-4 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/20 text-sm text-amber-800 dark:text-amber-300">
+                  <p className="font-medium mb-1">No Workspace Assigned</p>
+                  <p>You are currently operating in global mode. Features requiring workspace isolation (mutations, specific activities) are locked until you join or create a cluster.</p>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between p-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/50">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wider text-stone-500 dark:text-stone-400 font-bold">Active Cluster</p>
+                    <p className="font-mono text-sm break-all">{activeOrgId}</p>
+                  </div>
+                  <button 
+                    onClick={() => { if(window.confirm('Detach from this workspace? You will be in global mode.')) void updateProfileOrgId(null); }}
+                    className="text-xs text-red-600 hover:text-red-700 font-medium"
+                  >
+                    Detach
+                  </button>
+                </div>
+              )}
+
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Join Existing Cluster</label>
+                <div className="flex gap-2">
+                  <select 
+                    className="control-input text-sm"
+                    value={activeOrgId || ''}
+                    onChange={(e) => { 
+                      const val = e.target.value;
+                      if (!val) return;
+                      void updateProfileOrgId(val); 
+                    }}
+                  >
+                    <option value="" disabled>Select a cluster to join...</option>
+                    {managedOrgIds.map((id: string) => (
+                      <option key={id} value={id}>{id.slice(0, 8)}...{id.slice(-8)}</option>
+                    ))}
+                  </select>
+                </div>
+                <p className="text-[10px] text-stone-500 dark:text-stone-400 italic">Discovered {managedOrgIds.length} active workspace clusters in system.</p>
               </div>
-              <div>
-                <p className="font-medium mb-1">2. Find an existing organization ID</p>
-                <pre className="rounded-lg bg-stone-950 text-stone-100 p-3 overflow-x-auto text-xs leading-5">{orgCandidatesSql}</pre>
+
+              <div className="pt-2">
+                <button 
+                  onClick={() => {
+                    const newId = crypto.randomUUID();
+                    if (window.confirm('Create and join a fresh workspace cluster?')) {
+                      void updateProfileOrgId(newId);
+                    }
+                  }}
+                  className="w-full interactive-3d bg-stone-900 dark:bg-emerald-600 text-white p-2.5 rounded-xl text-sm font-medium hover:bg-stone-800 dark:hover:bg-emerald-500 transition-colors"
+                >
+                  Generate New Workspace Cluster
+                </button>
               </div>
-              <div>
-                <p className="font-medium mb-1">3. Assign this account to that organization</p>
-                <pre className="rounded-lg bg-stone-950 text-stone-100 p-3 overflow-x-auto text-xs leading-5">{profileUpdateSql}</pre>
-              </div>
-              <p>
-                After updating the profile, sign out and sign back in so the app reloads your workspace scope.
-              </p>
             </div>
           </div>
         )}

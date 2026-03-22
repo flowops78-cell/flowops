@@ -65,6 +65,7 @@ export interface Workspace {
   org_code?: string;
   
   // Operations
+  org_id: string;
   assigned_operator_id?: string;
   operational_contribution?: number;
   channel_value?: number;
