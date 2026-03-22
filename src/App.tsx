@@ -48,7 +48,8 @@ function AppRoutes() {
           <Route path="/dashboard" element={canAccessAdminUi ? <Dashboard /> : <Navigate to="/activity" replace />} />
           <Route path="/activity" element={<ActivityMonitor />} />
           <Route path="/activity/:id" element={<WorkspaceDetail />} />
-          <Route path="/reserve" element={canAccessAdminUi ? <Channels /> : <Navigate to="/activity" replace />} />
+          <Route path="/channels" element={canAccessAdminUi ? <Channels /> : <Navigate to="/activity" replace />} />
+          <Route path="/reserve" element={<Navigate to="/channels" replace />} />
           <Route path="/brief-flow" element={canAccessAdminUi ? <BriefFlowOverview /> : <Navigate to="/activity" replace />} />
           <Route path="/contacts" element={canAccessAdminUi ? <PartnerNetwork /> : <Navigate to="/activity" replace />} />
           <Route path="/team" element={<Team />} />
@@ -57,7 +58,7 @@ function AppRoutes() {
           <Route path="/leaderboard" element={<Navigate to="/dashboard" replace />} />
           <Route path="/units" element={canAccessAdminUi ? <ActivityMonitor /> : <Navigate to="/activity" replace />} />
           <Route path="/units/:id" element={canAccessAdminUi ? <UnitDetail /> : <Navigate to="/activity" replace />} />
-          <Route path="/accounting" element={<Navigate to={canAccessAdminUi ? '/reserve' : '/activity'} replace />} />
+          <Route path="/accounting" element={<Navigate to={canAccessAdminUi ? '/channels' : '/activity'} replace />} />
           <Route path="/admin/diagnostics" element={<Navigate to="/settings" replace />} />
           <Route path="/workspaces/:id" element={<ActivityDetailRedirect />} />
         </Routes>

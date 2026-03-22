@@ -6,9 +6,12 @@ const routePreloaders: Record<string, () => Promise<unknown>> = {
     import('../pages/ActivityMonitor'),
     import('../pages/Activities'),
   ]),
-  '/reserve': () => Promise.all([
+  '/channels': () => Promise.all([
     import('../pages/BriefFlowOverview'),
-        import('../pages/Reserve'),
+    import('../pages/Channels'),
+  ]),
+  '/reserve': () => Promise.all([
+    preloadRoute('/channels'),
   ]),
   '/contacts': () => Promise.all([
     import('../pages/PartnerNetwork'),
@@ -36,7 +39,7 @@ export const preloadCoreRoutesOnIdle = () => {
     void Promise.all([
       preloadRoute('/'),
       preloadRoute('/activity'),
-      preloadRoute('/reserve'),
+      preloadRoute('/channels'),
       preloadRoute('/contacts'),
       preloadRoute('/team'),
       preloadRoute('/settings'),

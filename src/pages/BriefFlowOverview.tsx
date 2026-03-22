@@ -11,8 +11,8 @@ export default function BriefFlowOverview() {
   return (
     <div className="page-shell space-y-6 animate-in fade-in">
       <div className="section-card px-5 py-3.5 lg:px-6">
-        <ContextBreadcrumbs items={[tx('Reserve')]} className="mb-1.5" />
-        <h2 className="text-xl font-light text-stone-900 dark:text-stone-100">{tx('Reserve')}</h2>
+        <ContextBreadcrumbs items={[tx('Channels')]} className="mb-1.5" />
+        <h2 className="text-xl font-light text-stone-900 dark:text-stone-100">{tx('Channels')}</h2>
       </div>
 
       <Suspense

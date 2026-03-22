@@ -396,7 +396,7 @@ export default function WorkspaceDetail() {
       }
 
       if (entryValueingType === 'value' && !entryTransferMethod) {
-        notify({ type: 'error', message: 'Select a transfer source from Reserve.' });
+        notify({ type: 'error', message: 'Select a transfer source from Channels.' });
         return;
       }
 
@@ -419,7 +419,7 @@ export default function WorkspaceDetail() {
             date: new Date().toISOString().split('T')[0],
           });
         } catch (error) {
-          notify({ type: 'warning', message: 'Entry added but reserve sync failed. Record manually.' });
+          notify({ type: 'warning', message: 'Entry added but channel sync failed. Record manually.' });
         }
       }
 
@@ -1268,7 +1268,7 @@ export default function WorkspaceDetail() {
                   </select>
                   <div className="max-w-sm">
                     <label className="block text-xs text-stone-500 dark:text-stone-400 mb-1">
-                      Reserve Source <span className="text-stone-400">({entryValueingType === 'value' ? 'required for direct valueing' : 'optional for deferred valueing'})</span>
+                      Channel Source <span className="text-stone-400">({entryValueingType === 'value' ? 'required for direct valueing' : 'optional for deferred valueing'})</span>
                     </label>
                     <select
                       className="control-input w-full"
@@ -1277,7 +1277,7 @@ export default function WorkspaceDetail() {
                       disabled={!canAddUnits}
                       required={entryValueingType === 'value'}
                     >
-                      <option value="">{entryValueingType === 'value' ? 'Select transfer source...' : 'No reserve source needed'}</option>
+                      <option value="">{entryValueingType === 'value' ? 'Select transfer source...' : 'No channel source needed'}</option>
                       {transferAccounts.filter(a => a.is_active).map(a => (
                         <option key={a.id} value={`${a.category}::${a.name}`}>
                           {a.name}

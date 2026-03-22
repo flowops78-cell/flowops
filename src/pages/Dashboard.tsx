@@ -158,10 +158,10 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
           </button>
           <button
             type="button"
-            onClick={() => navigate('/reserve')}
+            onClick={() => navigate('/channels')}
             className="action-btn-secondary justify-center min-h-[40px]"
           >
-            {`Open ${tx('Reserve')}`}
+            {`Open ${tx('Channels')}`}
           </button>
         </div>
       </div>
@@ -174,7 +174,7 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
             fullValue={formatValue(currentReserve_base)}
             icon={<Circle className="text-[var(--accent)]" />}
             numericValue={currentReserve_base}
-            onClick={() => navigate('/reserve')}
+            onClick={() => navigate('/channels')}
           />
           <StatCard
             label={`Active ${getMetricLabel('activitys')}`}
@@ -198,7 +198,7 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
             fullValue={formatValue(totalInflow)}
             icon={<TrendingUp className="text-[var(--success)]" />}
             numericValue={totalInflow}
-            onClick={() => navigate('/reserve')}
+            onClick={() => navigate('/channels')}
           />
           <StatCard
             label="Total Outflow"
@@ -206,7 +206,7 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
             fullValue={formatValue(totalOutflow)}
             icon={<TrendingDown className="text-[var(--danger)]" />}
             numericValue={-totalOutflow}
-            onClick={() => navigate('/reserve')}
+            onClick={() => navigate('/channels')}
           />
           <StatCard
             label="Deferred Active"
@@ -214,7 +214,7 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
             fullValue={formatValue(totalDeferredActive)}
             icon={<Clock className="text-[var(--warning)]" />}
             numericValue={totalDeferredActive}
-            onClick={() => navigate('/reserve')}
+            onClick={() => navigate('/channels')}
           />
           <StatCard
             label={`Avg Entry ${getMetricLabel('flow')}`}

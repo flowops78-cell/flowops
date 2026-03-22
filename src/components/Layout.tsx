@@ -32,7 +32,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       items: [
         { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Brief', hint: 'Operational overview and key metrics' },
         { to: '/activity', icon: <History size={18} />, label: 'Activities', hint: 'Activity records and participant overview' },
-        { to: '/reserve', icon: <Circle size={18} />, label: 'Channels', hint: 'Reserve tracking and settings overview' },
+        { to: '/channels', icon: <Circle size={18} />, label: 'Channels', hint: 'Channel tracking and settings overview' },
         { to: '/contacts', icon: <Handshake size={18} />, label: 'Partners', hint: 'Partner network and relationship tracking' },
         { to: '/team', icon: <UserCog size={18} />, label: 'Team', hint: 'Team management and operator coverage' },
         { to: '/settings', icon: <Settings size={18} />, label: 'Config', hint: 'System preferences and access control' },
@@ -46,7 +46,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       items: [
         { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Brief' },
         { to: '/activity', icon: <History size={18} />, label: 'Activities' },
-        { to: '/reserve', icon: <Circle size={18} />, label: 'Channels' },
+        { to: '/channels', icon: <Circle size={18} />, label: 'Channels' },
         { to: '/contacts', icon: <Handshake size={18} />, label: 'Partners' },
         { to: '/team', icon: <UserCog size={18} />, label: 'Operations' },
       ],
@@ -141,7 +141,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             d: '/dashboard',
             a: '/activity',
             p: '/contacts',
-            v: '/reserve',
+            v: '/channels',
             o: '/team',
             s: canAccessAdminUi ? '/settings' : '/activity',
           };
@@ -177,7 +177,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           if (normalizedKey === 'v') {
             event.preventDefault();
             clearShortcutPrefix();
-            navigate(canAccessAdminUi ? '/reserve?action=add-account' : '/activity');
+            navigate(canAccessAdminUi ? '/channels?action=add-account' : '/activity');
             return;
           }
 

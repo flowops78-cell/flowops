@@ -171,7 +171,7 @@ export default function UnitDetail() {
     }
 
     if (!entryMethod) {
-      notify({ type: 'error', message: 'Select a transfer source from Reserve.' });
+      notify({ type: 'error', message: 'Select a transfer source from Channels.' });
       return;
     }
 
@@ -193,7 +193,7 @@ export default function UnitDetail() {
           date: isoToday(),
         });
       } catch (error) {
-        notify({ type: 'warning', message: 'Entry posted but reserve sync failed. Record manually.' });
+        notify({ type: 'warning', message: 'Entry posted but channel sync failed. Record manually.' });
       }
     }
 
@@ -241,7 +241,7 @@ export default function UnitDetail() {
           date: isoToday(),
         });
       } catch {
-        notify({ type: 'warning', message: 'Request approved, but reserve entry could not be recorded.' });
+        notify({ type: 'warning', message: 'Request approved, but channel entry could not be recorded.' });
       }
     }
 
@@ -318,7 +318,7 @@ export default function UnitDetail() {
           date: isoToday(),
         });
       } catch (error) {
-        notify({ type: 'warning', message: 'Override recorded but reserve sync failed. Record manually.' });
+        notify({ type: 'warning', message: 'Override recorded but channel sync failed. Record manually.' });
       }
     } else {
       await addUnitAccountEntry({
@@ -338,7 +338,7 @@ export default function UnitDetail() {
           date: isoToday(),
         });
       } catch (error) {
-        notify({ type: 'warning', message: 'Override recorded but reserve sync failed. Record manually.' });
+        notify({ type: 'warning', message: 'Override recorded but channel sync failed. Record manually.' });
       }
     }
 
@@ -426,7 +426,7 @@ export default function UnitDetail() {
             </button>
           </div>
           <div>
-            <label className="block text-xs text-stone-500 dark:text-stone-400 mb-1">Transfer Source (links to Reserve)</label>
+            <label className="block text-xs text-stone-500 dark:text-stone-400 mb-1">Transfer Source (links to Channels)</label>
             <select
               className="control-input max-w-sm"
               value={entryMethod}

@@ -27,7 +27,7 @@ const shortcutGroups: Array<{ title: string; items: ShortcutItem[] }> = [
     items: [
       { keys: 'G then D', action: 'Go to Dashboard' },
       { keys: 'G then A', action: 'Go to Activity' },
-      { keys: 'G then V', action: 'Go to Reserve' },
+      { keys: 'G then V', action: 'Go to Channels' },
       { keys: 'G then O', action: 'Go to Operations (Team)' },
       { keys: 'G then S', action: 'Go to Setup (Settings)' },
     ],
@@ -37,7 +37,7 @@ const shortcutGroups: Array<{ title: string; items: ShortcutItem[] }> = [
     items: [
       { keys: 'C then A', action: 'Create activity' },
       { keys: 'C then E', action: 'Record entry' },
-      { keys: 'C then V', action: 'Add account (Reserve)' },
+      { keys: 'C then V', action: 'Add account (Channels)' },
       { keys: 'C then O', action: 'Add team member' },
     ],
   },
@@ -58,7 +58,7 @@ const shortcutGroups: Array<{ title: string; items: ShortcutItem[] }> = [
     ],
   },
   {
-    title: 'Reserve Page',
+    title: 'Channels Page',
     items: [
       { keys: 'I', action: 'Record inflow' },
       { keys: 'O', action: 'Record outflow' },

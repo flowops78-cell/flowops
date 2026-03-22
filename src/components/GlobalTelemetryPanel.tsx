@@ -82,7 +82,7 @@ export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetr
       pendingAlignmentAlerts.slice(0, 3).forEach(alert => {
         items.push({
           id: `alignment-${alert.id}`,
-          route: '/reserve',
+          route: '/channels',
           tone: 'amber',
           label: 'Pending alignment',
           detail: 'Alignment request awaiting output.',

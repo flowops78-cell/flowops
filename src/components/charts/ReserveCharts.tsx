@@ -98,7 +98,7 @@ export default function ReserveCharts({ historyData, distributionData }: Reserve
       <div className="lg:col-span-2 min-w-0 bg-white dark:bg-stone-900 p-6 rounded-xl shadow-sm border border-stone-200 dark:border-stone-800">
         <div className="flex items-center gap-2 mb-6">
           <TrendingUp className="text-stone-400" size={18} />
-          <h3 className="font-medium text-stone-900 dark:text-stone-100">Reserve History</h3>
+          <h3 className="font-medium text-stone-900 dark:text-stone-100">Channel History</h3>
         </div>
         <MeasuredChart className="h-64 w-full min-w-0">
           {({ width, height }) => (

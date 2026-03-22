@@ -47,7 +47,7 @@ export const EVENT_LABELS: Record<string, string> = {
 	adjustment_added: 'Pending entry recorded',
 	adjustment_updated: 'Pending entry updated',
 	adjustment_deleted: 'Pending entry removed',
-	reserve_entry_added: 'Reserve entry recorded',
+	reserve_entry_added: 'Channel entry recorded',
 	partner_added: 'Partner added',
 	partner_updated: 'Partner updated',
 	partner_entry_added: 'Adjustment logged',

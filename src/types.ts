@@ -97,7 +97,7 @@ export interface Entry {
   sort_order?: number;
 
   // Transfer tracking
-  transfer_method?: string; // links to reserve TransferAccount
+  transfer_method?: string; // links to a channel TransferAccount
 }
 
 export interface Adjustment {
@@ -140,7 +140,7 @@ export interface UnitAccountEntry {
   amount: number;
   date: string;
   request_id?: string;
-  transfer_method?: string; // links to reserve TransferAccount
+  transfer_method?: string; // links to a channel TransferAccount
   created_at?: string;
 }
 

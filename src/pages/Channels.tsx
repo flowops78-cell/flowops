@@ -528,7 +528,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
           action: 'reserve_entries_auto_archived',
           entity: 'reserve',
           amount: txIds.length,
-          details: `Auto-archived reserve entrys older than ${retentionDaysNumber} days`,
+          details: `Auto-archived channel entries older than ${retentionDaysNumber} days`,
         });
         return Array.from(next);
       });
@@ -938,15 +938,15 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
   const handleDeleteReserveEntry = async (id: string) => {
     if (!canOperateValue || deletingReserveEntryId === id) return;
-    const confirmed = window.confirm('Delete this reserve entry? This will adjust current channel totals and cannot be undone.');
+    const confirmed = window.confirm('Delete this channel entry? This will adjust current channel totals and cannot be undone.');
     if (!confirmed) return;
 
     try {
       setDeletingReserveEntryId(id);
       await deleteReserveEntry(id);
-      notify({ type: 'success', message: 'Reserve entry deleted.' });
+      notify({ type: 'success', message: 'Channel entry deleted.' });
     } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to delete reserve entry.' });
+      notify({ type: 'error', message: error?.message || 'Unable to delete channel entry.' });
     } finally {
       setDeletingReserveEntryId(current => (current === id ? null : current));
     }
@@ -958,7 +958,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       action: 'reserve_entry_archived',
       entity: 'reserve',
       entity_id: id,
-      details: 'Reserve entry moved to archive list',
+      details: 'Channel entry moved to archive list',
     });
     notify({ type: 'success', message: 'Entry archived.' });
   };
@@ -969,7 +969,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       action: 'reserve_entry_unarchived',
       entity: 'reserve',
       entity_id: id,
-      details: 'Reserve entry restored from archive list',
+      details: 'Channel entry restored from archive list',
     });
     notify({ type: 'success', message: 'Entry restored from archive.' });
   };
@@ -988,7 +988,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       .filter(entry => entry.date >= orgDateStart && entry.date <= orgDateEnd)
       .map(entry => entry.id);
     if (ids.length === 0) {
-      notify({ type: 'error', message: 'No active reserve entries in selected range.' });
+      notify({ type: 'error', message: 'No active channel entries in selected range.' });
       return;
     }
     setArchivedReserveEntryIds(current => Array.from(new Set([...current, ...ids])));
@@ -996,15 +996,15 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       action: 'reserve_entries_archived_date_range',
       entity: 'reserve',
       amount: ids.length,
-      details: `Archived reserve entries from ${orgDateStart} to ${orgDateEnd}`,
+      details: `Archived channel entries from ${orgDateStart} to ${orgDateEnd}`,
     });
-    notify({ type: 'success', message: `Archived ${ids.length} reserve entries.` });
+    notify({ type: 'success', message: `Archived ${ids.length} channel entries.` });
   };
 
   const handleArchiveOldReserveEntrys = () => {
     if (!canOperateValue) return;
     if (oldReserveEntryIds.length === 0) {
-      notify({ type: 'error', message: `No active reserve entries older than ${retentionDaysNumber} days.` });
+      notify({ type: 'error', message: `No active channel entries older than ${retentionDaysNumber} days.` });
       return;
     }
     setArchivedReserveEntryIds(current => Array.from(new Set([...current, ...oldReserveEntryIds])));
@@ -1012,9 +1012,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       action: 'reserve_entries_archived_old',
       entity: 'reserve',
       amount: oldReserveEntryIds.length,
-      details: `Archived old reserve entries older than ${retentionDaysNumber} days`,
+      details: `Archived old channel entries older than ${retentionDaysNumber} days`,
     });
-    notify({ type: 'success', message: `Archived ${oldReserveEntryIds.length} old reserve entries.` });
+    notify({ type: 'success', message: `Archived ${oldReserveEntryIds.length} old channel entries.` });
   };
 
   const handleRestoreAllArchivedReserveEntrys = () => {
@@ -1025,9 +1025,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       action: 'reserve_entries_restored_bulk',
       entity: 'reserve',
       amount: count,
-      details: 'Restored all archived reserve entrys',
+      details: 'Restored all archived channel entries',
     });
-    notify({ type: 'success', message: `Restored ${count} archived reserve entries.` });
+    notify({ type: 'success', message: `Restored ${count} archived channel entries.` });
   };
 
   const handleDeleteAdjustment = async (id: string) => {
