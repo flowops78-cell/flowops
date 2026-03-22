@@ -100,7 +100,7 @@ const RATE_LIMIT: RateLimitConfig = { maxRequests: 30, windowMs: 60_000 };
 type DbRole = 'admin' | 'operator' | 'viewer';
 
 type ManageMetaOrgAdminsPayload = {
-  action: 'list' | 'set-role' | 'delete-user';
+  action: 'list' | 'set-role' | 'delete-user' | 'list-org-contexts' | 'switch-org-context';
   org_id?: string;
   target_user_id?: string;
   target_role?: DbRole;
@@ -147,6 +147,13 @@ const parseBearerToken = (headerValue: string | null): string | null => {
   const lower = headerValue.toLowerCase();
   if (!lower.startsWith('bearer ')) return null;
   return headerValue.slice(7).trim();
+};
+
+const normalizeOrgId = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null;
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
 };
 
 const normalizeRole = (value: unknown): DbRole | null => {
@@ -287,9 +294,63 @@ Deno.serve(async (request) => {
 
   let clusterContext;
   try {
-    clusterContext = await loadClusterContext(adminClient, callerUserId, payload.org_id);
+    clusterContext = await loadClusterContext(adminClient, callerUserId, normalizeOrgId(payload.org_id) ?? undefined);
   } catch (error) {
     return json(403, { error: error instanceof Error ? error.message : 'Unable to resolve admin scope.' }, origin);
+  }
+
+  if (payload.action === 'list-org-contexts') {
+    if (clusterContext.metaOrgId === null) {
+      const { data: orgRows, error: orgRowsError } = await adminClient
+        .from('workspaces')
+        .select('org_id')
+        .not('org_id', 'is', null);
+
+      if (orgRowsError) {
+        return json(400, { error: `Unable to load available orgs: ${orgRowsError.message}` }, origin);
+      }
+
+      const orgs = Array.from(new Set(
+        (orgRows ?? [])
+          .map((row) => row.org_id)
+          .filter((value): value is string => typeof value === 'string' && value.length > 0),
+      ));
+
+      return json(200, {
+        ok: true,
+        meta_org_id: clusterContext.metaOrgId,
+        managed_org_ids: orgs,
+      }, origin);
+    }
+
+    return json(200, {
+      ok: true,
+      meta_org_id: clusterContext.metaOrgId,
+      managed_org_ids: clusterContext.managedOrgIds,
+    }, origin);
+  }
+
+  if (payload.action === 'switch-org-context') {
+    const requestedOrgId = normalizeOrgId(payload.org_id);
+
+    if (requestedOrgId !== null && clusterContext.metaOrgId !== null && !clusterContext.managedOrgIds.includes(requestedOrgId)) {
+      return json(403, { error: 'Target organization is outside your managed org scope.' }, origin);
+    }
+
+    const { error: profileUpdateError } = await adminClient
+      .from('profiles')
+      .update({ org_id: requestedOrgId })
+      .eq('id', callerUserId);
+
+    if (profileUpdateError) {
+      return json(400, { error: `Unable to switch organization context: ${profileUpdateError.message}` }, origin);
+    }
+
+    return json(200, {
+      ok: true,
+      org_id: requestedOrgId,
+      meta_org_id: clusterContext.metaOrgId,
+    }, origin);
   }
 
   if (payload.action === 'set-role') {

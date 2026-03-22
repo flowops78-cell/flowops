@@ -2873,13 +2873,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const accessToken = sessionData.session?.access_token;
       if (!accessToken) return;
 
-      const { data, error } = await supabase.functions.invoke('manage-org-context', {
-        body: { action: 'list-available-orgs' },
+      const { data, error } = await supabase.functions.invoke('manage-meta-org-admins', {
+        body: { action: 'list-org-contexts' },
         headers: { Authorization: `Bearer ${accessToken}` }
       });
 
-      if (!error && data?.orgs) {
-        setManagedOrgIds(data.orgs);
+      if (!error && data?.managed_org_ids) {
+        setManagedOrgIds(data.managed_org_ids);
       }
     } catch (err) {
       console.error('Failed to fetch available orgs:', err);
@@ -2901,8 +2901,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const accessToken = sessionData.session?.access_token;
     if (!accessToken) throw new Error('Authentication session expired.');
 
-    const { data, error: functionError } = await supabase.functions.invoke('manage-org-context', {
-      body: { action: 'switch-org', org_id: orgId },
+    const { data, error: functionError } = await supabase.functions.invoke('manage-meta-org-admins', {
+      body: { action: 'switch-org-context', org_id: orgId },
       headers: { Authorization: `Bearer ${accessToken}` }
     });
 
