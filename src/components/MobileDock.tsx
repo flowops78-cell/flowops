@@ -12,7 +12,7 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { to: "/", icon: <LayoutDashboard size={20} />, label: "Dashboard", hint: "Operational dashboard and value summary" },
+  { to: "/dashboard", icon: <LayoutDashboard size={20} />, label: "Dashboard", hint: "Operational dashboard and value summary" },
   { to: "/activity", icon: <History size={20} />, label: "Activity", hint: "Activity records and participant overview" },
   { to: "/reserve", icon: <Landmark size={20} />, label: "Reserve", hint: "Reserve tracking and settings overview" },
   { to: "/contacts", icon: <Users size={20} />, label: "Entities", hint: "Partner network and relationship tracking" },

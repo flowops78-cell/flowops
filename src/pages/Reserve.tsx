@@ -36,10 +36,10 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
 
   // Reserve State
   const [isAddingEntry, setIsAddingEntry] = useState(false);
-  const [isTransferringToBank, setIsTransferringToBank] = useState(false);
+  const [isTransferringToChannel, setIsTransferringToChannel] = useState(false);
   const [transType, setTransType] = useState<'increment' | 'decrement'>('increment');
   const [transAmount, setTransAmount] = useState('');
-  const [transMethodBase, setTransMethodBase] = useState('bank_account');
+  const [transMethodBase, setTransMethodBase] = useState('reserve_account');
   const [transMethodCustom, setTransMethodCustom] = useState('');
   const [transAccountLabel, setTransAccountLabel] = useState('');
   const [isSavingEntry, setIsSavingEntry] = useState(false);
@@ -59,7 +59,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
   const [isArchivedEntrysExpanded, setIsArchivedEntrysExpanded] = useState(false);
   const [transferFromMethod, setTransferFromMethod] = useState('');
   const [transferFromQuery, setTransferFromQuery] = useState('');
-  const [transferToBankLabel, setTransferToBankLabel] = useState('');
+  const [transferToChannelLabel, setTransferToChannelLabel] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
   const [isSavingTransfer, setIsSavingTransfer] = useState(false);
   const [saveTransferProgress, setSaveTransferProgress] = useState(0);
@@ -81,7 +81,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
   const formatChannelLabel = (value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return 'Other';
-    if (trimmed === 'bank_account') return 'Account';
+    if (trimmed === 'reserve_account') return 'Channel';
     if (trimmed === 'value') return 'Value';
     return trimmed
       .replace(/[_-]+/g, ' ')
@@ -179,7 +179,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
   const [adjustmentSaveState, setAdjustmentSaveState] = useState<'idle' | 'saved'>('idle');
   const [deletingAdjustmentId, setDeletingAdjustmentId] = useState<string | null>(null);
   const [settlingEntryId, setSettlingEntryId] = useState<string | null>(null);
-  const [settleAccountBase, setSettleAccountBase] = useState('bank_account');
+  const [settleAccountBase, setSettleAccountBase] = useState('reserve_account');
   const [settleAccountCustom, setSettleAccountCustom] = useState('');
   const [settleAccountLabel, setSettleAccountLabel] = useState('');
   const [isSettlingEntry, setIsSettlingEntry] = useState(false);
@@ -331,7 +331,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
     unresolvedOutflowAmount,
     channelCardData,
     p2pChannelOptions,
-    bankAccountLabelSuggestions,
+    channelLabelSuggestions,
   } = useMemo(() => {
     const nextChannelTotals: Record<string, number> = {};
 
@@ -360,10 +360,10 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
       }))
       .sort((a, b) => b.amount - a.amount);
 
-    const nextP2pChannelOptions = nextChannelCardData.filter(item => item.base !== 'bank_account' && item.base !== 'value' && item.amount > 0);
-    const nextBankAccountLabelSuggestions = Array.from(new Set(
+    const nextP2pChannelOptions = nextChannelCardData.filter(item => item.base !== 'reserve_account' && item.base !== 'value' && item.amount > 0);
+    const nextChannelLabelSuggestions = Array.from(new Set(
       nextChannelCardData
-        .filter(item => item.base === 'bank_account')
+        .filter(item => item.base === 'reserve_account')
         .map(item => parseMethod(item.method).account)
         .filter((account): account is string => Boolean(account && account.trim()))
     ));
@@ -375,7 +375,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
       unresolvedOutflowAmount: nextUnresolvedOutflowAmount,
       channelCardData: nextChannelCardData,
       p2pChannelOptions: nextP2pChannelOptions,
-      bankAccountLabelSuggestions: nextBankAccountLabelSuggestions,
+      channelLabelSuggestions: nextChannelLabelSuggestions,
     };
   }, [reserveEntries]);
 
@@ -568,11 +568,11 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
     setTransMethodCustom('');
 
     if (base === 'value') {
-      setTransMethodBase('bank_account');
+      setTransMethodBase('reserve_account');
       return;
     }
 
-    setTransMethodBase(base || 'bank_account');
+    setTransMethodBase(base || 'reserve_account');
   };
 
   // --- Chart Data Preparation ---
@@ -616,7 +616,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
   const p2pOptionDisplay = (method: string, amount: number) => `${formatMethodLabel(method)} (${formatValue(amount)})`;
 
   const CHANNEL_CATEGORY_CHOICES = [
-    { value: 'bank_account', label: 'Account' },
+    { value: 'reserve_account', label: 'Channel' },
     { value: 'value', label: 'Value' },
     { value: 'crypto', label: 'Crypto' },
     { value: 'other', label: 'Other' },
@@ -783,7 +783,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
       setSaveEntryProgress(100);
       setIsAddingEntry(false);
       setTransAmount('');
-      setTransMethodBase('bank_account');
+      setTransMethodBase('reserve_account');
       setTransMethodCustom('');
       setTransAccountLabel('');
       setEntrySaveState('saved');
@@ -864,7 +864,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  const handleTransferP2pToBank = async (e: React.FormEvent) => {
+  const handleTransferInternalToChannel = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canOperateValue || isSavingTransfer) return;
 
@@ -885,7 +885,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
       return;
     }
 
-    const targetMethod = composeMethod('bank_account', transferToBankLabel);
+    const targetMethod = composeMethod('reserve_account', transferToChannelLabel);
     if (transferFromMethod === targetMethod) {
       notify({ type: 'error', message: 'Source and destination accounts must be different.' });
       return;
@@ -911,10 +911,10 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
 
       clearSaveTransferTimers();
       setSaveTransferProgress(100);
-      setIsTransferringToBank(false);
+      setIsTransferringToChannel(false);
       setTransferFromMethod('');
       setTransferFromQuery('');
-      setTransferToBankLabel('');
+      setTransferToChannelLabel('');
       setTransferAmount('');
       setTransferSaveState('saved');
       if (saveTransferSuccessResetTimerRef.current !== null) {
@@ -1069,7 +1069,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
       });
       setArchivedAdjustmentIds(current => (current.includes(id) ? current : [...current, id]));
       setSettlingEntryId(null);
-      setSettleAccountBase('bank_account');
+      setSettleAccountBase('reserve_account');
       setSettleAccountCustom('');
       setSettleAccountLabel('');
       notify({ type: 'success', message: 'Entry settled.' });
@@ -1259,7 +1259,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
                   onClick={() => handleTotalCardClick(item.base)}
                 />
               )) : (
-                <TotalCard icon={<ChannelGlyph base="other" />} label={tx('No channels yet')} amount={0} badgeClass={getChannelVisual('other').badgeClass} onClick={() => handleTotalCardClick('bank_account')} />
+                <TotalCard icon={<ChannelGlyph base="other" />} label={tx('No channels yet')} amount={0} badgeClass={getChannelVisual('other').badgeClass} onClick={() => handleTotalCardClick('reserve_account')} />
               )}
             </div>
 
@@ -1411,10 +1411,10 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
                     { key: 'export-active-reserve', label: 'Export Active CSV', onClick: handleExportActiveReserveCsv },
                     { key: 'export-archived-reserve', label: 'Export Archived CSV', onClick: handleExportArchivedReserveCsv },
                     {
-                      key: 'transfer-p2p-bank',
-                      label: 'P2P -> Bank',
+                      key: 'transfer-internal-channel',
+                      label: 'Internal -> Channel',
                       onClick: () => {
-                        setIsTransferringToBank(true);
+                        setIsTransferringToChannel(true);
                         if (!transferFromMethod && p2pChannelOptions.length > 0) {
                           setTransferFromMethod(p2pChannelOptions[0].method);
                         }
@@ -1616,8 +1616,8 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
               </form>
             )}
 
-            {isTransferringToBank && (
-              <form onSubmit={handleTransferP2pToBank} className="mb-6 pt-4 border-t border-stone-200/80 dark:border-stone-800/80 space-y-3">
+            {isTransferringToChannel && (
+              <form onSubmit={handleTransferInternalToChannel} className="mb-6 pt-4 border-t border-stone-200/80 dark:border-stone-800/80 space-y-3">
                 <div className="text-xs text-stone-500 dark:text-stone-400">Move values from transfer channel to account</div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <input
@@ -1645,12 +1645,12 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
                     list="bank-account-label-suggestions"
                     className="control-input"
                     placeholder="To Account Label (optional)"
-                    value={transferToBankLabel}
-                    onChange={e => setTransferToBankLabel(e.target.value)}
+                    value={transferToChannelLabel}
+                    onChange={e => setTransferToChannelLabel(e.target.value)}
                     disabled={!canOperateValue || isSavingTransfer}
                   />
-                  <datalist id="bank-account-label-suggestions">
-                    {bankAccountLabelSuggestions.map(label => (
+                  <datalist id="channel-label-suggestions">
+                    {channelLabelSuggestions.map(label => (
                       <option key={label} value={label} />
                     ))}
                   </datalist>
@@ -1682,7 +1682,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
                 <div className="flex justify-end gap-2">
                   <button
                     type="button"
-                    onClick={() => setIsTransferringToBank(false)}
+                    onClick={() => setIsTransferringToChannel(false)}
                     disabled={isSavingTransfer}
                     className="action-btn-tertiary px-3 py-1.5 text-xs"
                   >
@@ -2258,7 +2258,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
                           {settlingEntryId !== l.id && (
                             <button
                               type="button"
-                              onClick={() => { setSettlingEntryId(l.id); setSettleAccountBase('bank_account'); setSettleAccountLabel(''); }}
+                              onClick={() => { setSettlingEntryId(l.id); setSettleAccountBase('reserve_account'); setSettleAccountLabel(''); }}
                               className="action-btn-tertiary px-2.5 py-1 text-xs text-emerald-700 dark:text-emerald-400"
                             >
                               Settle Entry
@@ -2429,7 +2429,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
                                 <>
                                   <button
                                     type="button"
-                                    onClick={() => { setSettlingEntryId(l.id); setSettleAccountBase('bank_account'); setSettleAccountLabel(''); }}
+                                    onClick={() => { setSettlingEntryId(l.id); setSettleAccountBase('reserve_account'); setSettleAccountLabel(''); }}
                                     className="action-btn-tertiary px-2 py-1 text-[11px] mr-1.5 text-emerald-700 dark:text-emerald-400"
                                   >
                                     Settle Entry

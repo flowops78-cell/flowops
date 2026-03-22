@@ -135,6 +135,27 @@ create table if not exists entries (
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────
+-- MEMBERS
+-- ─────────────────────────────────────────────────────────────────────────────
+create table if not exists members (
+  id          uuid primary key default uuid_generate_v4(),
+  org_id      uuid not null,
+  user_id     uuid references auth.users(id) on delete set null,
+  member_id   text, -- custom human-readable ID
+  name        text not null,
+  role        app_role not null default 'viewer',
+
+  incentive_type text not null default 'hourly' check (incentive_type in ('hourly', 'monthly', 'none')),
+  service_rate numeric(12, 2),
+  retainer_rate numeric(12, 2),
+  status      text not null default 'active' check (status in ('active', 'completed', 'archived')),
+  tags        text[],
+  created_at  timestamptz not null default now(),
+  updated_at  timestamptz not null default now(),
+  unique(org_id, member_id) -- custom IDs must be unique within an org
+);
+
+-- ─────────────────────────────────────────────────────────────────────────────
 -- ACTIVITY_LOGS (session records)
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists activity_logs (
@@ -294,26 +315,7 @@ create table if not exists operator_activities (
   created_at        timestamptz not null default now()
 );
 
--- ─────────────────────────────────────────────────────────────────────────────
--- MEMBERS
--- ─────────────────────────────────────────────────────────────────────────────
-create table if not exists members (
-  id          uuid primary key default uuid_generate_v4(),
-  org_id      uuid not null,
-  user_id     uuid references auth.users(id) on delete set null,
-  member_id   text, -- custom human-readable ID
-  name        text not null,
-  role        app_role not null default 'viewer',
 
-  incentive_type text not null default 'hourly' check (incentive_type in ('hourly', 'monthly', 'none')),
-  service_rate numeric(12, 2),
-  retainer_rate numeric(12, 2),
-  status      text not null default 'active' check (status in ('active', 'completed', 'archived')),
-  tags        text[],
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now(),
-  unique(org_id, member_id) -- custom IDs must be unique within an org
-);
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- EXPENSES
@@ -421,21 +423,24 @@ alter table audit_events enable row level security;
 -- ─────────────────────────────────────────────────────────────────────────────
 create or replace function get_my_role()
 returns app_role
-language sql stable
+language sql stable security definer
+set search_path = public
 as $$
   select role from user_roles where user_id = auth.uid() limit 1;
 $$;
 
 create or replace function get_my_org_id()
 returns uuid
-language sql stable
+language sql stable security definer
+set search_path = public
 as $$
   select org_id from profiles where id = auth.uid() limit 1;
 $$;
 
 create or replace function get_my_meta_org_id()
 returns uuid
-language sql stable
+language sql stable security definer
+set search_path = public
 as $$
   select meta_org_id from profiles where id = auth.uid() limit 1;
 $$;

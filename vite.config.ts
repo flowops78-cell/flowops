@@ -104,7 +104,7 @@ export default defineConfig({
             return 'core-utils';
           }
 
-          return 'partner';
+          return 'vendor';
         },
       },
     },

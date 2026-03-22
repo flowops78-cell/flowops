@@ -19,7 +19,6 @@ const PartnerNetwork = lazy(() => import('./pages/PartnerNetwork'));
 const ActivityMonitor = lazy(() => import('./pages/ActivityMonitor'));
 const WorkspaceDetail = lazy(() => import('./pages/WorkspaceDetail'));
 const UnitDetail = lazy(() => import('./pages/UnitDetail'));
-const Distribution = lazy(() => import('./pages/Distribution'));
 const Team = lazy(() => import('./pages/Team'));
 const Reserve = lazy(() => import('./pages/Reserve'));
 const Settings = lazy(() => import('./pages/Settings'));
@@ -54,8 +53,8 @@ function AppRoutes() {
           <Route path="/contacts" element={canAccessAdminUi ? <PartnerNetwork /> : <Navigate to="/activity" replace />} />
           <Route path="/team" element={<Team />} />
           <Route path="/settings" element={canAccessAdminUi ? <Settings /> : <Navigate to="/activity" replace />} />
-          <Route path="/distribution" element={canAccessAdminUi ? <Distribution /> : <Navigate to="/activity" replace />} />
-          <Route path="/leaderboard" element={<Navigate to="/distribution" replace />} />
+          <Route path="/distribution" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/leaderboard" element={<Navigate to="/dashboard" replace />} />
           <Route path="/units" element={canAccessAdminUi ? <ActivityMonitor /> : <Navigate to="/activity" replace />} />
           <Route path="/units/:id" element={canAccessAdminUi ? <UnitDetail /> : <Navigate to="/activity" replace />} />
           <Route path="/accounting" element={<Navigate to={canAccessAdminUi ? '/reserve' : '/activity'} replace />} />

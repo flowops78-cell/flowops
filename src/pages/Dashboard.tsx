@@ -107,7 +107,7 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
       {!embedded && (
         <div className="section-card p-5 lg:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div>
-            <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100 mb-1">{tx('Operations Brief')}</h2>
+            <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100 mb-1">{tx('Operations Dashboard')}</h2>
             <p className="text-stone-500 dark:text-stone-400 text-sm">Operational snapshot and flow-based activity metrics.</p>
           </div>
           <div className="flex flex-col items-start lg:items-end gap-3">
@@ -218,8 +218,8 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
           />
           <StatCard
             label={`Avg Entry ${getMetricLabel('flow')}`}
-            value={totalWorkspaces ? formatCompactValue(totalEntryFlow / totalWorkspaces) : '$0.00'}
-            fullValue={totalWorkspaces ? formatValue(totalEntryFlow / totalWorkspaces) : '$0.00'}
+            value={totalWorkspaces ? formatCompactValue(totalEntryFlow / totalWorkspaces) : '0 units'}
+            fullValue={totalWorkspaces ? formatValue(totalEntryFlow / totalWorkspaces) : '0 units'}
             icon={<Award className="text-[var(--accent)]" />}
             numericValue={totalWorkspaces ? (totalEntryFlow / totalWorkspaces) : 0}
             className="sm:col-span-2 lg:col-span-1"

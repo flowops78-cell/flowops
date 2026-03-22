@@ -30,8 +30,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     {
       label: '',
       items: [
-        { to: '/distribution', icon: <BarChart3 size={18} />, label: 'Distribution', hint: 'Operational overview and value distribution' },
-        { to: '/activity', icon: <History size={18} />, label: 'Activitys', hint: 'Activity records and participant overview' },
+        { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Brief', hint: 'Operational overview and key metrics' },
+        { to: '/activity', icon: <History size={18} />, label: 'Activities', hint: 'Activity records and participant overview' },
         { to: '/reserve', icon: <Landmark size={18} />, label: 'Reserve', hint: 'Reserve tracking and settings overview' },
         { to: '/team', icon: <Users size={18} />, label: 'Team', hint: 'Team management and operator coverage' },
         { to: '/settings', icon: <Settings size={18} />, label: 'Config', hint: 'System preferences and access control' },
