@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { supabase, isSupabaseConfigured, getSupabase } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getSupabase, SUPABASE_ANON_KEY } from '../lib/supabase';
 import { Unit, Workspace, Entry, Member, ActivityLog, Expense, Adjustment, AdjustmentRequest, ChannelEntry, Partner, PartnerEntry, SystemEvent, OperatorLog, TransferAccount, UnitAccountEntry, OutputRequest } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { APP_MIN_DATE, isDateOnOrAfter, isValidIsoDate } from '../lib/utils';
@@ -2874,8 +2874,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!accessToken) return;
 
       const { data, error } = await supabase.functions.invoke('manage-meta-org-admins', {
-        body: { action: 'list-org-contexts' },
-        headers: { Authorization: `Bearer ${accessToken}` }
+        body: {
+          action: 'list-org-contexts',
+          access_token: accessToken,
+        },
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          apikey: SUPABASE_ANON_KEY,
+        }
       });
 
       if (!error && data?.managed_org_ids) {
@@ -2902,8 +2908,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!accessToken) throw new Error('Authentication session expired.');
 
     const { data, error: functionError } = await supabase.functions.invoke('manage-meta-org-admins', {
-      body: { action: 'switch-org-context', org_id: orgId },
-      headers: { Authorization: `Bearer ${accessToken}` }
+      body: {
+        action: 'switch-org-context',
+        org_id: orgId,
+        access_token: accessToken,
+      },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        apikey: SUPABASE_ANON_KEY,
+      }
     });
 
     if (functionError) throw new Error(functionError.message || 'Failed to switch organization cluster.');
