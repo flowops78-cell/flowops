@@ -348,6 +348,23 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return value.trim();
   };
 
+  const getFreshAccessToken = async () => {
+    if (!supabase) return null;
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    let accessToken = sessionData.session?.access_token ?? null;
+
+    if (!accessToken) {
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+      if (refreshError) {
+        throw new Error(`Authentication session expired: ${refreshError.message}`);
+      }
+      accessToken = refreshData.session?.access_token ?? null;
+    }
+
+    return accessToken;
+  };
+
   const FREEFORM_AUDIT_DETAIL_MAX_LENGTH = 120;
 
   const minimizeFreeformText = (value: string, maxLength: number) => {
@@ -2870,8 +2887,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchAvailableOrgs = async () => {
     if (role !== 'admin' || isDemoMode || !supabase) return;
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const accessToken = sessionData.session?.access_token;
+      const accessToken = await getFreshAccessToken();
       if (!accessToken) return;
 
       const { data, error } = await supabase.functions.invoke('manage-meta-org-admins', {
@@ -2904,8 +2920,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (!supabase) return;
     
-    const { data: sessionData } = await supabase.auth.getSession();
-    const accessToken = sessionData.session?.access_token;
+    const accessToken = await getFreshAccessToken();
     if (!accessToken) throw new Error('Authentication session expired.');
 
     const { data, error: functionError } = await supabase.functions.invoke('manage-meta-org-admins', {
@@ -2938,8 +2953,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (!supabase) return;
 
-    const { data: sessionData } = await supabase.auth.getSession();
-    const accessToken = sessionData.session?.access_token;
+    const accessToken = await getFreshAccessToken();
     if (!accessToken) throw new Error('Authentication session expired.');
 
     const { data, error: functionError } = await supabase.functions.invoke('manage-meta-org-admins', {
