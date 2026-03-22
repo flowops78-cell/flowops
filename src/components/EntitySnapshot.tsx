@@ -37,8 +37,8 @@ export default function EntitySnapshot({ entity, type, onClose, onUpdateTags, wo
     onUpdateTags(entity.id, updatedTags);
   };
 
-  const getMemberIncentiveLabel = (member: Member) => {
-    const incentiveType = member.incentive_type ?? 'hourly';
+  const getMemberArrangementLabel = (member: Member) => {
+    const incentiveType = member.arrangement_type ?? 'hourly';
     if (incentiveType === 'monthly') {
       return typeof member.retainer_rate === 'number' ? `${formatValue(member.retainer_rate)}/mo` : 'Periodic';
     }
@@ -105,7 +105,7 @@ export default function EntitySnapshot({ entity, type, onClose, onUpdateTags, wo
               <div className="bg-stone-50 dark:bg-stone-800 p-3 rounded-xl">
                 <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Rate</p>
                 <p className="text-lg font-mono font-medium text-stone-900 dark:text-stone-100">
-                  {getMemberIncentiveLabel(entity as Member)}
+                  {getMemberArrangementLabel(entity as Member)}
                 </p>
               </div>
               <div className="bg-stone-50 dark:bg-stone-800 p-3 rounded-xl">

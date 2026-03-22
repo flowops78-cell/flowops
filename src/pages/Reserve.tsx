@@ -618,7 +618,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
   const CHANNEL_CATEGORY_CHOICES = [
     { value: 'reserve_account', label: 'Channel' },
     { value: 'value', label: 'Value' },
-    { value: 'crypto', label: 'Crypto' },
+    { value: 'asset', label: 'Asset' },
     { value: 'other', label: 'Other' },
     { value: '__custom__', label: '+ New channel label…' },
   ];
@@ -1298,7 +1298,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
                     />
                     <input
                       className="control-input"
-                      placeholder="Channel label (e.g. Wise, Revolut, Internal Transfer)"
+                      placeholder="Channel label (e.g. Alpha, Beta, Internal Transfer)"
                       value={acctCategory}
                       onChange={e => setAcctCategory(e.target.value)}
                       disabled={isSavingAccount}
@@ -1558,7 +1558,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
                   {transMethodBase === '__custom__' && (
                     <input
                       className="control-input"
-                      placeholder="Channel label (e.g. Wise, Revolut, Internal Transfer)"
+                      placeholder="Channel label (e.g. Alpha, Beta, Internal Transfer)"
                       value={transMethodCustom}
                       onChange={e => setTransMethodCustom(e.target.value)}
                       disabled={!canOperateValue || isSavingEntry}

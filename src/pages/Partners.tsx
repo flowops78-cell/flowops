@@ -86,13 +86,13 @@ export default function PartnersPage({ embedded = false }: { embedded?: boolean 
   const [role, setRole] = useState<'channel' | 'partner' | 'hybrid'>('channel');
   const [contactMethod, setContactMethod] = useState<'none' | 'internal' | 'email' | 'telegram' | 'signal' | 'whatsapp'>('none');
   const [contactValue, setContactValue] = useState('');
-  const [newPartnerIncentiveRate, setNewPartnerIncentiveRate] = useState('0');
+  const [newPartnerArrangementRate, setNewPartnerArrangementRate] = useState('0');
   const [newSystemAllocationPercent, setNewSystemAllocationPercent] = useState('0');
 
   // Entry Form
   const [transType, setTransType] = useState<'input' | 'alignment' | 'output' | 'adjustment'>('input');
   const [transAmount, setTransAmount] = useState('');
-  const [editPartnerIncentiveRate, setEditPartnerIncentiveRate] = useState('0');
+  const [editPartnerArrangementRate, setEditPartnerArrangementRate] = useState('0');
   const [editSystemAllocationPercent, setEditSystemAllocationPercent] = useState('0');
   const [alignmentStartDate, setAlignmentStartDate] = useState('');
   const [alignmentEndDate, setAlignmentEndDate] = useState('');
@@ -111,7 +111,7 @@ export default function PartnersPage({ embedded = false }: { embedded?: boolean 
         role: role as any,
         contact_method: contactMethod,
         contact_value: contactValue.trim() || undefined,
-        partner_incentive_rate: parseNonNegativeNumber(newPartnerIncentiveRate),
+        partner_arrangement_rate: parseNonNegativeNumber(newPartnerArrangementRate),
         system_allocation_percent: parseNonNegativeNumber(newSystemAllocationPercent),
         total: 0,
         status: 'active'
@@ -120,7 +120,7 @@ export default function PartnersPage({ embedded = false }: { embedded?: boolean 
       setName('');
       setContactMethod('none');
       setContactValue('');
-      setNewPartnerIncentiveRate('0');
+      setNewPartnerArrangementRate('0');
       setNewSystemAllocationPercent('0');
       notify({ type: 'success', message: 'Partner saved.' });
     } catch (error: any) {
@@ -332,14 +332,14 @@ export default function PartnersPage({ embedded = false }: { embedded?: boolean 
 
   useEffect(() => {
     if (!selectedPartner) {
-      setEditPartnerIncentiveRate('0');
+      setEditPartnerArrangementRate('0');
       setEditSystemAllocationPercent('0');
       return;
     }
 
-    setEditPartnerIncentiveRate((selectedPartner.partner_incentive_rate || 0).toString());
+    setEditPartnerArrangementRate((selectedPartner.partner_arrangement_rate || 0).toString());
     setEditSystemAllocationPercent((selectedPartner.system_allocation_percent || 0).toString());
-  }, [selectedPartnerId, selectedPartner?.partner_incentive_rate, selectedPartner?.system_allocation_percent]);
+  }, [selectedPartnerId, selectedPartner?.partner_arrangement_rate, selectedPartner?.system_allocation_percent]);
 
   useEffect(() => {
     if (!selectedPartner) {
@@ -435,7 +435,7 @@ export default function PartnersPage({ embedded = false }: { embedded?: boolean 
     const perWorkspaceAlignments = Array.from(alignmentMap.values())
       .map(item => {
         const partnerAdjustment = (selectedPartner.role === 'partner' || selectedPartner.role === 'hybrid')
-          ? item.activityUnits * (selectedPartner.partner_incentive_rate || 0)
+          ? item.activityUnits * (selectedPartner.partner_arrangement_rate || 0)
           : 0;
         const systemAdjustment = (selectedPartner.role === 'channel' || selectedPartner.role === 'hybrid')
           ? item.systemContribution * ((selectedPartner.system_allocation_percent || 0) / 100)
@@ -507,7 +507,7 @@ export default function PartnersPage({ embedded = false }: { embedded?: boolean 
     try {
       await updatePartner({
         ...selectedPartner,
-        partner_incentive_rate: parseNonNegativeNumber(editPartnerIncentiveRate),
+        partner_arrangement_rate: parseNonNegativeNumber(editPartnerArrangementRate),
         system_allocation_percent: parseNonNegativeNumber(editSystemAllocationPercent),
       });
       notify({ type: 'success', message: 'Partner settings saved.' });
@@ -802,8 +802,8 @@ export default function PartnersPage({ embedded = false }: { embedded?: boolean 
                   className="control-input"
                   type="number"
                   step="0.01"
-                  value={newPartnerIncentiveRate}
-                  onChange={e => setNewPartnerIncentiveRate(e.target.value)}
+                  value={newPartnerArrangementRate}
+                  onChange={e => setNewPartnerArrangementRate(e.target.value)}
                   disabled={!canManageValue}
                 />
               </div>
@@ -1008,8 +1008,8 @@ export default function PartnersPage({ embedded = false }: { embedded?: boolean 
                     className="control-input"
                     type="number"
                     step="0.01"
-                    value={editPartnerIncentiveRate}
-                    onChange={e => setEditPartnerIncentiveRate(e.target.value)}
+                    value={editPartnerArrangementRate}
+                    onChange={e => setEditPartnerArrangementRate(e.target.value)}
                   />
                 </div>
                 <div className="space-y-1.5">

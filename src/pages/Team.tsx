@@ -72,7 +72,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
   const [name, setName] = useState('');
   const [memberLoginId, setMemberLoginId] = useState('');
   const [role, setRole] = useState('viewer');
-  const [incentiveType, setIncentiveType] = useState<'hourly' | 'monthly' | 'none'>('hourly');
+  const [arrangementType, setArrangementType] = useState<'hourly' | 'monthly' | 'none'>('hourly');
   const [serviceRate, setServiceRate] = useState('');
   const [retainerRate, setRetainerRate] = useState('');
 
@@ -180,9 +180,9 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
         name: normalizedName,
         member_id: memberLoginId.trim() || undefined,
         role: role as any,
-        incentive_type: incentiveType,
-        service_rate: incentiveType === 'hourly' && Number.isFinite(parsedHourlyRate) ? parsedHourlyRate : undefined,
-        retainer_rate: incentiveType === 'monthly' && Number.isFinite(parsedMonthlyRate) ? parsedMonthlyRate : undefined,
+        arrangement_type: arrangementType,
+        service_rate: arrangementType === 'hourly' && Number.isFinite(parsedHourlyRate) ? parsedHourlyRate : undefined,
+        retainer_rate: arrangementType === 'monthly' && Number.isFinite(parsedMonthlyRate) ? parsedMonthlyRate : undefined,
         status: 'active'
       });
 
@@ -192,7 +192,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
       setIsAddingMember(false);
       setName('');
       setMemberLoginId('');
-      setIncentiveType('hourly');
+      setArrangementType('hourly');
       setServiceRate('');
       setRetainerRate('');
     } catch (error: any) {
@@ -288,8 +288,8 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  const formatIncentive = (teamMember: typeof members[number]) => {
-    const type = teamMember.incentive_type ?? 'hourly';
+  const formatArrangement = (teamMember: typeof members[number]) => {
+    const type = teamMember.arrangement_type ?? 'hourly';
     if (type === 'monthly') {
       return typeof teamMember.retainer_rate === 'number' ? `${formatValue(teamMember.retainer_rate)}/mo` : null;
     }
@@ -470,11 +470,11 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
               </select>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Incentive</label>
+              <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Arrangement</label>
               <select
                 className="control-input"
-                value={incentiveType}
-                onChange={e => setIncentiveType(e.target.value as any)}
+                value={arrangementType}
+                onChange={e => setArrangementType(e.target.value as any)}
               >
                 <option value="hourly">Hourly</option>
                 <option value="monthly">Monthly</option>

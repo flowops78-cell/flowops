@@ -47,7 +47,7 @@ export default function UnitDetail() {
 
   const [rangeStart, setRangeStart] = useState('');
   const [rangeEnd, setRangeEnd] = useState('');
-  const [incentivePercent, setIncentivePercent] = useState('5');
+  const [adjustmentPercent, setAdjustmentPercent] = useState('5');
   const [overrideTargetTotal, setOverrideTargetTotal] = useState('');
   const [isSnapshotOpen, setIsSnapshotOpen] = useState(false);
   const [isOverrideExpanded, setIsOverrideExpanded] = useState(false);
@@ -248,7 +248,7 @@ export default function UnitDetail() {
     notify({ type: 'success', message: `Request ${nextStatus}.` });
   };
 
-  const handleApplyServiceFeeIncentive = async () => {
+  const handleApplyServiceFeeAdjustment = async () => {
     if (!isAdmin) {
       notify({ type: 'error', message: 'Only admin can apply a service adjustment.' });
       return;
@@ -257,9 +257,9 @@ export default function UnitDetail() {
       notify({ type: 'error', message: 'Date range is invalid.' });
       return;
     }
-    const percent = Number(incentivePercent);
+    const percent = Number(adjustmentPercent);
     if (!Number.isFinite(percent) || percent <= 0) {
-      notify({ type: 'error', message: 'Incentive percent must be greater than 0.' });
+      notify({ type: 'error', message: 'Adjustment percent must be greater than 0.' });
       return;
     }
 
@@ -452,8 +452,8 @@ export default function UnitDetail() {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
             <input className="control-input" type="date" value={rangeStart} onChange={e => setRangeStart(e.target.value)} />
             <input className="control-input" type="date" value={rangeEnd} onChange={e => setRangeEnd(e.target.value)} />
-            <input className="control-input" type="number" min="0.01" step="0.01" placeholder="Percent" value={incentivePercent} onChange={e => setIncentivePercent(e.target.value)} />
-            <button type="button" onClick={() => { void handleApplyServiceFeeIncentive(); }} className="action-btn-secondary">
+            <input className="control-input" type="number" min="0.01" step="0.01" placeholder="Percent" value={adjustmentPercent} onChange={e => setAdjustmentPercent(e.target.value)} />
+            <button type="button" onClick={() => { void handleApplyServiceFeeAdjustment(); }} className="action-btn-secondary">
               Apply Service Adjustment
             </button>
           </div>

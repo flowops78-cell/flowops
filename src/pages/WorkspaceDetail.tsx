@@ -592,7 +592,7 @@ export default function WorkspaceDetail() {
 
     const endTime = new Date().toISOString();
     const durationHours = Math.max(0, (new Date(endTime).getTime() - new Date(activity.start_time).getTime()) / (1000 * 60 * 60));
-    const pay = member.incentive_type === 'hourly' && typeof member.service_rate === 'number'
+    const pay = member.arrangement_type === 'hourly' && typeof member.service_rate === 'number'
       ? durationHours * member.service_rate
       : undefined;
 

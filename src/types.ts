@@ -18,7 +18,7 @@ export interface Member {
   member_id?: string;
   user_id?: string;
   role: 'operator' | 'viewer' | 'admin';
-  incentive_type?: 'hourly' | 'monthly' | 'none';
+  arrangement_type?: 'hourly' | 'monthly' | 'none';
   service_rate?: number;
   retainer_rate?: number;
   status: 'active' | 'completed' | 'archived';
@@ -166,7 +166,7 @@ export interface Partner {
   role: 'partner' | 'channel' | 'hybrid';
   contact_method: PartnerContactMethod;
   contact_value?: string;
-  partner_incentive_rate?: number;
+  partner_arrangement_rate?: number;
   system_allocation_percent?: number;
   total: number; // Positive: Entity owes workspace. Negative: Workspace owes entity.
   status: 'active' | 'inactive';

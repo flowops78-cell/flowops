@@ -546,7 +546,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const resolvedRole = memberData.role === 'operator' || memberData.role === 'viewer' || memberData.role === 'admin'
       ? memberData.role
       : 'viewer';
-    const normalized = normalizeMemberIncentive({
+    const normalized = normalizeMemberArrangement({
       ...memberData,
       name: memberData.name?.trim() ?? '',
       member_id: memberData.member_id?.trim() || undefined,
@@ -563,7 +563,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const resolvedRole = memberData.role === 'operator' || memberData.role === 'viewer' || memberData.role === 'admin'
       ? memberData.role
       : 'viewer';
-    const normalized = normalizeMemberIncentive({
+    const normalized = normalizeMemberArrangement({
       ...memberData,
       name: memberData.name?.trim() ?? '',
       member_id: memberData.member_id?.trim() || undefined,
@@ -602,7 +602,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       name: partnerData.name?.trim() ?? '',
       contact_method: normalizedContactValue ? normalizedContactMethod : 'none',
       contact_value: normalizedContactValue,
-      partner_incentive_rate: typeof partnerData.partner_incentive_rate === 'number' && Number.isFinite(partnerData.partner_incentive_rate) ? Math.max(0, partnerData.partner_incentive_rate) : 0,
+      partner_arrangement_rate: typeof partnerData.partner_arrangement_rate === 'number' && Number.isFinite(partnerData.partner_arrangement_rate) ? Math.max(0, partnerData.partner_arrangement_rate) : 0,
       system_allocation_percent: typeof partnerData.system_allocation_percent === 'number' && Number.isFinite(partnerData.system_allocation_percent) ? Math.max(0, partnerData.system_allocation_percent) : 0,
       role: normalizedRole,
       status: partnerData.status ?? 'active',
@@ -627,7 +627,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         ? normalizePartnerContactMethod(partnerData.contact_method)
         : 'none',
       contact_value: normalizedContactValue,
-      partner_incentive_rate: typeof partnerData.partner_incentive_rate === 'number' && Number.isFinite(partnerData.partner_incentive_rate) ? Math.max(0, partnerData.partner_incentive_rate) : 0,
+      partner_arrangement_rate: typeof partnerData.partner_arrangement_rate === 'number' && Number.isFinite(partnerData.partner_arrangement_rate) ? Math.max(0, partnerData.partner_arrangement_rate) : 0,
       system_allocation_percent: typeof partnerData.system_allocation_percent === 'number' && Number.isFinite(partnerData.system_allocation_percent) ? Math.max(0, partnerData.system_allocation_percent) : 0,
       role: normalizedRole,
       status: partnerData.status ?? 'active',
@@ -668,8 +668,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const normalizeMemberIncentive = (member: Member): Member => {
-    const incentiveType = member.incentive_type ?? 'none';
+  const normalizeMemberArrangement = (member: Member): Member => {
+    const incentiveType = member.arrangement_type ?? 'none';
     const serviceRate = typeof member.service_rate === 'number' && Number.isFinite(member.service_rate)
       ? member.service_rate
       : undefined;
@@ -679,7 +679,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return {
       ...member,
-      incentive_type: incentiveType,
+      arrangement_type: incentiveType,
       service_rate: serviceRate,
       retainer_rate: retainerRate,
     };
@@ -1016,7 +1016,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUnits(resolveRows<Unit>(unitsRes, 'units'));
       setWorkspaces(normalizeWorkspacesLifecycle(resolveRows<Workspace>(workspacesRes, 'workspaces')));
       setEntries(resolveRows<Entry>(entriesRes, 'entries'));
-      setMembers(resolveRows<Member>(membersRes, 'members').map(normalizeMemberIncentive));
+      setMembers(resolveRows<Member>(membersRes, 'members').map(normalizeMemberArrangement));
       finalizeLoading();
 
       void (async () => {
@@ -1135,7 +1135,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUnits(unitsData);
       setWorkspaces(workspacesData);
       setEntries(entriesData);
-      setMembers(membersData.map(normalizeMemberIncentive));
+      setMembers(membersData.map(normalizeMemberArrangement));
       setActivityLogs(normalizeActivityLogs(activityLogsData, workspacesData));
       setExpenses(expensesData);
       setAdjustments(adjustmentsData);
