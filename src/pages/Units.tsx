@@ -254,106 +254,11 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
     setTags(tags.filter(tag => tag !== tagToRemove));
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
 
-    setImportStatus(null);
-    const Papa = (await import('papaparse')).default;
 
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (results) => {
-        const importedUnits: any[] = [];
-        results.data.forEach((row: any) => {
-          const importedName = row.Name || row.name || row.NAME || '';
-          importedUnits.push({
-            name: importedName,
-            tags: (row.Tags || row.tags || row.TAGS) ? (row.Tags || row.tags || row.TAGS).split(',').map((t: string) => t.trim()) : [],
-            referred_by_partner_id: row.PartnerID || row.partnerid || row.PARTNERID || undefined
-          });
-        });
-        
-        if (importedUnits.length > 0) {
-          await importUnits(importedUnits);
-          setImportStatus({ type: 'success', message: `Imported ${importedUnits.length} participants successfully.` });
-        } else {
-          setImportStatus({ type: 'error', message: 'No valid participant rows found in CSV.' });
-        }
-      },
-      error: (error) => {
-        console.error('CSV Parse Error:', error);
-        setImportStatus({ type: 'error', message: 'Failed to parse CSV file.' });
-      }
-    });
-    
-    // Reset file input
-    if (fileInputRef.current) fileInputRef.current.value = '';
-  };
 
-  const handleExportUnitsCSV = async () => {
-    const Papa = (await import('papaparse')).default;
-    const csv = Papa.unparse(units.map(p => ({
-      Name: p.name,
-      Total: p.total || 0,
-      Tags: p.tags?.join(', ') || '',
-      PartnerID: p.referred_by_partner_id || ''
-    })));
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `units_export_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
 
-  const handleDownloadUnitsTemplate = async () => {
-    const Papa = (await import('papaparse')).default;
-    const headers = ['Name', 'Tags', 'PartnerID'];
-    const csv = Papa.unparse([headers.reduce((acc, h) => ({ ...acc, [h]: '' }), {})]);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', 'units_template.csv');
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
 
-  const handleExportQuickViewEntrysCSV = async () => {
-    if (!activeProfileUnit) return;
-
-    const Papa = (await import('papaparse')).default;
-    const csv = Papa.unparse(
-      quickViewEntrys.map(entry => ({
-        Date: entry.date || '',
-        Activity: entry.location,
-        Status: entry.isActive ? 'Active' : 'Closed',
-        Inflow: entry.inflow,
-        Outflow: entry.outflow,
-        Net: entry.net,
-      })),
-    );
-
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    const safeName = getUnitDisplayName(activeProfileUnit.name).replace(/[^a-z0-9]+/gi, '_').replace(/^_+|_+$/g, '').toLowerCase();
-    link.setAttribute('href', url);
-    link.setAttribute('download', `unit_entrys_${safeName || 'unit'}_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
 
   const handleTransferBetweenUnits = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -476,9 +381,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
   const positiveDeltaUnits = units.filter(p => (unitStats.get(p.id)?.net || 0) > 0).length;
   const unitDataMenuItems = [
     { key: 'add-unit-profile', label: getActionText('addUnit'), onClick: () => setIsAdding(true) },
-    { key: 'export-units', label: 'Export CSV', onClick: () => { void handleExportUnitsCSV(); } },
-    { key: 'template-units', label: 'Download Template', onClick: () => { void handleDownloadUnitsTemplate(); } },
-    { key: 'import-units', label: 'Import CSV', onClick: () => fileInputRef.current?.click() },
+
     {
       key: 'transfer-totals',
       label: 'Transfer Totals',
@@ -556,13 +459,6 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
           )}
           <div className="flex gap-2 flex-wrap">
             <DataActionMenu items={unitDataMenuItems} />
-            <input
-              type="file"
-              ref={fileInputRef}
-              className="hidden"
-              accept=".csv"
-              onChange={handleFileUpload}
-            />
           </div>
         </div>
       </div>
@@ -1082,14 +978,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
                 <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">{quickViewEntrys.length} entries</p>
               </div>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => { void handleExportQuickViewEntrysCSV(); }}
-                  className="action-btn-secondary text-xs px-2.5 py-1"
-                >
-                  <Download size={12} />
-                  Export CSV
-                </button>
+
                 <button
                   type="button"
                   onClick={() => {

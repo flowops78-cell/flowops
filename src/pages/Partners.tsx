@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useData } from '../context/DataContext';
-import { UserPlus, Plus, DollarSign, ArrowUpRight, ArrowDownLeft, Briefcase, Search, Filter, Download, Trash2 } from 'lucide-react';
+import { UserPlus, Plus, Circle, ArrowUpRight, ArrowDownLeft, Handshake, Search, Filter, Download, Trash2 } from 'lucide-react';
 import { formatValue, formatDate } from '../lib/utils';
 import { cn } from '../lib/utils';
 import Papa from 'papaparse';
@@ -10,27 +10,14 @@ import { useAppRole } from '../context/AppRoleContext';
 import { useNotification } from '../context/NotificationContext';
 import { useLabels } from '../lib/labels';
 
-const PARTNER_CONTACT_METHOD_LABELS = {
-  none: 'No contact',
-  internal: 'Internal reference',
-  email: 'Email',
-  telegram: 'Telegram',
-  signal: 'Signal',
-  whatsapp: 'WhatsApp',
-} as const;
+
 
 const getPartnerDisplayName = (name?: string | null) => {
   const trimmed = name?.trim();
   return trimmed && trimmed.length > 0 ? trimmed : 'Unnamed Partner';
 };
 
-const getPartnerContactDisplay = (contactMethod?: string | null, contactValue?: string | null) => {
-  const normalizedMethod = typeof contactMethod === 'string' ? contactMethod : 'none';
-  const trimmedValue = contactValue?.trim();
-  if (!trimmedValue) return PARTNER_CONTACT_METHOD_LABELS.none;
-  const methodLabel = PARTNER_CONTACT_METHOD_LABELS[normalizedMethod as keyof typeof PARTNER_CONTACT_METHOD_LABELS] ?? 'Contact';
-  return `${methodLabel}: ${trimmedValue}`;
-};
+
 
 const getPartnerRoleLabel = (role?: string | null) => {
   switch (role) {
@@ -84,8 +71,7 @@ export default function PartnersPage({ embedded = false }: { embedded?: boolean 
   // New Partner Form
   const [name, setName] = useState('');
   const [role, setRole] = useState<'channel' | 'partner' | 'hybrid'>('channel');
-  const [contactMethod, setContactMethod] = useState<'none' | 'internal' | 'email' | 'telegram' | 'signal' | 'whatsapp'>('none');
-  const [contactValue, setContactValue] = useState('');
+
   const [newPartnerArrangementRate, setNewPartnerArrangementRate] = useState('0');
   const [newSystemAllocationPercent, setNewSystemAllocationPercent] = useState('0');
 
@@ -109,8 +95,6 @@ export default function PartnersPage({ embedded = false }: { embedded?: boolean 
       await addPartner({
         name,
         role: role as any,
-        contact_method: contactMethod,
-        contact_value: contactValue.trim() || undefined,
         partner_arrangement_rate: parseNonNegativeNumber(newPartnerArrangementRate),
         system_allocation_percent: parseNonNegativeNumber(newSystemAllocationPercent),
         total: 0,
@@ -118,8 +102,6 @@ export default function PartnersPage({ embedded = false }: { embedded?: boolean 
       });
       setIsAdding(false);
       setName('');
-      setContactMethod('none');
-      setContactValue('');
       setNewPartnerArrangementRate('0');
       setNewSystemAllocationPercent('0');
       notify({ type: 'success', message: 'Partner saved.' });
@@ -542,78 +524,7 @@ export default function PartnersPage({ embedded = false }: { embedded?: boolean 
     }
   };
 
-  const handleExportPartners = () => {
-    const csv = Papa.unparse(partners.map(a => ({
-      Name: a.name,
-      Role: a.role,
-      ContactMethod: a.contact_method,
-      ContactValue: a.contact_value || '',
-      Total: a.total,
-      Status: a.status
-    })));
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `partners_export_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
 
-  const handleExportEntrys = () => {
-    if (!selectedPartnerId) return;
-    const partner = partners.find(a => a.id === selectedPartnerId);
-    const csv = Papa.unparse(selectedEntrys.map(t => ({
-      Date: formatDate(t.date),
-      Type: t.type,
-      Amount: t.amount
-    })));
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${partner?.name || 'partner'}_entrys_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleExportActiveEntrys = () => {
-    if (!selectedPartnerId) return;
-    const partner = partners.find(a => a.id === selectedPartnerId);
-    const csv = Papa.unparse(filteredActiveSelectedEntrys.map(t => ({
-      Date: formatDate(t.date),
-      Type: t.type,
-      Amount: t.amount,
-    })));
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${partner?.name || 'partner'}_entrys_active_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  const handleExportArchivedEntrys = () => {
-    if (!selectedPartnerId) return;
-    const partner = partners.find(a => a.id === selectedPartnerId);
-    const csv = Papa.unparse(filteredArchivedSelectedEntrys.map(t => ({
-      Date: formatDate(t.date),
-      Type: t.type,
-      Amount: t.amount,
-    })));
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${partner?.name || 'partner'}_entrys_archived_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
 
   const handleArchiveEntrysByDateRange = () => {
     if (!canManageValue || !selectedPartnerId) return;
@@ -702,13 +613,7 @@ export default function PartnersPage({ embedded = false }: { embedded?: boolean 
               </span>
             </div>
             <div className="flex gap-2">
-              <button
-                onClick={handleExportPartners}
-                className="action-btn-secondary"
-              >
-                <Download size={16} />
-                Export CSV
-              </button>
+
               <button
                 onClick={() => setIsAdding(true)}
                 disabled={!canManageValue}
@@ -722,13 +627,7 @@ export default function PartnersPage({ embedded = false }: { embedded?: boolean 
         </div>
       ) : (
         <div className="flex justify-end gap-2">
-          <button
-            onClick={handleExportPartners}
-            className="action-btn-secondary"
-          >
-            <Download size={16} />
-            Export CSV
-          </button>
+
           <button
             onClick={() => setIsAdding(true)}
             disabled={!canManageValue}
@@ -765,29 +664,7 @@ export default function PartnersPage({ embedded = false }: { embedded?: boolean 
               </select>
               <p className="text-[11px] text-stone-500 dark:text-stone-400">Defines how this partner participates in entries.</p>
             </div>
-            <select
-              className="control-input"
-              value={contactMethod}
-              onChange={e => setContactMethod(e.target.value as 'none' | 'internal' | 'email' | 'telegram' | 'signal' | 'whatsapp')}
-              disabled={!canManageValue}
-            >
-              <option value="none">No contact</option>
-              <option value="internal">Internal reference</option>
-              <option value="email">Email</option>
-              <option value="telegram">Telegram</option>
-              <option value="signal">Signal</option>
-              <option value="whatsapp">WhatsApp</option>
-            </select>
-            <input 
-              className="control-input" 
-              placeholder="Contact handle or reference" 
-              value={contactValue} 
-              onChange={e => setContactValue(e.target.value)} 
-              disabled={!canManageValue || contactMethod === 'none'}
-            />
-            <div className="md:col-span-2 lg:col-span-1 border border-dashed border-stone-200 dark:border-stone-700 rounded-md flex items-center justify-center bg-stone-50/50 dark:bg-stone-800/30">
-              <span className="text-[11px] text-stone-400 dark:text-stone-500 uppercase tracking-wider">Structured contact only</span>
-            </div>
+
           </div>
 
           <div className="rounded-lg border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800/50 p-4 mb-4 space-y-3">
@@ -864,7 +741,7 @@ export default function PartnersPage({ embedded = false }: { embedded?: boolean 
                     <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400 capitalize">
                       {getPartnerRoleLabel(partner.role)}
                     </span>
-                    <span className="text-xs text-stone-400">{getPartnerContactDisplay(partner.contact_method, partner.contact_value)}</span>
+
                   </div>
                   <div className="text-xs text-stone-400 mt-1">
                     {units.filter(p => p.referred_by_partner_id === partner.id).length} Linked Units
@@ -1144,9 +1021,7 @@ export default function PartnersPage({ embedded = false }: { embedded?: boolean 
                     disabled={!canManageValue}
                     required
                   />
-                  <button type="button" onClick={handleExportEntrys} className="action-btn-secondary text-sm">Export All</button>
-                  <button type="button" onClick={handleExportActiveEntrys} className="action-btn-secondary text-sm">Export Active</button>
-                  <button type="button" onClick={handleExportArchivedEntrys} className="action-btn-secondary text-sm">Export Hidden</button>
+
                   <button type="submit" disabled={!canManageValue} className="action-btn-primary text-sm disabled:opacity-50">
                     Log Entry
                   </button>

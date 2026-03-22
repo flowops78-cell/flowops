@@ -11,7 +11,7 @@ export const METRIC_LABELS = {
 	participants: 'Units',
 	activitys: 'Activities',
 	activity: 'Activity',
-	reserve: 'Reserve',
+	reserve: 'Channels',
 	flow: 'Flow'
 } as const;
 

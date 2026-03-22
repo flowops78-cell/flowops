@@ -1,7 +1,7 @@
 import React, { lazy, Suspense, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { cn, formatCompactNumber, formatCompactValue, formatValue } from '../lib/utils';
-import { Users, DollarSign, Award, Activity, Clock, TrendingUp, TrendingDown, AlertCircle, Calendar } from 'lucide-react';
+import { Users, Circle, Award, Activity, Clock, TrendingUp, TrendingDown, AlertCircle, Calendar } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import LoadingLine from '../components/LoadingLine';
@@ -172,7 +172,7 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
             label={`Current ${getMetricLabel('reserve')}`}
             value={formatCompactValue(currentReserve_base)}
             fullValue={formatValue(currentReserve_base)}
-            icon={<DollarSign className="text-[var(--accent)]" />}
+            icon={<Circle className="text-[var(--accent)]" />}
             numericValue={currentReserve_base}
             onClick={() => navigate('/reserve')}
           />

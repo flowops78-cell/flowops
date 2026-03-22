@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Plus, Tag, User, DollarSign, Clock, Briefcase, Award, Activity } from 'lucide-react';
+import { X, Plus, Tag, User, Circle, Clock, Award, Activity } from 'lucide-react';
 import { Unit, Member } from '../types';
 import { formatValue, formatDate } from '../lib/utils';
 import { cn } from '../lib/utils';
@@ -69,7 +69,7 @@ export default function EntitySnapshot({ entity, type, onClose, onUpdateTags, wo
       <div className="pt-12 pb-6 px-6 text-center flex-1 overflow-y-auto">
         <h2 className="text-xl font-bold text-stone-900 dark:text-stone-100">{entity.name}</h2>
         <p className="text-sm text-stone-500 dark:text-stone-400 capitalize flex items-center justify-center gap-1 mt-1">
-          {type === 'unit' ? <User size={12} /> : <Briefcase size={12} />}
+          {type === 'unit' ? <User size={12} /> : <Circle size={12} />}
           {type === 'unit' ? 'User' : (entity as Member).role}
         </p>
 

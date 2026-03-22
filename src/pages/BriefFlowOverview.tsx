@@ -3,7 +3,7 @@ import ContextBreadcrumbs from '../components/ContextBreadcrumbs';
 import LoadingLine from '../components/LoadingLine';
 import { useLabels } from '../lib/labels';
 
-const Reserve = lazy(() => import('./Reserve'));
+const Channels = lazy(() => import('./Channels'));
 
 export default function BriefFlowOverview() {
   const { tx } = useLabels();
@@ -24,7 +24,7 @@ export default function BriefFlowOverview() {
           </div>
         }
       >
-        <Reserve embedded />
+        <Channels embedded />
       </Suspense>
     </div>
   );

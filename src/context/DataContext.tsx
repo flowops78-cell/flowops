@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { supabase, isSupabaseConfigured, getSupabase } from '../lib/supabase';
-import { Unit, Workspace, Entry, Member, ActivityLog, Expense, Adjustment, AdjustmentRequest, ReserveEntry, Partner, PartnerContactMethod, PartnerEntry, SystemEvent, OperatorLog, TransferAccount, UnitAccountEntry, OutputRequest } from '../types';
+import { Unit, Workspace, Entry, Member, ActivityLog, Expense, Adjustment, AdjustmentRequest, ReserveEntry, Partner, PartnerEntry, SystemEvent, OperatorLog, TransferAccount, UnitAccountEntry, OutputRequest } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { APP_MIN_DATE, isDateOnOrAfter, isValidIsoDate } from '../lib/utils';
 import { DbRole, appRoleToDbRole, dbRoleToAppRole } from '../lib/roles';
@@ -583,28 +583,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return 'channel';
   };
 
-  const normalizePartnerContactMethod = (value: unknown): PartnerContactMethod => {
-    const rawMethod = String(value ?? '').trim().toLowerCase();
-    if (rawMethod === 'internal') return 'internal';
-    if (rawMethod === 'email') return 'email';
-    if (rawMethod === 'telegram') return 'telegram';
-    if (rawMethod === 'signal') return 'signal';
-    if (rawMethod === 'whatsapp') return 'whatsapp';
-    return 'none';
-  };
+
 
   const sanitizePartnerInput = (partnerData: Omit<Partner, 'id' | 'created_at'>) => {
-    const normalizedRole = normalizePartnerRole(partnerData.role);
-    const normalizedContactMethod = normalizePartnerContactMethod(partnerData.contact_method);
-    const normalizedContactValue = partnerData.contact_value?.trim() || undefined;
     return {
       ...partnerData,
       name: partnerData.name?.trim() ?? '',
-      contact_method: normalizedContactValue ? normalizedContactMethod : 'none',
-      contact_value: normalizedContactValue,
       partner_arrangement_rate: typeof partnerData.partner_arrangement_rate === 'number' && Number.isFinite(partnerData.partner_arrangement_rate) ? Math.max(0, partnerData.partner_arrangement_rate) : 0,
       system_allocation_percent: typeof partnerData.system_allocation_percent === 'number' && Number.isFinite(partnerData.system_allocation_percent) ? Math.max(0, partnerData.system_allocation_percent) : 0,
-      role: normalizedRole,
+      role: normalizePartnerRole(partnerData.role),
       status: partnerData.status ?? 'active',
     };
   };
@@ -612,24 +599,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const sanitizePartnerRecord = (
     partnerData: Partner | (Partial<Partner> & { id: string; name: string; role: Partner['role']; status: Partner['status']; total: number; contact?: string | null })
   ): Partner => {
-    const partnerWithLegacyContact = partnerData as Partner & { contact?: string | null };
-    const { contact: legacyContact, ...partnerRecord } = partnerWithLegacyContact;
-    const normalizedRole = normalizePartnerRole(partnerData.role);
-    const normalizedContactValue = (
-      partnerData.contact_value
-      ?? legacyContact
-    )?.trim() || undefined;
-
     return {
-      ...partnerRecord,
+      ...partnerData,
       name: partnerData.name?.trim() ?? '',
-      contact_method: normalizedContactValue
-        ? normalizePartnerContactMethod(partnerData.contact_method)
-        : 'none',
-      contact_value: normalizedContactValue,
       partner_arrangement_rate: typeof partnerData.partner_arrangement_rate === 'number' && Number.isFinite(partnerData.partner_arrangement_rate) ? Math.max(0, partnerData.partner_arrangement_rate) : 0,
       system_allocation_percent: typeof partnerData.system_allocation_percent === 'number' && Number.isFinite(partnerData.system_allocation_percent) ? Math.max(0, partnerData.system_allocation_percent) : 0,
-      role: normalizedRole,
+      role: normalizePartnerRole(partnerData.role),
       status: partnerData.status ?? 'active',
     } as Partner;
   };

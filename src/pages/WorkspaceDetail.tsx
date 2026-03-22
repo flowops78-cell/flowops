@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
-import { ArrowLeft, Save, Trash2, Edit2, AlertCircle, Share2, User, DollarSign, Clock, Users, LayoutGrid, List, Timer, Activity, Award, Play, Square } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, Edit2, AlertCircle, Share2, User, Circle, Clock, Users, LayoutGrid, List, Timer, Activity, Award, Play, Square } from 'lucide-react';
 import { formatValue, formatDate } from '../lib/utils';
 import { Entry } from '../types';
 import { cn } from '../lib/utils';
@@ -661,32 +661,7 @@ export default function WorkspaceDetail() {
     window.open(`https://t.me/share/url?url=&text=${text}`, '_blank');
   };
 
-  const handleExportCSV = () => {
-    const exportData = workspaceEntries.map(entry => {
-      const unit = units.find(p => p.id === entry.unit_id);
-      return {
-        Participant: unit?.name || 'Unknown',
-        Inflow: entry.input_amount,
-        Outflow: entry.output_amount,
-        Net: entry.net,
-        ActivityCount: entry.activity_count ?? '',
-        CreatedAt: entry.created_at ? new Date(entry.created_at).toLocaleTimeString() : '',
-        LeftAt: entry.left_at ? new Date(entry.left_at).toLocaleTimeString() : '',
-        Position: entry.position_id || '',
-        ActivityOrder: entry.sort_order || ''
-      };
-    });
 
-    const csv = Papa.unparse(exportData);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `workspace_entries_${workspace.date}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
 
   const openTotalModal = (entry: Entry) => {
     if (!canManageEntries) {
@@ -1154,7 +1129,7 @@ export default function WorkspaceDetail() {
               label={isCopied ? 'Exported' : 'Export'}
               className="text-xs"
               items={[
-                { key: 'export-csv', label: 'Export CSV', onClick: handleExportCSV },
+
                 { key: 'copy-report', label: 'Copy Report', onClick: copyReport },
                 { key: 'share-whatsapp', label: 'Share via WhatsApp', onClick: shareToWhatsapp },
                 { key: 'share-telegram', label: 'Share via Telegram', onClick: shareToTelegram },
@@ -1781,7 +1756,7 @@ function EntriesRow({ entry, unit, updateEntry, deleteEntry, isHighIntensity, on
               className="action-pill action-pill-neutral action-pill-sm"
               title="Update Total"
             >
-              <DollarSign size={14} />
+              <Circle size={14} />
               <span className="hidden sm:inline">Total</span>
             </button>
             {!entry.left_at && (

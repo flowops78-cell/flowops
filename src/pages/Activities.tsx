@@ -125,34 +125,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
     }
   };
 
-  const handleExportCSV = async () => {
-    const Papa = (await import('papaparse')).default;
-    const exportData = entries.map(entry => {
-      const workspace = workspaces.find(g => g.id === entry.workspace_id);
-      const unit = units.find(p => p.id === entry.unit_id);
-      return {
-        ActivityDate: workspace ? formatDate(workspace.date) : 'Unknown',
-        Channel: workspace?.channel || 'Unknown',
-        WorkspaceCode: workspace?.org_code || '',
-        ActivityType: tx(workspace?.activity_category || ''),
-        Participant: unit?.name || 'Unknown',
-        Inflow: entry.input_amount,
-        Outflow: entry.output_amount,
-        ValueDelta: entry.net,
-      };
-    });
 
-    const csv = Papa.unparse(exportData);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `activities_export_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
 
   const handleDeleteWorkspace = async (event: React.MouseEvent, workspaceId: string) => {
     event.preventDefault();
@@ -274,96 +247,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
     );
   };
 
-  const handleImportWorkspacesFile = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
 
-    const Papa = (await import('papaparse')).default;
-
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (results) => {
-        const rows = (results.data as Record<string, string | number | null | undefined>[])
-          .filter(row => row && Object.values(row).some(value => String(value ?? '').trim().length > 0));
-
-        let createdCount = 0;
-        let failedCount = 0;
-
-        const parseStartTime = (workspaceDate: string, row: Record<string, string | number | null | undefined>) => {
-          const startRaw = String(
-            row.StartTime ?? row.start_time ?? row.Start ?? row.start ?? row.STARTTIME ?? row.START ?? '',
-          ).trim();
-          if (!startRaw) return undefined;
-
-          if (startRaw.includes('T')) {
-            const isoDate = new Date(startRaw);
-            return Number.isNaN(isoDate.getTime()) ? undefined : isoDate.toISOString();
-          }
-
-          const combined = new Date(`${workspaceDate}T${startRaw.length === 5 ? `${startRaw}:00` : startRaw}`);
-          return Number.isNaN(combined.getTime()) ? undefined : combined.toISOString();
-        };
-
-        for (const row of rows) {
-          const dateRaw = String(row.ActivityDate ?? row.activity_date ?? row.activitydate ?? row.Date ?? row.date ?? row.DATE ?? '').trim();
-          if (!dateRaw) {
-            failedCount += 1;
-            continue;
-          }
-
-          const normalizedDate = (() => {
-            if (/^\d{4}-\d{2}-\d{2}$/.test(dateRaw)) return dateRaw;
-            const parsed = new Date(dateRaw);
-            if (Number.isNaN(parsed.getTime())) return '';
-            return parsed.toISOString().split('T')[0];
-          })();
-
-          if (!normalizedDate) {
-            failedCount += 1;
-            continue;
-          }
-
-          const statusRaw = String(row.Status ?? row.status ?? row.STATUS ?? 'active').trim().toLowerCase();
-          const normalizedStatus: 'active' | 'completed' | 'archived' =
-            statusRaw === 'archived'
-              ? 'archived'
-              : (statusRaw === 'completed' || statusRaw === 'closed' || statusRaw === 'aligned')
-                ? 'completed'
-                : 'active';
-
-          try {
-            await addWorkspace({
-              date: normalizedDate,
-              start_time: parseStartTime(normalizedDate, row),
-              status: normalizedStatus,
-              activity_category: String(row.ActivityType ?? row.activity_category ?? row.activitytype ?? row.ActivityCategory ?? row.activity_category ?? row.ACTIVITYCATEGORY ?? 'Standard').trim() || 'Standard',
-              channel: String(row.Channel ?? row.channel ?? row.PLATFORM ?? 'Channel 1').trim() || 'Channel 1',
-              org_code: String(row.WorkspaceCode ?? row.workspace_code ?? row.workspacecode ?? row.OrgCode ?? row.org_code ?? row.orgcode ?? '').trim() || undefined,
-            });
-            createdCount += 1;
-          } catch {
-            failedCount += 1;
-          }
-        }
-
-        if (createdCount > 0 && failedCount === 0) {
-          notify({ type: 'success', message: `Imported ${createdCount} activities from CSV.` });
-        } else if (createdCount > 0) {
-          notify({ type: 'info', message: `Imported ${createdCount} activities. Skipped ${failedCount} invalid row${failedCount > 1 ? 's' : ''}.` });
-        } else {
-          notify({ type: 'error', message: 'No valid activities were imported from CSV.' });
-        }
-      },
-      error: () => {
-        notify({ type: 'error', message: 'Failed to parse activities CSV file.' });
-      },
-    });
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
 
   return (
     <div className="page-shell">
@@ -383,20 +267,6 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               </span>
             </div>
             <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-[minmax(0,1fr)_auto]">
-              <DataActionMenu
-                className="flex-1 sm:flex-none"
-                items={[
-                  { key: 'export', label: tx('Export CSV'), onClick: () => { void handleExportCSV(); } },
-                  { key: 'import', label: tx('Import CSV'), onClick: () => fileInputRef.current?.click() },
-                ]}
-              />
-              <input
-                type="file"
-                ref={fileInputRef}
-                className="hidden"
-                accept=".csv"
-                onChange={handleImportWorkspacesFile}
-              />
               <button
                 onClick={() => {
                   if (!canOperateLog) {
@@ -417,19 +287,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
         </div>
       ) : (
         <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-[minmax(0,1fr)_auto] sm:justify-end">
-          <DataActionMenu
-            items={[
-              { key: 'export', label: tx('Export CSV'), onClick: () => { void handleExportCSV(); } },
-              { key: 'import', label: tx('Import CSV'), onClick: () => fileInputRef.current?.click() },
-            ]}
-          />
-          <input
-            type="file"
-            ref={fileInputRef}
-            className="hidden"
-            accept=".csv"
-            onChange={handleImportWorkspacesFile}
-          />
+
           <button
             onClick={() => {
               if (!canOperateLog) {

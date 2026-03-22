@@ -20,7 +20,7 @@ const ActivityMonitor = lazy(() => import('./pages/ActivityMonitor'));
 const WorkspaceDetail = lazy(() => import('./pages/WorkspaceDetail'));
 const UnitDetail = lazy(() => import('./pages/UnitDetail'));
 const Team = lazy(() => import('./pages/Team'));
-const Reserve = lazy(() => import('./pages/Reserve'));
+const Channels = lazy(() => import('./pages/Channels'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Auth = lazy(() => import('./pages/Auth'));
 
@@ -48,7 +48,7 @@ function AppRoutes() {
           <Route path="/dashboard" element={canAccessAdminUi ? <Dashboard /> : <Navigate to="/activity" replace />} />
           <Route path="/activity" element={<ActivityMonitor />} />
           <Route path="/activity/:id" element={<WorkspaceDetail />} />
-          <Route path="/reserve" element={canAccessAdminUi ? <Reserve /> : <Navigate to="/activity" replace />} />
+          <Route path="/reserve" element={canAccessAdminUi ? <Channels /> : <Navigate to="/activity" replace />} />
           <Route path="/brief-flow" element={canAccessAdminUi ? <BriefFlowOverview /> : <Navigate to="/activity" replace />} />
           <Route path="/contacts" element={canAccessAdminUi ? <PartnerNetwork /> : <Navigate to="/activity" replace />} />
           <Route path="/team" element={<Team />} />

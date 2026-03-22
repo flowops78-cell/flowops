@@ -158,14 +158,12 @@ export interface OutputRequest {
   created_at?: string;
 }
 
-export type PartnerContactMethod = 'none' | 'internal' | 'email' | 'telegram' | 'signal' | 'whatsapp';
+
 
 export interface Partner {
   id: string;
   name: string;
   role: 'partner' | 'channel' | 'hybrid';
-  contact_method: PartnerContactMethod;
-  contact_value?: string;
   partner_arrangement_rate?: number;
   system_allocation_percent?: number;
   total: number; // Positive: Entity owes workspace. Negative: Workspace owes entity.

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { DollarSign, Users, Activity, TrendingUp, TrendingDown, Bell, BellOff, AlertCircle } from 'lucide-react';
+import { Circle, Users, Activity, TrendingUp, TrendingDown, Bell, BellOff, AlertCircle } from 'lucide-react';
 import { formatValue } from '../lib/utils';
 import { Entry, Unit, Workspace } from '../types';
 import ContextPanel from './ContextPanel';
@@ -213,7 +213,7 @@ export default function TelemetrySidebar({ workspace, entries, units, isOpen, on
       key: 'total-active-value',
       label: 'Active Value',
       value: formatValue(activeValue),
-      icon: <DollarSign size={12} />,
+      icon: <Circle size={12} />,
       valueClass: 'text-emerald-600 dark:text-emerald-400',
     },
     {

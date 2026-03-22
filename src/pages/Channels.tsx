@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useData } from '../context/DataContext';
-import { Plus, ArrowUpRight, ArrowDownLeft, Briefcase, SquareStack, AlertCircle, Trash2, Pencil } from 'lucide-react';
+import { Plus, ArrowUpRight, ArrowDownLeft, Circle, SquareStack, AlertCircle, Trash2, Pencil } from 'lucide-react';
 import { formatCompactValue, formatValue, formatDate } from '../lib/utils';
 import ReserveCharts from '../components/charts/ReserveCharts';
 import { cn } from '../lib/utils';
@@ -16,7 +16,7 @@ import { useLabels } from '../lib/labels';
 import { useLocation, useNavigate } from 'react-router-dom';
 import EmptyState from '../components/EmptyState';
 
-export default function Reserve({ embedded = false }: { embedded?: boolean }) {
+export default function Channels({ embedded = false }: { embedded?: boolean }) {
   const { reserveEntries, adjustments, adjustmentRequests, units, addReserveEntry, deleteReserveEntry, addAdjustment, deleteAdjustment, resolveAdjustmentRequest, transferReserveValues, recordSystemEvent, transferAccounts, addTransferAccount, updateTransferAccount, deleteTransferAccount, loading, loadingProgress } = useData();
   const location = useLocation();
   const navigate = useNavigate();
@@ -1132,53 +1132,9 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
     notify({ type: 'success', message: `Restored ${count} deferred entries.` });
   };
 
-  const downloadCsv = (rows: Array<Record<string, string | number>>, fileName: string) => {
-    const csv = Papa.unparse(rows);
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${fileName}_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
 
-  const handleExportActiveReserveCsv = () => {
-    downloadCsv(filteredActiveReserveEntrys.map(entry => ({
-      Date: formatDate(entry.date),
-      Type: entry.type,
-      Method: formatMethodLabel(entry.method),
-      Amount: entry.amount,
-    })), 'reserve_active');
-  };
 
-  const handleExportArchivedReserveCsv = () => {
-    downloadCsv(filteredArchivedReserveEntrys.map(entry => ({
-      Date: formatDate(entry.date),
-      Type: entry.type,
-      Method: formatMethodLabel(entry.method),
-      Amount: entry.amount,
-    })), 'reserve_archived');
-  };
 
-  const handleExportActiveAdjustmentsCsv = () => {
-    downloadCsv(filteredActiveAdjustments.map(adjustment => ({
-      Date: formatDate(adjustment.date),
-      Unit: units.find(unit => unit.id === adjustment.unit_id)?.name || 'Unknown',
-      Type: adjustment.type,
-      Amount: adjustment.amount,
-    })), 'deferred_alignments_active');
-  };
-
-  const handleExportArchivedAdjustmentsCsv = () => {
-    downloadCsv(filteredArchivedAdjustments.map(adjustment => ({
-      Date: formatDate(adjustment.date),
-      Unit: units.find(unit => unit.id === adjustment.unit_id)?.name || 'Unknown',
-      Type: adjustment.type,
-      Amount: adjustment.amount,
-    })), 'deferred_alignments_archived');
-  };
 
   if (loading || loadingProgress > 0) {
     return (
@@ -1186,7 +1142,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
         <div className="section-card p-4">
           <LoadingLine
             progress={Math.max(8, Math.min(100, loadingProgress || 8))}
-            label="Loading reserve..."
+            label="Loading channels..."
           />
         </div>
       </div>
@@ -1203,7 +1159,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
       {!embedded ? (
         <section className="section-card p-5 lg:p-6 flex flex-col lg:flex-row lg:items-end justify-between gap-5">
           <div>
-            <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Reserve</h2>
+            <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Channels</h2>
             <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">Values management and channel activity.</p>
           </div>
           <div className="flex flex-col items-start lg:items-end gap-1">
@@ -1290,7 +1246,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                     <input
                       className="control-input"
-                      placeholder="Account name (e.g. Main reserve)"
+                      placeholder="Account name (e.g. Main channel account)"
                       value={acctName}
                       onChange={e => setAcctName(e.target.value)}
                       disabled={isSavingAccount}
@@ -1408,8 +1364,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
                 <DataActionMenu
                   className="text-xs"
                   items={[
-                    { key: 'export-active-reserve', label: 'Export Active CSV', onClick: handleExportActiveReserveCsv },
-                    { key: 'export-archived-reserve', label: 'Export Archived CSV', onClick: handleExportArchivedReserveCsv },
+
                     {
                       key: 'transfer-internal-channel',
                       label: 'Internal -> Channel',
@@ -2002,8 +1957,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
                 <DataActionMenu
                   className="text-xs"
                   items={[
-                    { key: 'export-active-adjustments', label: 'Export Active CSV', onClick: handleExportActiveAdjustmentsCsv },
-                    { key: 'export-archived-adjustments', label: 'Export Archived CSV', onClick: handleExportArchivedAdjustmentsCsv },
+
                     {
                       key: 'new-adjustment-transfer',
                       label: 'Add Live Entry',
@@ -2138,7 +2092,7 @@ export default function Reserve({ embedded = false }: { embedded?: boolean }) {
                     disabled={!canOperateValue || isSavingAdjustment}
                     required
                   >
-                    <option value="">Select Contact...</option>
+                    <option value="">Select Partner...</option>
                     {units.map(p => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}

@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { LayoutDashboard, Users, History, Settings, Landmark } from 'lucide-react';
+import { LayoutDashboard, Users, UserCog, History, Settings, Landmark, Briefcase, Handshake, Circle } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useAppRole } from '../context/AppRoleContext';
 
@@ -14,9 +14,9 @@ interface NavItem {
 const navItems: NavItem[] = [
   { to: "/dashboard", icon: <LayoutDashboard size={20} />, label: "Brief", hint: "Operational dashboard and value summary" },
   { to: "/activity", icon: <History size={20} />, label: "Activities", hint: "Activity records and participant overview" },
-  { to: "/reserve", icon: <Landmark size={20} />, label: "Channels", hint: "Reserve tracking and settings overview" },
-  { to: "/contacts", icon: <Users size={20} />, label: "Entities", hint: "Partner network and relationship tracking" },
-  { to: "/team", icon: <Users size={20} />, label: "Team", hint: "Team management and activity block operations" },
+  { to: "/reserve", icon: <Circle size={20} />, label: "Channels", hint: "Reserve tracking and settings overview" },
+  { to: "/contacts", icon: <Handshake size={20} />, label: "Partners", hint: "Partner network and relationship tracking" },
+  { to: "/team", icon: <UserCog size={20} />, label: "Team", hint: "Team management and activity block operations" },
   { to: "/settings", icon: <Settings size={20} />, label: "Settings", hint: "System settings and data actions" },
 ];
 
