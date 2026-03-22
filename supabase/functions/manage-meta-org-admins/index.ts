@@ -100,7 +100,7 @@ const RATE_LIMIT: RateLimitConfig = { maxRequests: 30, windowMs: 60_000 };
 type DbRole = 'admin' | 'operator' | 'viewer';
 
 type ManageMetaOrgAdminsPayload = {
-  action: 'list' | 'set-role' | 'delete-user' | 'list-org-contexts' | 'switch-org-context';
+  action: 'list' | 'set-role' | 'delete-user' | 'list-org-contexts' | 'switch-org-context' | 'provision-org-context';
   org_id?: string;
   target_user_id?: string;
   target_role?: DbRole;
@@ -174,6 +174,10 @@ const upsertOrgMetaMapping = async (adminClient: ReturnType<typeof createClient>
     throw new Error(`Unable to persist org/meta mapping: ${error.message}`);
   }
 };
+
+const dedupeOrgIds = (values: Array<string | null | undefined>) => Array.from(new Set(
+  values.filter((value): value is string => typeof value === 'string' && value.length > 0),
+));
 
 const loadClusterContext = async (
   adminClient: ReturnType<typeof createClient>,
@@ -301,20 +305,37 @@ Deno.serve(async (request) => {
 
   if (payload.action === 'list-org-contexts') {
     if (clusterContext.metaOrgId === null) {
-      const { data: orgRows, error: orgRowsError } = await adminClient
+      const { data: workspaceOrgRows, error: workspaceOrgRowsError } = await adminClient
         .from('workspaces')
         .select('org_id')
         .not('org_id', 'is', null);
 
-      if (orgRowsError) {
-        return json(400, { error: `Unable to load available orgs: ${orgRowsError.message}` }, origin);
+      if (workspaceOrgRowsError) {
+        return json(400, { error: `Unable to load workspace orgs: ${workspaceOrgRowsError.message}` }, origin);
       }
 
-      const orgs = Array.from(new Set(
-        (orgRows ?? [])
-          .map((row) => row.org_id)
-          .filter((value): value is string => typeof value === 'string' && value.length > 0),
-      ));
+      const { data: mappedOrgRows, error: mappedOrgRowsError } = await adminClient
+        .from('org_meta_mapping')
+        .select('org_id');
+
+      if (mappedOrgRowsError) {
+        return json(400, { error: `Unable to load mapped orgs: ${mappedOrgRowsError.message}` }, origin);
+      }
+
+      const { data: profileOrgRows, error: profileOrgRowsError } = await adminClient
+        .from('profiles')
+        .select('org_id')
+        .not('org_id', 'is', null);
+
+      if (profileOrgRowsError) {
+        return json(400, { error: `Unable to load profile orgs: ${profileOrgRowsError.message}` }, origin);
+      }
+
+      const orgs = dedupeOrgIds([
+        ...(workspaceOrgRows ?? []).map((row) => row.org_id),
+        ...(mappedOrgRows ?? []).map((row) => row.org_id),
+        ...(profileOrgRows ?? []).map((row) => row.org_id),
+      ]);
 
       return json(200, {
         ok: true,
@@ -350,6 +371,36 @@ Deno.serve(async (request) => {
       ok: true,
       org_id: requestedOrgId,
       meta_org_id: clusterContext.metaOrgId,
+    }, origin);
+  }
+
+  if (payload.action === 'provision-org-context') {
+    const requestedOrgId = normalizeOrgId(payload.org_id) ?? crypto.randomUUID();
+    const provisionedMetaOrgId = crypto.randomUUID();
+
+    const { error: profileUpdateError } = await adminClient
+      .from('profiles')
+      .update({
+        org_id: requestedOrgId,
+        meta_org_id: provisionedMetaOrgId,
+      })
+      .eq('id', callerUserId);
+
+    if (profileUpdateError) {
+      return json(400, { error: `Unable to provision organization context: ${profileUpdateError.message}` }, origin);
+    }
+
+    try {
+      await upsertOrgMetaMapping(adminClient, requestedOrgId, provisionedMetaOrgId);
+    } catch (error) {
+      return json(400, { error: error instanceof Error ? error.message : 'Unable to persist fresh workspace mapping.' }, origin);
+    }
+
+    return json(200, {
+      ok: true,
+      org_id: requestedOrgId,
+      meta_org_id: provisionedMetaOrgId,
+      managed_org_ids: [requestedOrgId],
     }, origin);
   }
 

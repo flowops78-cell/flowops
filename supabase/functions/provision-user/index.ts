@@ -45,6 +45,52 @@ const json = (status: number, body: Record<string, unknown>, origin: string | nu
     headers: { ...resolveCorsHeaders(origin), 'Content-Type': 'application/json' },
   });
 
+const resolveTargetMetaOrgId = async (
+  adminClient: ReturnType<typeof createClient>,
+  targetOrgId: string,
+  callerMetaOrgId: string | null,
+  isGlobalAdmin: boolean,
+  resolvedRole: DbRole,
+) => {
+  if (callerMetaOrgId) return callerMetaOrgId;
+
+  const { data: existingOrgMapping, error: mappingError } = await adminClient
+    .from('org_meta_mapping')
+    .select('meta_org_id')
+    .eq('org_id', targetOrgId)
+    .maybeSingle();
+
+  if (mappingError) {
+    throw new Error(`Unable to resolve org mapping: ${mappingError.message}`);
+  }
+
+  if (existingOrgMapping?.meta_org_id) {
+    return existingOrgMapping.meta_org_id;
+  }
+
+  const { data: existingProfileInOrg, error: profileError } = await adminClient
+    .from('profiles')
+    .select('meta_org_id')
+    .eq('org_id', targetOrgId)
+    .not('meta_org_id', 'is', null)
+    .limit(1)
+    .maybeSingle();
+
+  if (profileError) {
+    throw new Error(`Unable to resolve profile cluster: ${profileError.message}`);
+  }
+
+  if (existingProfileInOrg?.meta_org_id) {
+    return existingProfileInOrg.meta_org_id;
+  }
+
+  if (isGlobalAdmin && resolvedRole === 'admin') {
+    return crypto.randomUUID();
+  }
+
+  return null;
+};
+
 const parseBearerToken = (headerValue: string | null): string | null => {
   if (!headerValue) return null;
   const lower = headerValue.toLowerCase();
@@ -167,38 +213,12 @@ Deno.serve(async (request) => {
   const resolvedLoginId = requestRow.login_id.toLowerCase().trim();
   const resolvedRole = normalizeRole(payload.approved_role ?? requestRow.requested_role);
   const targetOrgId = requestRow.org_id;
-  
-  // Hierarchical logic: Inheritance
-  let targetMetaOrgId = callerMetaId;
 
-  if (resolvedRole === 'admin') {
-    if (callerMetaId) {
-      targetMetaOrgId = callerMetaId;
-    } else {
-      const { data: existingOrgMapping } = await adminClient
-        .from('org_meta_mapping')
-        .select('meta_org_id')
-        .eq('org_id', requestRow.org_id)
-        .maybeSingle();
-
-      if (existingOrgMapping?.meta_org_id) {
-        targetMetaOrgId = existingOrgMapping.meta_org_id;
-      } else {
-        const { data: existingProfileInOrg } = await adminClient
-          .from('profiles')
-          .select('meta_org_id')
-          .eq('org_id', requestRow.org_id)
-          .not('meta_org_id', 'is', null)
-          .limit(1)
-          .maybeSingle();
-
-        if (existingProfileInOrg?.meta_org_id) {
-          targetMetaOrgId = existingProfileInOrg.meta_org_id;
-        } else if (isGlobalAdmin) {
-          targetMetaOrgId = crypto.randomUUID();
-        }
-      }
-    }
+  let targetMetaOrgId: string | null;
+  try {
+    targetMetaOrgId = await resolveTargetMetaOrgId(adminClient, targetOrgId, callerMetaId, isGlobalAdmin, resolvedRole);
+  } catch (error) {
+    return json(400, { error: error instanceof Error ? error.message : 'Unable to resolve target meta-org.' }, origin);
   }
 
   const payloadPassword = (payload.password ?? '').trim();

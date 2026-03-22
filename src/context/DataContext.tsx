@@ -91,6 +91,7 @@ interface DataContextType {
   addPartnerEntry: (entry: Omit<PartnerEntry, 'id' | 'created_at'>) => Promise<void>;
   deletePartnerEntry: (id: string) => Promise<void>;
   updateProfileOrgId: (orgId: string | null) => Promise<void>;
+  provisionProfileOrgContext: () => Promise<void>;
   managedOrgIds: string[];
   recordSystemEvent: (event: Omit<SystemEvent, 'id' | 'timestamp' | 'actor_role'>) => Promise<void>;
 
@@ -2926,6 +2927,42 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await fetchData();
   };
 
+  const provisionProfileOrgContext = async () => {
+    if (!canAccessAdminUi) throw new Error('Only admin accounts can provision workspace clusters.');
+    if (!user) throw new Error('You must be signed in to provision organization context.');
+
+    if (isDemoMode) {
+      setActiveOrgId(crypto.randomUUID());
+      return;
+    }
+
+    if (!supabase) return;
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const accessToken = sessionData.session?.access_token;
+    if (!accessToken) throw new Error('Authentication session expired.');
+
+    const { data, error: functionError } = await supabase.functions.invoke('manage-meta-org-admins', {
+      body: {
+        action: 'provision-org-context',
+        access_token: accessToken,
+      },
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        apikey: SUPABASE_ANON_KEY,
+      }
+    });
+
+    if (functionError) throw new Error(functionError.message || 'Failed to provision fresh workspace cluster.');
+
+    if (data?.managed_org_ids) {
+      setManagedOrgIds(data.managed_org_ids);
+    }
+
+    profilesUnavailableRef.current = false;
+    await fetchData();
+  };
+
   const contextValue: DataContextType = {
       units,
       workspaces,
@@ -2989,6 +3026,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       addPartnerEntry,
       deletePartnerEntry,
       updateProfileOrgId,
+      provisionProfileOrgContext,
       managedOrgIds,
       recordSystemEvent: appendSystemEvent,
       refreshData: fetchData

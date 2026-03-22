@@ -102,6 +102,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     recordSystemEvent,
     refreshData,
     updateProfileOrgId,
+    provisionProfileOrgContext,
     managedOrgIds,
   } = useData();
   const { role, canAccessAdminUi } = useAppRole();
@@ -665,9 +666,8 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               <div className="pt-2">
                 <button 
                   onClick={() => {
-                    const newId = crypto.randomUUID();
                     if (window.confirm('Provision and join a fresh workspace cluster?')) {
-                      void updateProfileOrgId(newId);
+                      void provisionProfileOrgContext();
                     }
                   }}
                   className="w-full interactive-3d bg-stone-900 dark:bg-emerald-600 text-white p-2.5 rounded-xl text-sm font-medium hover:bg-stone-800 dark:hover:bg-emerald-500 transition-colors shadow-sm"
