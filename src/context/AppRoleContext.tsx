@@ -60,8 +60,11 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [user?.id]);
 
   useEffect(() => {
-    // Demo overrides for local verification.
-    setRoleState('admin');
+    if (effectiveServerRole) {
+      setRoleState(effectiveServerRole);
+    } else {
+      setRoleState('viewer');
+    }
   }, [effectiveServerRole]);
 
   const setRole = (nextRole: AppRole) => {

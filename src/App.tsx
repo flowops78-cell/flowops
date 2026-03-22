@@ -102,11 +102,11 @@ function AppShell() {
         <Routes>
           <Route
             path="/auth"
-            element={<Navigate to="/" replace />}
+            element={(!isSupabaseConfigured || !user) ? <Auth /> : <Navigate to="/" replace />}
           />
           <Route
             path="/*"
-            element={<AppRoutes />}
+            element={(isSupabaseConfigured && !user) ? <Navigate to="/auth" replace /> : <AppRoutes />}
           />
         </Routes>
       </Suspense>

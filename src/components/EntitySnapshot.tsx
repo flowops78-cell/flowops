@@ -37,14 +37,6 @@ export default function EntitySnapshot({ entity, type, onClose, onUpdateTags, wo
     onUpdateTags(entity.id, updatedTags);
   };
 
-  const getMemberArrangementLabel = (member: Member) => {
-    const incentiveType = member.arrangement_type ?? 'hourly';
-    if (incentiveType === 'monthly') {
-      return typeof member.retainer_rate === 'number' ? `${formatValue(member.retainer_rate)}/mo` : 'Periodic';
-    }
-    if (incentiveType === 'none') return 'No fixed rate';
-    return typeof member.service_rate === 'number' ? `${formatValue(member.service_rate)}/hr` : 'Hourly';
-  };
 
   const Content = (
     <div className={cn(
@@ -102,12 +94,6 @@ export default function EntitySnapshot({ entity, type, onClose, onUpdateTags, wo
             </>
           ) : (
             <>
-              <div className="bg-stone-50 dark:bg-stone-800 p-3 rounded-xl">
-                <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Rate</p>
-                <p className="text-lg font-mono font-medium text-stone-900 dark:text-stone-100">
-                  {getMemberArrangementLabel(entity as Member)}
-                </p>
-              </div>
               <div className="bg-stone-50 dark:bg-stone-800 p-3 rounded-xl">
                 <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Status</p>
                 <p className={`text-sm font-medium mt-1 capitalize ${(entity as Member).status === 'active' ? 'text-emerald-600' : 'text-stone-500'}`}>

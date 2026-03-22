@@ -72,9 +72,6 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
   const [name, setName] = useState('');
   const [memberLoginId, setMemberLoginId] = useState('');
   const [role, setRole] = useState('viewer');
-  const [arrangementType, setArrangementType] = useState<'hourly' | 'monthly' | 'none'>('hourly');
-  const [serviceRate, setServiceRate] = useState('');
-  const [retainerRate, setRetainerRate] = useState('');
 
   const selectedMember = members.find(s => s.id === selectedMemberId);
 
@@ -163,9 +160,6 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
       setImportStatus({ type: 'error', message: 'Team member name is required.' });
       return;
     }
-    const parsedHourlyRate = parseFloat(serviceRate);
-    const parsedMonthlyRate = parseFloat(retainerRate);
-
     clearSaveMemberProgressTimers();
     setIsSavingMember(true);
     let progress = 8;
@@ -180,9 +174,6 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
         name: normalizedName,
         member_id: memberLoginId.trim() || undefined,
         role: role as any,
-        arrangement_type: arrangementType,
-        service_rate: arrangementType === 'hourly' && Number.isFinite(parsedHourlyRate) ? parsedHourlyRate : undefined,
-        retainer_rate: arrangementType === 'monthly' && Number.isFinite(parsedMonthlyRate) ? parsedMonthlyRate : undefined,
         status: 'active'
       });
 
@@ -192,9 +183,6 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
       setIsAddingMember(false);
       setName('');
       setMemberLoginId('');
-      setArrangementType('hourly');
-      setServiceRate('');
-      setRetainerRate('');
     } catch (error: any) {
       clearSaveMemberProgressTimers();
       setSaveMemberProgress(100);
@@ -288,14 +276,6 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  const formatArrangement = (teamMember: typeof members[number]) => {
-    const type = teamMember.arrangement_type ?? 'hourly';
-    if (type === 'monthly') {
-      return typeof teamMember.retainer_rate === 'number' ? `${formatValue(teamMember.retainer_rate)}/mo` : null;
-    }
-    if (type === 'none') return null;
-    return typeof teamMember.service_rate === 'number' ? `${formatValue(teamMember.service_rate)}/hr` : null;
-  };
 
   const handleUpdateTags = async (id: string, tags: string[]) => {
     const teamMember = members.find(s => s.id === id);
@@ -381,9 +361,6 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
                 <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
                   <span className="font-mono text-stone-900 dark:text-stone-100">{Array.from(activeMemberActivityByMemberId.values()).length}</span> active
                 </span>
-                <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
-                  <span className="font-mono text-stone-900 dark:text-stone-100">{totalWorkHours.toFixed(1)}h</span> total work time
-                </span>
               </div>
               <div className="flex gap-2 flex-wrap">
                 {rosterViewToggle}
@@ -437,7 +414,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
       
       {canAccessAdminUi && isAddingMember && (
         <form onSubmit={handleAddMember} className="section-card p-4 animate-in fade-in slide-in-from-top-4 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
             <div className="space-y-1 md:col-span-1">
               <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Name</label>
               <input
@@ -467,18 +444,6 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
                 <option value="operator">Operator</option>
                 <option value="viewer">Viewer</option>
                 <option value="admin">Admin</option>
-              </select>
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Arrangement</label>
-              <select
-                className="control-input"
-                value={arrangementType}
-                onChange={e => setArrangementType(e.target.value as any)}
-              >
-                <option value="hourly">Hourly</option>
-                <option value="monthly">Monthly</option>
-                <option value="none">None</option>
               </select>
             </div>
           </div>
