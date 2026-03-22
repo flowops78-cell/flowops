@@ -744,7 +744,7 @@ export default function PartnersPage({ embedded = false }: { embedded?: boolean 
 
                   </div>
                   <div className="text-xs text-stone-400 mt-1">
-                    {units.filter(p => p.referred_by_partner_id === partner.id).length} Linked Units
+                    {units.filter(p => p.referred_by_partner_id === partner.id).length} Linked Participants
                   </div>
                 </div>
                 <div className="text-right">

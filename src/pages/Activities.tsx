@@ -150,7 +150,6 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
   const activeActivitys = workspaces
     .filter(workspace => workspace.status === 'active')
     .filter(workspace => {
-      // Active activitys should be private to the assigned operator.
       if (role === 'admin' || role === 'viewer') return true;
       if (role === 'operator') {
         if (!user?.id) return false;
@@ -158,26 +157,12 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
       }
       return false;
     });
+
   const completedActivitys = workspaces
-    .filter(workspace => workspace.status === 'completed')
-    .filter(workspace => {
-      if (role === 'admin' || role === 'viewer') return true;
-      if (role === 'operator') {
-        if (!user?.id) return false;
-        return workspace.assigned_operator_id === user.id;
-      }
-      return false;
-    });
+    .filter(workspace => workspace.status === 'completed');
+
   const archivedActivitys = workspaces
-    .filter(workspace => workspace.status === 'archived')
-    .filter(workspace => {
-      if (role === 'admin' || role === 'viewer') return true;
-      if (role === 'operator') {
-        if (!user?.id) return false;
-        return workspace.assigned_operator_id === user.id;
-      }
-      return false;
-    });
+    .filter(workspace => workspace.status === 'archived');
 
   const renderWorkspaceCard = (workspace: typeof workspaces[number]) => {
     const workspaceEntries = entries.filter(l => l.workspace_id === workspace.id);

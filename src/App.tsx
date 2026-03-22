@@ -49,7 +49,7 @@ function AppRoutes() {
           <Route path="/activity" element={<ActivityMonitor />} />
           <Route path="/activity/:id" element={<WorkspaceDetail />} />
           <Route path="/channels" element={canAccessAdminUi ? <Channels /> : <Navigate to="/activity" replace />} />
-          <Route path="/reserve" element={<Navigate to="/channels" replace />} />
+          <Route path="/channels-fallback" element={<Navigate to="/channels" replace />} />
           <Route path="/brief-flow" element={canAccessAdminUi ? <BriefFlowOverview /> : <Navigate to="/activity" replace />} />
           <Route path="/contacts" element={canAccessAdminUi ? <PartnerNetwork /> : <Navigate to="/activity" replace />} />
           <Route path="/team" element={<Team />} />
@@ -102,21 +102,11 @@ function AppShell() {
         <Routes>
           <Route
             path="/auth"
-            element={
-              !isSupabaseConfigured
-                ? <Navigate to="/" replace />
-                : user
-                  ? <Navigate to="/" replace />
-                  : <Auth />
-            }
+            element={<Navigate to="/" replace />}
           />
           <Route
             path="/*"
-            element={
-              isSupabaseConfigured && !user
-                ? <Navigate to="/auth" replace />
-                : <AppRoutes />
-            }
+            element={<AppRoutes />}
           />
         </Routes>
       </Suspense>

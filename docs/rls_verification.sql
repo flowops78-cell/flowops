@@ -14,7 +14,7 @@ where table_schema = 'public'
     'activity_logs',
     'allocations',
     'adjustments',
-    'reserve_entries',
+    'channel_entries',
     'partners',
     'partner_entries',
     'unit_account_entries',
@@ -62,7 +62,7 @@ where schemaname = 'public'
 select t.relname as table_name, c.conname, pg_get_constraintdef(c.oid) as definition
 from pg_constraint c
 join pg_class t on t.oid = c.conrelid
-where t.relname in ('workspaces', 'adjustments', 'reserve_entries', 'partner_entries', 'unit_account_entries', 'adjustment_requests', 'output_requests', 'members')
+where t.relname in ('workspaces', 'adjustments', 'channel_entries', 'partner_entries', 'unit_account_entries', 'adjustment_requests', 'output_requests', 'members')
   and c.contype = 'c'
 order by t.relname, c.conname;
 
@@ -73,7 +73,7 @@ where table_schema = 'public'
   and (
     (table_name = 'workspaces' and column_name in (
       'org_id', 'activity_category', 'workspace_mode', 'assigned_operator_id', 'end_time',
-      'system_contribution', 'reserve_value', 'activity_frequency'
+      'system_contribution', 'channel_value', 'activity_frequency'
     ))
     or
     (table_name = 'units' and column_name in (
@@ -138,7 +138,7 @@ where specific_schema = 'public'
     'adjust_unit_balance',
     'adjust_partner_total',
     'log_audit_event',
-    'reserve_base_transfer'
+    'channel_base_transfer'
   )
 order by routine_name;
 
@@ -150,7 +150,7 @@ where specific_schema = 'public'
     'adjust_unit_balance',
     'adjust_partner_total',
     'log_audit_event',
-    'reserve_base_transfer'
+    'channel_base_transfer'
   )
 order by routine_name, grantee, privilege_type;
 
@@ -168,7 +168,7 @@ where n.nspname = 'public'
     'activity_logs',
     'allocations',
     'adjustments',
-    'reserve_entries',
+    'channel_entries',
     'partners',
     'partner_entries',
     'unit_account_entries',
@@ -240,7 +240,7 @@ where schemaname = 'public'
     'idx_activity_logs_org_id',
     'idx_allocations_org_id',
     'idx_adjustments_org_id',
-    'idx_reserve_entries_org_id',
+    'idx_channel_entries_org_id',
     'idx_partners_org_id',
     'idx_partner_entries_org_id',
     'idx_unit_account_entries_org_id',

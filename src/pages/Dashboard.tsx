@@ -12,7 +12,7 @@ import { useAppRole } from '../context/AppRoleContext';
 const DashboardCharts = lazy(() => import('../components/dashboard/DashboardCharts'));
 
 export default function Dashboard({ embedded = false }: { embedded?: boolean }) {
-  const { units, workspaces, entries, reserveEntries, adjustments } = useData();
+  const { units, workspaces, entries, channelEntries, adjustments } = useData();
   const { canAccessAdminUi } = useAppRole();
   const { theme } = useTheme();
   const navigate = useNavigate();
@@ -26,17 +26,17 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
   const totalWorkspaces = workspaces.length;
   const totalUnits = units.length;
   const totalEntryFlow = useMemo(() => entries.reduce((sum, entry) => sum + entry.input_amount, 0), [entries]);
-  const currentReserve_base = useMemo(
-    () => reserveEntries.reduce((sum, t) => sum + (t.type === 'increment' ? t.amount : -t.amount), 0),
-    [reserveEntries]
+  const currentChannelTotal = useMemo(
+    () => channelEntries.reduce((sum, entry) => sum + (entry.type === 'increment' ? entry.amount : -entry.amount), 0),
+    [channelEntries]
   );
   const totalInflow = useMemo(
-    () => reserveEntries.reduce((sum, entry) => sum + (entry.type === 'increment' ? entry.amount : 0), 0),
-    [reserveEntries],
+    () => channelEntries.reduce((sum, entry) => sum + (entry.type === 'increment' ? entry.amount : 0), 0),
+    [channelEntries],
   );
   const totalOutflow = useMemo(
-    () => reserveEntries.reduce((sum, entry) => sum + (entry.type === 'decrement' ? entry.amount : 0), 0),
-    [reserveEntries],
+    () => channelEntries.reduce((sum, entry) => sum + (entry.type === 'decrement' ? entry.amount : 0), 0),
+    [channelEntries],
   );
   const totalDeferredActive = useMemo(() => {
     const unitTotals: Record<string, number> = {};
@@ -169,11 +169,11 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
       <div className="section-card p-0 overflow-hidden">
         <div className="grid grid-cols-1 gap-px bg-stone-200/80 sm:grid-cols-2 lg:grid-cols-7 dark:bg-stone-800/80">
           <StatCard
-            label={`Current ${getMetricLabel('reserve')}`}
-            value={formatCompactValue(currentReserve_base)}
-            fullValue={formatValue(currentReserve_base)}
+            label={`Current ${getMetricLabel('channels')}`}
+            value={formatCompactValue(currentChannelTotal)}
+            fullValue={formatValue(currentChannelTotal)}
             icon={<Circle className="text-[var(--accent)]" />}
-            numericValue={currentReserve_base}
+            numericValue={currentChannelTotal}
             onClick={() => navigate('/channels')}
           />
           <StatCard

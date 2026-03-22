@@ -20,6 +20,7 @@ drop table if exists partners cascade;
 drop table if exists allocations cascade;
 drop table if exists transfer_accounts cascade;
 drop table if exists expenses cascade;
+drop table if exists channel_entries cascade;
 drop table if exists reserve_entries cascade;
 drop table if exists activity_logs cascade;
 drop table if exists entries cascade;
@@ -37,6 +38,8 @@ drop table if exists logs cascade;
 drop table if exists members cascade;
 
 drop function if exists get_my_role() cascade;
+drop function if exists channel_base_transfer(text, text, numeric, timestamptz, uuid) cascade;
+drop function if exists reserve_base_transfer(text, text, numeric, timestamptz, uuid) cascade;
 drop function if exists reserve_base_transfer(text, text, numeric, timestamptz, text, uuid) cascade;
 drop type if exists app_role;
 
@@ -93,7 +96,7 @@ create table if not exists workspaces (
   start_time           timestamptz,
   end_time             timestamptz,
   system_contribution numeric(12, 2),
-  reserve_value    numeric(12, 2),
+  channel_value    numeric(12, 2),
   activity_frequency    numeric(10, 2),
   date                 timestamptz not null default now(),
   created_at           timestamptz not null default now(),
@@ -175,9 +178,9 @@ create table if not exists activity_logs (
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- RESERVE ENTRIES
+-- CHANNEL ENTRIES
 -- ─────────────────────────────────────────────────────────────────────────────
-create table if not exists reserve_entries (
+create table if not exists channel_entries (
   id          uuid primary key default uuid_generate_v4(),
   org_id      uuid not null,
   type        text not null check (type in ('increment', 'adjustment', 'decrement')),
@@ -406,7 +409,7 @@ alter table entries enable row level security;
 alter table activity_logs enable row level security;
 alter table allocations enable row level security;
 alter table adjustments enable row level security;
-alter table reserve_entries enable row level security;
+alter table channel_entries enable row level security;
 alter table partners enable row level security;
 alter table partner_entries enable row level security;
 alter table unit_account_entries enable row level security;
@@ -553,7 +556,7 @@ begin
 end;
 $$;
 
-create or replace function reserve_base_transfer(
+create or replace function channel_base_transfer(
   p_from_method text,
   p_to_method text,
   p_amount numeric,
@@ -578,7 +581,7 @@ begin
   end if;
 
   if get_my_role() <> 'admin' then
-    raise exception 'Only admin can transfer reserve values.';
+    raise exception 'Only admin can transfer channel values.';
   end if;
 
   select org_id into v_org_id from profiles where id = auth.uid();
@@ -604,9 +607,15 @@ begin
     raise exception 'Transfer amount must be greater than zero.';
   end if;
 
-  select coalesce(sum(case when type = 'inflow' then amount else -amount end), 0)
+  select coalesce(sum(
+    case
+      when type = 'increment' then amount
+      when type = 'decrement' then -amount
+      else 0
+    end
+  ), 0)
     into v_source_total
-  from reserve_entries
+  from channel_entries
   where org_id = v_org_id
     and method = v_from_method;
 
@@ -614,7 +623,7 @@ begin
     raise exception 'Insufficient source total for transfer.';
   end if;
 
-  insert into reserve_entries (
+  insert into channel_entries (
     org_id,
     type,
     amount,
@@ -634,7 +643,7 @@ begin
     p_date
   );
 
-  insert into reserve_entries (
+  insert into channel_entries (
     org_id,
     type,
     amount,
@@ -661,14 +670,14 @@ $$;
 revoke all on function adjust_unit_balance(uuid, numeric) from public;
 revoke all on function adjust_partner_total(uuid, numeric) from public;
 revoke all on function log_audit_event(text, text, uuid, numeric, text, text, uuid) from public;
-revoke all on function reserve_base_transfer(text, text, numeric, timestamptz, uuid) from public;
+revoke all on function channel_base_transfer(text, text, numeric, timestamptz, uuid) from public;
 
 grant execute on function adjust_unit_balance(uuid, numeric) to service_role;
 grant execute on function adjust_partner_total(uuid, numeric) to service_role;
 grant execute on function log_audit_event(text, text, uuid, numeric, text, text, uuid) to authenticated;
 grant execute on function log_audit_event(text, text, uuid, numeric, text, text, uuid) to service_role;
-grant execute on function reserve_base_transfer(text, text, numeric, timestamptz, uuid) to authenticated;
-grant execute on function reserve_base_transfer(text, text, numeric, timestamptz, uuid) to service_role;
+grant execute on function channel_base_transfer(text, text, numeric, timestamptz, uuid) to authenticated;
+grant execute on function channel_base_transfer(text, text, numeric, timestamptz, uuid) to service_role;
 
 -- ─────────────────────────────────────────────────────────────────────────────
 -- RLS POLICIES (simplified & working)
@@ -761,12 +770,12 @@ create policy "activity_logs_write" on activity_logs
   using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()))
   with check ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
 
--- reserve_entries: org users can read; only admins and operators can write.
-create policy "reserve_entries_read" on reserve_entries
+-- channel_entries: org users can read; only admins and operators can write.
+create policy "channel_entries_read" on channel_entries
   for select
   using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or org_id = get_my_org_id());
 
-create policy "reserve_entries_write" on reserve_entries
+create policy "channel_entries_write" on channel_entries
   for all
   using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()))
   with check ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
@@ -943,7 +952,7 @@ create index idx_activity_logs_org_id on activity_logs(org_id);
 create index idx_activity_logs_workspace_id on activity_logs(workspace_id);
 create index idx_allocations_org_id on allocations(org_id);
 create index idx_adjustments_org_id on adjustments(org_id);
-create index idx_reserve_entries_org_id on reserve_entries(org_id);
+create index idx_channel_entries_org_id on channel_entries(org_id);
 create index idx_partners_org_id on partners(org_id);
 create index idx_partner_entries_org_id on partner_entries(org_id);
 create index idx_unit_account_entries_org_id on unit_account_entries(org_id);

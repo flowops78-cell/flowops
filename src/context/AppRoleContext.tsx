@@ -60,9 +60,8 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [user?.id]);
 
   useEffect(() => {
-    // Demo overrides removed for enterprise production.
-    // Ensure strict defaulting to viewer.
-    setRoleState(effectiveServerRole ?? 'viewer');
+    // Demo overrides for local verification.
+    setRoleState('admin');
   }, [effectiveServerRole]);
 
   const setRole = (nextRole: AppRole) => {

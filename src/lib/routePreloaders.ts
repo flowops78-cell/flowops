@@ -10,7 +10,7 @@ const routePreloaders: Record<string, () => Promise<unknown>> = {
     import('../pages/BriefFlowOverview'),
     import('../pages/Channels'),
   ]),
-  '/reserve': () => Promise.all([
+  '/channels-fallback': () => Promise.all([
     preloadRoute('/channels'),
   ]),
   '/contacts': () => Promise.all([

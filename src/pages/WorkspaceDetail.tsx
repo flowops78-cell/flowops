@@ -21,7 +21,7 @@ export default function WorkspaceDetail() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { workspaces, entries, units, members: members, activityLogs, loading, loadingProgress, addUnit, requestAdjustment, addEntry, addActivityLog, endActivityLog, updateEntry, deleteEntry, updateWorkspace, updateUnit, recordOutputRequest, transferAccounts, addReserveEntry } = useData();
+  const { workspaces, entries, units, members: members, activityLogs, loading, loadingProgress, addUnit, requestAdjustment, addEntry, addActivityLog, endActivityLog, updateEntry, deleteEntry, updateWorkspace, updateUnit, recordOutputRequest, transferAccounts, addChannelEntry } = useData();
   const { role, canOperateLog, canManageValue, canAlign } = useAppRole();
   const { notify } = useNotification();
   const { getActionText, tx } = useLabels();
@@ -80,7 +80,7 @@ export default function WorkspaceDetail() {
   // Workspace Operations State
   const [assignedOperator, setAssignedOperator] = useState(workspace?.assigned_operator_id || '');
   const [serviceFee, setServiceFee] = useState(workspace?.operational_contribution?.toString() || '');
-  const [reserveReserve, setReserveReserve] = useState(workspace?.reserve_value?.toString() || '');
+  const [channelChannel, setChannelChannel] = useState(workspace?.channel_value?.toString() || '');
   const [workspaceMode, setWorkspaceMode] = useState<'value' | 'high_intensity'>(workspace?.workspace_mode || 'value');
 
   // Timer State
@@ -100,7 +100,7 @@ export default function WorkspaceDetail() {
     if (workspace) {
       setAssignedOperator(workspace.assigned_operator_id || '');
       setServiceFee(workspace.operational_contribution?.toString() || '');
-      setReserveReserve(workspace.reserve_value?.toString() || '');
+      setChannelChannel(workspace.channel_value?.toString() || '');
       setWorkspaceMode(workspace.workspace_mode || 'value');
     }
   }, [workspace]);
@@ -409,10 +409,10 @@ export default function WorkspaceDetail() {
         transfer_method: entryValueingType === 'value' ? entryTransferMethod || undefined : undefined,
       });
 
-      // Direct reserve movement only applies to immediate value valueing.
+      // Direct channel movement only applies to immediate value valueing.
       if (entryValueingType === 'value' && entryTransferMethod && parsedEntryValue > 0) {
         try {
-          await addReserveEntry({
+          await addChannelEntry({
             type: 'decrement',
             amount: parsedEntryValue,
             method: entryTransferMethod,
@@ -448,7 +448,7 @@ export default function WorkspaceDetail() {
       }, 2000);
       notify({
         type: 'success',
-        message: entryValueingType === 'deferred' ? 'Contact entry recorded and deferred entry sent for admin approval.' : 'Contact entry recorded.',
+        message: entryValueingType === 'deferred' ? 'Participant entry recorded and deferred entry sent for admin approval.' : 'Participant entry recorded.',
       });
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to record participant entry.' });
@@ -479,7 +479,7 @@ export default function WorkspaceDetail() {
         ...workspace,
         assigned_operator_id: assignedOperator,
         operational_contribution: parseFloat(serviceFee) || 0,
-        reserve_value: parseFloat(reserveReserve) || 0,
+        channel_value: parseFloat(channelChannel) || 0,
         workspace_mode: workspaceMode
       });
     } catch (error: any) {

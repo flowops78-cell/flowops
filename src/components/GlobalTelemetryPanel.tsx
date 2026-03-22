@@ -23,7 +23,7 @@ const formatTime = (value?: string) => {
 
 export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetryPanelProps) {
   const navigate = useNavigate();
-  const { workspaces, entries, reserveEntries, systemEvents } = useData();
+  const { workspaces, entries, systemEvents } = useData();
   const { canManageValue } = useAppRole();
   const { getEventLabel, getMetricLabel, getActionText } = useLabels();
 

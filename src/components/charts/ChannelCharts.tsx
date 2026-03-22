@@ -26,7 +26,7 @@ interface DistributionPoint {
   color: string;
 }
 
-interface ReserveChartsProps {
+interface ChannelChartsProps {
   historyData: HistoryPoint[];
   distributionData: DistributionPoint[];
 }
@@ -71,7 +71,7 @@ function MeasuredChart({
   );
 }
 
-export default function ReserveCharts({ historyData, distributionData }: ReserveChartsProps) {
+export default function ChannelCharts({ historyData, distributionData }: ChannelChartsProps) {
   const [selectedSliceIndex, setSelectedSliceIndex] = useState(0);
 
   useEffect(() => {

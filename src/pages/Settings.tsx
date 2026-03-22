@@ -93,7 +93,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     activityLogs,
     expenses,
     adjustments,
-    reserveEntries,
+    channelEntries,
     partners,
     partnerEntries,
     systemEvents,
@@ -154,7 +154,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     }
     if (isClearingGlobalData) return;
 
-    const confirmed = window.confirm('Clear all operational data? This removes workspaces, participants, entries, member records, member activities, expenses, adjustment requests, partner network, and reserve movements. This cannot be undone.');
+    const confirmed = window.confirm('Clear all operational data? This removes workspaces, participants, entries, member records, member activities, expenses, adjustment requests, partner network, and channel movements. This cannot be undone.');
     if (!confirmed) return;
 
     setIsClearingGlobalData(true);
@@ -168,7 +168,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
           'flow_ops_activity_logs',
           'flow_ops_outflows',
           'flow_ops_adjustments',
-          'flow_ops_reserve_base',
+          'flow_ops_channel_base',
           'flow_ops_partners',
           'flow_ops_partner_trans',
           'flow_ops_audit_events_v2',
@@ -201,7 +201,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         await clearWorkspace('activity_logs');
         await clearWorkspace('outflows');
         await clearWorkspace('adjustments');
-        await clearWorkspace('reserve_entries');
+        await clearWorkspace('channel_entries');
         await clearWorkspace('partner_entries');
         await clearWorkspace('workspaces');
         await clearWorkspace('members');

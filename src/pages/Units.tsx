@@ -14,7 +14,7 @@ import { useLabels } from '../lib/labels';
 
 const getUnitDisplayName = (name?: string | null) => {
   const trimmed = name?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : 'Unnamed User';
+  return trimmed && trimmed.length > 0 ? trimmed : 'Unnamed Participant';
 };
 
 export default function Units({ embedded = false }: { embedded?: boolean }) {
@@ -827,7 +827,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
                         <button
                           onClick={() => openTransferForm(unit.id)}
                           className="p-1.5 text-stone-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition-colors"
-                          title="Transfer from this unit"
+                          title="Transfer from this participant"
                         >
                           <ArrowRightLeft size={16} />
                         </button>
@@ -974,7 +974,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
           <div className="section-card rounded-2xl shadow-xl w-full max-w-6xl mx-auto h-[92vh] overflow-hidden flex flex-col">
             <div className="p-5 border-b border-stone-200 dark:border-stone-800 flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">{getUnitDisplayName(entrysViewUnit.name)} • Entrys</h3>
+                <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">{getUnitDisplayName(entrysViewUnit.name)} • Entries</h3>
                 <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">{quickViewEntrys.length} entries</p>
               </div>
               <div className="flex items-center gap-2">
@@ -1108,7 +1108,7 @@ function UnitGridCard({
                 onTransferFromUnit();
               }}
               className="p-1.5 text-stone-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition-colors"
-              title="Transfer from this unit"
+              title="Transfer from this participant"
             >
               <ArrowRightLeft size={16} />
             </button>

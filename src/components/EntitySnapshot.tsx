@@ -70,7 +70,7 @@ export default function EntitySnapshot({ entity, type, onClose, onUpdateTags, wo
         <h2 className="text-xl font-bold text-stone-900 dark:text-stone-100">{entity.name}</h2>
         <p className="text-sm text-stone-500 dark:text-stone-400 capitalize flex items-center justify-center gap-1 mt-1">
           {type === 'unit' ? <User size={12} /> : <Circle size={12} />}
-          {type === 'unit' ? 'User' : (entity as Member).role}
+          {type === 'unit' ? 'Participant' : (entity as Member).role}
         </p>
 
         {/* Stats Grid */}
@@ -178,7 +178,7 @@ export default function EntitySnapshot({ entity, type, onClose, onUpdateTags, wo
         {/* Contact Info */}
         {type === 'member' && (entity as Member).member_id && (
           <div className="mt-6 pt-6 border-t border-stone-100 dark:border-stone-800 text-left">
-            <h3 className="text-xs font-medium text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-3">Identity</h3>
+            <h3 className="text-xs font-medium text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-3">Participant Details</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-stone-500 dark:text-stone-400">Member ID</span>

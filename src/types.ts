@@ -67,7 +67,7 @@ export interface Workspace {
   // Operations
   assigned_operator_id?: string;
   operational_contribution?: number;
-  reserve_value?: number;
+  channel_value?: number;
   
   // Timing & Distribution
   start_time?: string;
@@ -121,7 +121,7 @@ export interface AdjustmentRequest {
   created_at?: string;
 }
 
-export interface ReserveEntry {
+export interface ChannelEntry {
   id: string;
   amount: number;
   type: 'increment' | 'decrement';
@@ -192,7 +192,7 @@ export interface SystemEvent {
   operator_activity_id?: string;
   actor_role: 'admin' | 'operator' | 'viewer';
   action: string;
-  entity: 'workspace' | 'entries' | 'expense' | 'adjustment' | 'reserve' | 'activity' | 'operator' | 'unit' | 'member' | 'activity_log' | 'access_request' | 'partner' | 'partner_entry' | 'unit_account_entry' | 'log';
+  entity: 'workspace' | 'entries' | 'expense' | 'adjustment' | 'channel' | 'activity' | 'operator' | 'unit' | 'member' | 'activity_log' | 'access_request' | 'partner' | 'partner_entry' | 'unit_account_entry' | 'log';
   entity_id?: string;
   amount?: number;
   details?: string;

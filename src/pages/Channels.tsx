@@ -2,12 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useData } from '../context/DataContext';
 import { Plus, ArrowUpRight, ArrowDownLeft, Circle, SquareStack, AlertCircle, Trash2, Pencil } from 'lucide-react';
 import { formatCompactValue, formatValue, formatDate } from '../lib/utils';
-import ReserveCharts from '../components/charts/ReserveCharts';
+import ChannelCharts from '../components/charts/ChannelCharts';
 import { cn } from '../lib/utils';
 import Papa from 'papaparse';
 import MobileRecordCard from '../components/MobileRecordCard';
 import { useAppRole } from '../context/AppRoleContext';
-import { ReserveEntry, TransferAccount } from '../types';
+import { ChannelEntry, TransferAccount } from '../types';
 import LoadingLine from '../components/LoadingLine';
 import { useNotification } from '../context/NotificationContext';
 import CollapsibleWorkspaceSection from '../components/CollapsibleWorkspaceSection';
@@ -17,7 +17,25 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import EmptyState from '../components/EmptyState';
 
 export default function Channels({ embedded = false }: { embedded?: boolean }) {
-  const { reserveEntries, adjustments, adjustmentRequests, units, addReserveEntry, deleteReserveEntry, addAdjustment, deleteAdjustment, resolveAdjustmentRequest, transferReserveValues, recordSystemEvent, transferAccounts, addTransferAccount, updateTransferAccount, deleteTransferAccount, loading, loadingProgress } = useData();
+  const {
+    channelEntries: channelEntries,
+    adjustments,
+    adjustmentRequests,
+    units,
+    addChannelEntry,
+    deleteChannelEntry,
+    addAdjustment,
+    deleteAdjustment,
+    resolveAdjustmentRequest,
+    transferChannelValues,
+    recordSystemEvent,
+    transferAccounts,
+    addTransferAccount,
+    updateTransferAccount,
+    deleteTransferAccount,
+    loading,
+    loadingProgress,
+  } = useData();
   const location = useLocation();
   const navigate = useNavigate();
   const { canAccessAdminUi } = useAppRole();
@@ -34,22 +52,22 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
   const [accountSaveState, setAccountSaveState] = useState<'idle' | 'saved'>('idle');
 
-  // Reserve State
+  // Channel State
   const [isAddingEntry, setIsAddingEntry] = useState(false);
   const [isTransferringToChannel, setIsTransferringToChannel] = useState(false);
   const [transType, setTransType] = useState<'increment' | 'decrement'>('increment');
   const [transAmount, setTransAmount] = useState('');
-  const [transMethodBase, setTransMethodBase] = useState('reserve_account');
+  const [transMethodBase, setTransMethodBase] = useState('channel_account');
   const [transMethodCustom, setTransMethodCustom] = useState('');
   const [transAccountLabel, setTransAccountLabel] = useState('');
   const [isSavingEntry, setIsSavingEntry] = useState(false);
   const [saveEntryProgress, setSaveEntryProgress] = useState(0);
   const [entrySaveState, setEntrySaveState] = useState<'idle' | 'saved'>('idle');
-  const [deletingReserveEntryId, setDeletingReserveEntryId] = useState<string | null>(null);
-  const [archivedReserveEntryIds, setArchivedReserveEntryIds] = useState<string[]>(() => {
+  const [deletingChannelEntryId, setDeletingChannelEntryId] = useState<string | null>(null);
+  const [archivedChannelEntryIds, setArchivedChannelEntryIds] = useState<string[]>(() => {
     if (typeof window === 'undefined') return [];
     try {
-      const raw = window.localStorage.getItem('reserve.archivedEntryIds');
+      const raw = window.localStorage.getItem('channel.archivedEntryIds');
       const parsed = raw ? JSON.parse(raw) : [];
       return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
     } catch {
@@ -81,7 +99,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   const formatChannelLabel = (value: string) => {
     const trimmed = value.trim();
     if (!trimmed) return 'Other';
-    if (trimmed === 'reserve_account') return 'Channel';
+    if (trimmed === 'channel_account') return 'Channel';
     if (trimmed === 'value') return 'Value';
     return trimmed
       .replace(/[_-]+/g, ' ')
@@ -179,14 +197,14 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   const [adjustmentSaveState, setAdjustmentSaveState] = useState<'idle' | 'saved'>('idle');
   const [deletingAdjustmentId, setDeletingAdjustmentId] = useState<string | null>(null);
   const [settlingEntryId, setSettlingEntryId] = useState<string | null>(null);
-  const [settleAccountBase, setSettleAccountBase] = useState('reserve_account');
+  const [settleAccountBase, setSettleAccountBase] = useState('channel_account');
   const [settleAccountCustom, setSettleAccountCustom] = useState('');
   const [settleAccountLabel, setSettleAccountLabel] = useState('');
   const [isSettlingEntry, setIsSettlingEntry] = useState(false);
   const [archivedAdjustmentIds, setArchivedAdjustmentIds] = useState<string[]>(() => {
     if (typeof window === 'undefined') return [];
     try {
-      const raw = window.localStorage.getItem('reserve.archivedAdjustmentIds');
+      const raw = window.localStorage.getItem('channel.archivedAdjustmentIds');
       const parsed = raw ? JSON.parse(raw) : [];
       return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
     } catch {
@@ -204,11 +222,11 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   const [adjustmentTypeFilter, setAdjustmentTypeFilter] = useState<'all' | 'input' | 'output'>('all');
   const [retentionDays, setRetentionDays] = useState(() => {
     if (typeof window === 'undefined') return '90';
-    return window.localStorage.getItem('reserve.retentionDays') || '90';
+    return window.localStorage.getItem('channel.retentionDays') || '90';
   });
   const [autoArchiveEnabled, setAutoArchiveEnabled] = useState(() => {
     if (typeof window === 'undefined') return false;
-    return window.localStorage.getItem('reserve.autoArchiveEnabled') === 'true';
+    return window.localStorage.getItem('channel.autoArchiveEnabled') === 'true';
   });
   const saveEntryProgressTimerRef = useRef<number | null>(null);
   const saveEntryProgressResetTimerRef = useRef<number | null>(null);
@@ -305,28 +323,28 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    window.localStorage.setItem('reserve.archivedEntryIds', JSON.stringify(archivedReserveEntryIds));
-  }, [archivedReserveEntryIds]);
+    window.localStorage.setItem('channel.archivedEntryIds', JSON.stringify(archivedChannelEntryIds));
+  }, [archivedChannelEntryIds]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    window.localStorage.setItem('reserve.archivedAdjustmentIds', JSON.stringify(archivedAdjustmentIds));
+    window.localStorage.setItem('channel.archivedAdjustmentIds', JSON.stringify(archivedAdjustmentIds));
   }, [archivedAdjustmentIds]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    window.localStorage.setItem('reserve.retentionDays', retentionDays);
+    window.localStorage.setItem('channel.retentionDays', retentionDays);
   }, [retentionDays]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    window.localStorage.setItem('reserve.autoArchiveEnabled', autoArchiveEnabled ? 'true' : 'false');
+    window.localStorage.setItem('channel.autoArchiveEnabled', autoArchiveEnabled ? 'true' : 'false');
   }, [autoArchiveEnabled]);
 
   // Calculate Totals
   const {
     channelTotals,
-    totalReserve,
+    totalChannel,
     unresolvedOutflowMethods,
     unresolvedOutflowAmount,
     channelCardData,
@@ -335,13 +353,13 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   } = useMemo(() => {
     const nextChannelTotals: Record<string, number> = {};
 
-    reserveEntries.forEach(entry => {
+    channelEntries.forEach(entry => {
       const multiplier = entry.type === 'increment' ? 1 : -1;
       const amount = entry.amount * multiplier;
       nextChannelTotals[entry.method] = (nextChannelTotals[entry.method] || 0) + amount;
     });
 
-    const nextTotalReserve = Object.values(nextChannelTotals).reduce((sum, value) => sum + value, 0);
+    const nextTotalChannel = Object.values(nextChannelTotals).reduce((sum, value) => sum + value, 0);
     const nextUnresolvedOutflowMethods = Object.entries(nextChannelTotals)
       .filter(([, value]) => value < 0)
       .map(([method, value]) => ({ method, amount: Math.abs(value) }));
@@ -360,48 +378,48 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       }))
       .sort((a, b) => b.amount - a.amount);
 
-    const nextP2pChannelOptions = nextChannelCardData.filter(item => item.base !== 'reserve_account' && item.base !== 'value' && item.amount > 0);
+    const nextP2pChannelOptions = nextChannelCardData.filter(item => item.base !== 'channel_account' && item.base !== 'value' && item.amount > 0);
     const nextChannelLabelSuggestions = Array.from(new Set(
       nextChannelCardData
-        .filter(item => item.base === 'reserve_account')
+        .filter(item => item.base === 'channel_account')
         .map(item => parseMethod(item.method).account)
         .filter((account): account is string => Boolean(account && account.trim()))
     ));
 
     return {
       channelTotals: nextChannelTotals,
-      totalReserve: nextTotalReserve,
+      totalChannel: nextTotalChannel,
       unresolvedOutflowMethods: nextUnresolvedOutflowMethods,
       unresolvedOutflowAmount: nextUnresolvedOutflowAmount,
       channelCardData: nextChannelCardData,
       p2pChannelOptions: nextP2pChannelOptions,
       channelLabelSuggestions: nextChannelLabelSuggestions,
     };
-  }, [reserveEntries]);
+  }, [channelEntries]);
 
   const hasUnresolvedOutflowAlert = unresolvedOutflowAmount > 0.009;
 
   const topChannelInsight = useMemo(() => {
     const primaryChannel = channelCardData.find(item => item.amount > 0) ?? channelCardData[0] ?? null;
-    if (!primaryChannel || Math.abs(totalReserve) < 0.01) {
+    if (!primaryChannel || Math.abs(totalChannel) < 0.01) {
       return { label: tx('No active channel'), share: tx('0%') };
     }
 
-    const share = Math.max(0, Math.min(100, (primaryChannel.amount / totalReserve) * 100));
+    const share = Math.max(0, Math.min(100, (primaryChannel.amount / totalChannel) * 100));
     return {
       label: primaryChannel.label,
       share: `${Math.round(share)}%`,
     };
-  }, [channelCardData, totalReserve, tx]);
+  }, [channelCardData, totalChannel, tx]);
 
-  const archivedReserveEntryIdSet = useMemo(() => new Set(archivedReserveEntryIds), [archivedReserveEntryIds]);
-  const activeReserveEntrys = useMemo(
-    () => reserveEntries.filter(entry => !archivedReserveEntryIdSet.has(entry.id)),
-    [reserveEntries, archivedReserveEntryIdSet]
+  const archivedChannelEntryIdSet = useMemo(() => new Set(archivedChannelEntryIds), [archivedChannelEntryIds]);
+  const activeChannelEntries = useMemo(
+    () => channelEntries.filter(entry => !archivedChannelEntryIdSet.has(entry.id)),
+    [channelEntries, archivedChannelEntryIdSet]
   );
-  const archivedReserveEntrys = useMemo(
-    () => reserveEntries.filter(entry => archivedReserveEntryIdSet.has(entry.id)),
-    [reserveEntries, archivedReserveEntryIdSet]
+  const archivedChannelEntries = useMemo(
+    () => channelEntries.filter(entry => archivedChannelEntryIdSet.has(entry.id)),
+    [channelEntries, archivedChannelEntryIdSet]
   );
   const retentionDaysNumber = useMemo(() => {
     const parsed = Number(retentionDays);
@@ -410,7 +428,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   }, [retentionDays]);
 
   const normalizedOrgSearch = orgSearchQuery.trim().toLowerCase();
-  const filteredActiveReserveEntrys = useMemo(() => activeReserveEntrys.filter(entry => {
+  const filteredActiveChannelEntries = useMemo(() => activeChannelEntries.filter(entry => {
     if (orgTypeFilter !== 'all' && entry.type !== orgTypeFilter) return false;
     if (orgDateStart && entry.date < orgDateStart) return false;
     if (orgDateEnd && entry.date > orgDateEnd) return false;
@@ -419,9 +437,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       entry.method.toLowerCase().includes(normalizedOrgSearch)
       || entry.date.toLowerCase().includes(normalizedOrgSearch)
     );
-  }), [activeReserveEntrys, orgTypeFilter, orgDateStart, orgDateEnd, normalizedOrgSearch]);
+  }), [activeChannelEntries, orgTypeFilter, orgDateStart, orgDateEnd, normalizedOrgSearch]);
 
-  const filteredArchivedReserveEntrys = useMemo(() => archivedReserveEntrys.filter(entry => {
+  const filteredArchivedChannelEntries = useMemo(() => archivedChannelEntries.filter(entry => {
     if (orgTypeFilter !== 'all' && entry.type !== orgTypeFilter) return false;
     if (orgDateStart && entry.date < orgDateStart) return false;
     if (orgDateEnd && entry.date > orgDateEnd) return false;
@@ -430,20 +448,20 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       entry.method.toLowerCase().includes(normalizedOrgSearch)
       || entry.date.toLowerCase().includes(normalizedOrgSearch)
     );
-  }), [archivedReserveEntrys, orgTypeFilter, orgDateStart, orgDateEnd, normalizedOrgSearch]);
+  }), [archivedChannelEntries, orgTypeFilter, orgDateStart, orgDateEnd, normalizedOrgSearch]);
 
-  const oldReserveEntryIds = useMemo(() => {
+  const oldChannelEntryIds = useMemo(() => {
     const threshold = new Date();
     threshold.setHours(0, 0, 0, 0);
     threshold.setDate(threshold.getDate() - retentionDaysNumber);
     const thresholdTime = threshold.getTime();
-    return activeReserveEntrys
+    return activeChannelEntries
       .filter(entry => {
         const date = new Date(entry.date);
         return Number.isFinite(date.getTime()) && date.getTime() < thresholdTime;
       })
       .map(entry => entry.id);
-  }, [activeReserveEntrys, retentionDaysNumber]);
+  }, [activeChannelEntries, retentionDaysNumber]);
 
   // Calculate Outstanding Adjustments
   const totalOutstanding = useMemo(() => {
@@ -518,15 +536,15 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   useEffect(() => {
     if (!autoArchiveEnabled) return;
 
-    const txIds = oldReserveEntryIds;
+    const txIds = oldChannelEntryIds;
     if (txIds.length > 0) {
-      setArchivedReserveEntryIds(current => {
+      setArchivedChannelEntryIds(current => {
         const next = new Set(current);
         txIds.forEach(id => next.add(id));
         if (next.size === current.length) return current;
         void recordSystemEvent({
-          action: 'reserve_entries_auto_archived',
-          entity: 'reserve',
+          action: 'channel_entries_auto_archived',
+          entity: 'channel',
           amount: txIds.length,
           details: `Auto-archived channel entries older than ${retentionDaysNumber} days`,
         });
@@ -549,15 +567,15 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
         return Array.from(next);
       });
     }
-  }, [autoArchiveEnabled, oldReserveEntryIds, oldAdjustmentIds, recordSystemEvent, retentionDaysNumber, settledAdjustmentEntryIds]);
+  }, [autoArchiveEnabled, oldChannelEntryIds, oldAdjustmentIds, recordSystemEvent, retentionDaysNumber, settledAdjustmentEntryIds]);
 
-  const formatMethodLabel = (method: ReserveEntry['method']) => {
+  const formatMethodLabel = (method: ChannelEntry['method']) => {
     const { base, account } = parseMethod(method);
     const label = baseMethodLabel(base);
     return account ? `${label} • ${account}` : label;
   };
 
-  const isTransferEntry = (entry: ReserveEntry) => entry.method.includes('::');
+  const isTransferEntry = (entry: ChannelEntry) => entry.method.includes('::');
 
   const handleTotalCardClick = (base: string) => {
     entryHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -568,11 +586,11 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     setTransMethodCustom('');
 
     if (base === 'value') {
-      setTransMethodBase('reserve_account');
+      setTransMethodBase('channel_account');
       return;
     }
 
-    setTransMethodBase(base || 'reserve_account');
+    setTransMethodBase(base || 'channel_account');
   };
 
   // --- Chart Data Preparation ---
@@ -588,7 +606,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   }, [channelCardData]);
 
   const historyData = useMemo(() => {
-    const sorted = [...reserveEntries].sort((a, b) => a.date.localeCompare(b.date));
+    const sorted = [...channelEntries].sort((a, b) => a.date.localeCompare(b.date));
     const points: { date: string; total: number; fullDate: string }[] = [];
     let runningTotal = 0;
     
@@ -611,12 +629,12 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       });
 
     return points.slice(-30); // Last 30 days of activity
-  }, [reserveEntries, formatDate]);
+  }, [channelEntries, formatDate]);
 
   const p2pOptionDisplay = (method: string, amount: number) => `${formatMethodLabel(method)} (${formatValue(amount)})`;
 
   const CHANNEL_CATEGORY_CHOICES = [
-    { value: 'reserve_account', label: 'Channel' },
+    { value: 'channel_account', label: 'Channel' },
     { value: 'value', label: 'Value' },
     { value: 'asset', label: 'Asset' },
     { value: 'other', label: 'Other' },
@@ -773,7 +791,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
     const today = new Date().toISOString().split('T')[0];
     try {
-      await addReserveEntry({
+      await addChannelEntry({
         type: transType,
         amount: parseFloat(transAmount),
         method: composeMethod(resolvedMethodBase, transAccountLabel),
@@ -783,7 +801,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       setSaveEntryProgress(100);
       setIsAddingEntry(false);
       setTransAmount('');
-      setTransMethodBase('reserve_account');
+      setTransMethodBase('channel_account');
       setTransMethodCustom('');
       setTransAccountLabel('');
       setEntrySaveState('saved');
@@ -885,7 +903,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       return;
     }
 
-    const targetMethod = composeMethod('reserve_account', transferToChannelLabel);
+    const targetMethod = composeMethod('channel_account', transferToChannelLabel);
     if (transferFromMethod === targetMethod) {
       notify({ type: 'error', message: 'Source and destination accounts must be different.' });
       return;
@@ -902,7 +920,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
     const today = new Date().toISOString().split('T')[0];
     try {
-      await transferReserveValues(
+      await transferChannelValues(
         transferFromMethod,
         targetMethod,
         parsedAmount,
@@ -936,45 +954,45 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  const handleDeleteReserveEntry = async (id: string) => {
-    if (!canOperateValue || deletingReserveEntryId === id) return;
+  const handleDeleteChannelEntry = async (id: string) => {
+    if (!canOperateValue || deletingChannelEntryId === id) return;
     const confirmed = window.confirm('Delete this channel entry? This will adjust current channel totals and cannot be undone.');
     if (!confirmed) return;
 
     try {
-      setDeletingReserveEntryId(id);
-      await deleteReserveEntry(id);
+      setDeletingChannelEntryId(id);
+      await deleteChannelEntry(id);
       notify({ type: 'success', message: 'Channel entry deleted.' });
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to delete channel entry.' });
     } finally {
-      setDeletingReserveEntryId(current => (current === id ? null : current));
+      setDeletingChannelEntryId(current => (current === id ? null : current));
     }
   };
 
-  const handleArchiveReserveEntry = (id: string) => {
-    setArchivedReserveEntryIds(current => (current.includes(id) ? current : [...current, id]));
+  const handleArchiveChannelEntry = (id: string) => {
+    setArchivedChannelEntryIds(current => (current.includes(id) ? current : [...current, id]));
     void recordSystemEvent({
-      action: 'reserve_entry_archived',
-      entity: 'reserve',
+      action: 'channel_entry_archived',
+      entity: 'channel',
       entity_id: id,
       details: 'Channel entry moved to archive list',
     });
     notify({ type: 'success', message: 'Entry archived.' });
   };
 
-  const handleUnarchiveReserveEntry = (id: string) => {
-    setArchivedReserveEntryIds(current => current.filter(item => item !== id));
+  const handleUnarchiveChannelEntry = (id: string) => {
+    setArchivedChannelEntryIds(current => current.filter(item => item !== id));
     void recordSystemEvent({
-      action: 'reserve_entry_unarchived',
-      entity: 'reserve',
+      action: 'channel_entry_unarchived',
+      entity: 'channel',
       entity_id: id,
       details: 'Channel entry restored from archive list',
     });
     notify({ type: 'success', message: 'Entry restored from archive.' });
   };
 
-  const handleArchiveReserveByDateRange = () => {
+  const handleArchiveChannelByDateRange = () => {
     if (!canOperateValue) return;
     if (!orgDateStart || !orgDateEnd) {
       notify({ type: 'error', message: 'Select both start and end date.' });
@@ -984,46 +1002,46 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       notify({ type: 'error', message: 'Start date cannot be after end date.' });
       return;
     }
-    const ids = activeReserveEntrys
+    const ids = activeChannelEntries
       .filter(entry => entry.date >= orgDateStart && entry.date <= orgDateEnd)
       .map(entry => entry.id);
     if (ids.length === 0) {
       notify({ type: 'error', message: 'No active channel entries in selected range.' });
       return;
     }
-    setArchivedReserveEntryIds(current => Array.from(new Set([...current, ...ids])));
+    setArchivedChannelEntryIds(current => Array.from(new Set([...current, ...ids])));
     void recordSystemEvent({
-      action: 'reserve_entries_archived_date_range',
-      entity: 'reserve',
+      action: 'channel_entries_archived_date_range',
+      entity: 'channel',
       amount: ids.length,
       details: `Archived channel entries from ${orgDateStart} to ${orgDateEnd}`,
     });
     notify({ type: 'success', message: `Archived ${ids.length} channel entries.` });
   };
 
-  const handleArchiveOldReserveEntrys = () => {
+  const handleArchiveOldChannelEntrys = () => {
     if (!canOperateValue) return;
-    if (oldReserveEntryIds.length === 0) {
+    if (oldChannelEntryIds.length === 0) {
       notify({ type: 'error', message: `No active channel entries older than ${retentionDaysNumber} days.` });
       return;
     }
-    setArchivedReserveEntryIds(current => Array.from(new Set([...current, ...oldReserveEntryIds])));
+    setArchivedChannelEntryIds(current => Array.from(new Set([...current, ...oldChannelEntryIds])));
     void recordSystemEvent({
-      action: 'reserve_entries_archived_old',
-      entity: 'reserve',
-      amount: oldReserveEntryIds.length,
+      action: 'channel_entries_archived_old',
+      entity: 'channel',
+      amount: oldChannelEntryIds.length,
       details: `Archived old channel entries older than ${retentionDaysNumber} days`,
     });
-    notify({ type: 'success', message: `Archived ${oldReserveEntryIds.length} old channel entries.` });
+    notify({ type: 'success', message: `Archived ${oldChannelEntryIds.length} old channel entries.` });
   };
 
-  const handleRestoreAllArchivedReserveEntrys = () => {
-    if (!canOperateValue || archivedReserveEntryIds.length === 0) return;
-    const count = archivedReserveEntryIds.length;
-    setArchivedReserveEntryIds([]);
+  const handleRestoreAllArchivedChannelEntrys = () => {
+    if (!canOperateValue || archivedChannelEntryIds.length === 0) return;
+    const count = archivedChannelEntryIds.length;
+    setArchivedChannelEntryIds([]);
     void recordSystemEvent({
-      action: 'reserve_entries_restored_bulk',
-      entity: 'reserve',
+      action: 'channel_entries_restored_bulk',
+      entity: 'channel',
       amount: count,
       details: 'Restored all archived channel entries',
     });
@@ -1061,7 +1079,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     const method = composeMethod(resolvedSettleBase, settleAccountLabel);
     const contact = units.find(p => p.id === entry.unit_id)?.name || 'contact';
     try {
-      await addReserveEntry({
+      await addChannelEntry({
         type: txType,
         amount: entry.amount,
         method,
@@ -1069,7 +1087,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       });
       setArchivedAdjustmentIds(current => (current.includes(id) ? current : [...current, id]));
       setSettlingEntryId(null);
-      setSettleAccountBase('reserve_account');
+      setSettleAccountBase('channel_account');
       setSettleAccountCustom('');
       setSettleAccountLabel('');
       notify({ type: 'success', message: 'Entry settled.' });
@@ -1166,13 +1184,13 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
             <p className="text-[11px] uppercase tracking-[0.08em] text-stone-500 dark:text-stone-400">Total</p>
             <p className={cn(
               'font-mono tabular-nums text-4xl leading-tight font-bold',
-              totalReserve > 0
+              totalChannel > 0
                 ? 'amount-positive'
-                : totalReserve < 0
+                : totalChannel < 0
                   ? 'amount-negative'
                   : 'amount-zero'
             )}>
-              {formatValue(totalReserve)}
+              {formatValue(totalChannel)}
             </p>
             <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
               {topChannelInsight.label} · {topChannelInsight.share} · Outstanding: {formatValue(totalOutstanding)}
@@ -1215,12 +1233,12 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                   onClick={() => handleTotalCardClick(item.base)}
                 />
               )) : (
-                <TotalCard icon={<ChannelGlyph base="other" />} label={tx('No channels yet')} amount={0} badgeClass={getChannelVisual('other').badgeClass} onClick={() => handleTotalCardClick('reserve_account')} />
+                <TotalCard icon={<ChannelGlyph base="other" />} label={tx('No channels yet')} amount={0} badgeClass={getChannelVisual('other').badgeClass} onClick={() => handleTotalCardClick('channel_account')} />
               )}
             </div>
 
             <div className="p-5 border-t border-stone-200/80 dark:border-stone-800/80">
-              <ReserveCharts historyData={historyData} distributionData={distributionData} />
+              <ChannelCharts historyData={historyData} distributionData={distributionData} />
             </div>
 
             <div className="border-t border-stone-200/80 dark:border-stone-800/80 p-5">
@@ -1335,7 +1353,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
               <div>
                 <h3 className="font-medium text-stone-900 dark:text-stone-100">Activity</h3>
                 <p className="hidden md:block text-xs text-stone-500 dark:text-stone-400 mt-1">
-                  <span className="font-mono text-stone-900 dark:text-stone-100">{formatValue(totalReserve)}</span> · {filteredActiveReserveEntrys.length} records
+                  <span className="font-mono text-stone-900 dark:text-stone-100">{formatValue(totalChannel)}</span> · {filteredActiveChannelEntries.length} records
                 </p>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
@@ -1420,7 +1438,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                   <div className="flex flex-wrap gap-2">
                     <button
                       type="button"
-                      onClick={handleArchiveReserveByDateRange}
+                      onClick={handleArchiveChannelByDateRange}
                       disabled={!canOperateValue}
                       className="action-btn-secondary text-xs disabled:opacity-50"
                     >
@@ -1428,7 +1446,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     </button>
                     <button
                       type="button"
-                      onClick={handleArchiveOldReserveEntrys}
+                      onClick={handleArchiveOldChannelEntrys}
                       disabled={!canOperateValue}
                       className="action-btn-secondary text-xs disabled:opacity-50"
                     >
@@ -1436,8 +1454,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     </button>
                     <button
                       type="button"
-                      onClick={handleRestoreAllArchivedReserveEntrys}
-                      disabled={!canOperateValue || archivedReserveEntryIds.length === 0}
+                      onClick={handleRestoreAllArchivedChannelEntrys}
+                      disabled={!canOperateValue || archivedChannelEntryIds.length === 0}
                       className="action-btn-secondary text-xs disabled:opacity-50"
                     >
                       Restore All Archived
@@ -1667,7 +1685,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
             )}
 
             <div className="md:hidden divide-y divide-stone-100 dark:divide-stone-800">
-              {filteredActiveReserveEntrys.map(t => (
+              {filteredActiveChannelEntries.map(t => (
                 <MobileRecordCard
                   key={t.id}
                   title={<span className="text-xs text-stone-500 dark:text-stone-400 font-normal">{formatDate(t.date)}</span>}
@@ -1695,30 +1713,30 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                       <>
                         <button
                           type="button"
-                          onClick={() => handleArchiveReserveEntry(t.id)}
+                          onClick={() => handleArchiveChannelEntry(t.id)}
                           className="action-btn-tertiary px-2.5 py-1 text-xs"
                         >
                           Archive
                         </button>
                         <button
                           type="button"
-                          onClick={() => { void handleDeleteReserveEntry(t.id); }}
-                          disabled={deletingReserveEntryId === t.id}
+                          onClick={() => { void handleDeleteChannelEntry(t.id); }}
+                          disabled={deletingChannelEntryId === t.id}
                           className="action-btn-tertiary px-2.5 py-1 text-xs text-red-600 dark:text-red-400 disabled:opacity-50"
                         >
-                          {deletingReserveEntryId === t.id ? 'Deleting…' : 'Delete'}
+                          {deletingChannelEntryId === t.id ? 'Deleting…' : 'Delete'}
                         </button>
                       </>
                     )}
                   </div>
                 </MobileRecordCard>
               ))}
-              {filteredActiveReserveEntrys.length === 0 && (
+              {filteredActiveChannelEntries.length === 0 && (
                 <div className="px-6 py-8 text-center text-stone-400 text-sm">No entrys recorded.</div>
               )}
             </div>
 
-            {archivedReserveEntrys.length > 0 && (
+            {archivedChannelEntries.length > 0 && (
               <div className="mt-4 rounded-lg border border-stone-200 dark:border-stone-700 bg-stone-50/60 dark:bg-stone-800/40 p-3 md:hidden">
                 <div className="flex items-center justify-between gap-3">
                   <h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">Archived Entrys</h4>
@@ -1727,12 +1745,12 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     onClick={() => setIsArchivedEntrysExpanded(prev => !prev)}
                     className="action-btn-secondary px-2.5 py-1 text-xs"
                   >
-                    {isArchivedEntrysExpanded ? 'Hide' : `Show (${filteredArchivedReserveEntrys.length})`}
+                    {isArchivedEntrysExpanded ? 'Hide' : `Show (${filteredArchivedChannelEntries.length})`}
                   </button>
                 </div>
                 {isArchivedEntrysExpanded && (
                   <div className="mt-3 divide-y divide-stone-100 dark:divide-stone-800">
-                    {filteredArchivedReserveEntrys.map(t => (
+                    {filteredArchivedChannelEntries.map(t => (
                       <MobileRecordCard
                         key={t.id}
                         title={<span className="text-xs text-stone-500 dark:text-stone-400 font-normal">{formatDate(t.date)}</span>}
@@ -1751,18 +1769,18 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                             <>
                               <button
                                 type="button"
-                                onClick={() => handleUnarchiveReserveEntry(t.id)}
+                                onClick={() => handleUnarchiveChannelEntry(t.id)}
                                 className="action-btn-tertiary px-2.5 py-1 text-xs"
                               >
                                 Unarchive
                               </button>
                               <button
                                 type="button"
-                                onClick={() => { void handleDeleteReserveEntry(t.id); }}
-                                disabled={deletingReserveEntryId === t.id}
+                                onClick={() => { void handleDeleteChannelEntry(t.id); }}
+                                disabled={deletingChannelEntryId === t.id}
                                 className="action-btn-tertiary px-2.5 py-1 text-xs text-red-600 dark:text-red-400 disabled:opacity-50"
                               >
-                                {deletingReserveEntryId === t.id ? 'Deleting…' : 'Delete'}
+                                {deletingChannelEntryId === t.id ? 'Deleting…' : 'Delete'}
                               </button>
                             </>
                           )}
@@ -1776,7 +1794,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
             <CollapsibleWorkspaceSection
               title="Activity"
-              summary={`${filteredActiveReserveEntrys.length} records`}
+              summary={`${filteredActiveChannelEntries.length} records`}
               className="hidden md:block"
               defaultExpanded={false}
               maxExpandedHeightClass="max-h-[560px]"
@@ -1794,7 +1812,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                  {filteredActiveReserveEntrys.map(t => (
+                  {filteredActiveChannelEntries.map(t => (
                     <tr key={t.id} className={cn(
                       "hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors",
                       isTransferEntry(t)
@@ -1834,7 +1852,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                           <>
                             <button
                               type="button"
-                              onClick={() => handleArchiveReserveEntry(t.id)}
+                              onClick={() => handleArchiveChannelEntry(t.id)}
                               className="action-btn-tertiary px-2 py-1 text-[11px] mr-1.5"
                               title="Archive Entry"
                             >
@@ -1842,10 +1860,10 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                             </button>
                             <button
                               type="button"
-                              onClick={() => { void handleDeleteReserveEntry(t.id); }}
-                              disabled={deletingReserveEntryId === t.id}
+                              onClick={() => { void handleDeleteChannelEntry(t.id); }}
+                              disabled={deletingChannelEntryId === t.id}
                               className="inline-flex items-center justify-center p-1.5 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                              title={deletingReserveEntryId === t.id ? 'Deleting…' : 'Delete Entry'}
+                              title={deletingChannelEntryId === t.id ? 'Deleting…' : 'Delete Entry'}
                             >
                               <Trash2 size={14} />
                             </button>
@@ -1854,7 +1872,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                       </td>
                     </tr>
                   ))}
-                  {filteredActiveReserveEntrys.length === 0 && (
+                  {filteredActiveChannelEntries.length === 0 && (
                     <tr>
                       <td colSpan={6} className="px-6 py-8 text-center text-stone-400">
                         No entrys recorded.
@@ -1865,7 +1883,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
               </table>
             </CollapsibleWorkspaceSection>
 
-            {archivedReserveEntrys.length > 0 && (
+            {archivedChannelEntries.length > 0 && (
               <div className="hidden md:block mt-4">
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <button
@@ -1873,13 +1891,13 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     onClick={() => setIsArchivedEntrysExpanded(prev => !prev)}
                     className="action-btn-secondary text-xs px-2.5 py-1.5"
                   >
-                    {isArchivedEntrysExpanded ? 'Hide' : `Show (${filteredArchivedReserveEntrys.length})`}
+                    {isArchivedEntrysExpanded ? 'Hide' : `Show (${filteredArchivedChannelEntries.length})`}
                   </button>
                 </div>
                 {isArchivedEntrysExpanded && (
                   <CollapsibleWorkspaceSection
                     title="Archived Activity"
-                    summary={`${archivedReserveEntrys.length} records`}
+                    summary={`${archivedChannelEntries.length} records`}
                     defaultExpanded={false}
                     maxExpandedHeightClass="max-h-[420px]"
                     maxCollapsedHeightClass="max-h-[96px]"
@@ -1896,7 +1914,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                        {filteredArchivedReserveEntrys.map(t => (
+                        {filteredArchivedChannelEntries.map(t => (
                           <tr key={t.id} className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors">
                             <td className="sticky-col px-6 py-2.5 text-stone-500 dark:text-stone-400">{formatDate(t.date)}</td>
                             <td className="px-6 py-2.5">{t.type === 'increment' ? 'Inflow' : 'Outflow'}</td>
@@ -1914,17 +1932,17 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                                 <>
                                   <button
                                     type="button"
-                                    onClick={() => handleUnarchiveReserveEntry(t.id)}
+                                    onClick={() => handleUnarchiveChannelEntry(t.id)}
                                     className="action-btn-tertiary px-2 py-1 text-[11px] mr-1.5"
                                   >
                                     Unarchive
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => { void handleDeleteReserveEntry(t.id); }}
-                                    disabled={deletingReserveEntryId === t.id}
+                                    onClick={() => { void handleDeleteChannelEntry(t.id); }}
+                                    disabled={deletingChannelEntryId === t.id}
                                     className="inline-flex items-center justify-center p-1.5 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title={deletingReserveEntryId === t.id ? 'Deleting…' : 'Delete Entry'}
+                                    title={deletingChannelEntryId === t.id ? 'Deleting…' : 'Delete Entry'}
                                   >
                                     <Trash2 size={14} />
                                   </button>
@@ -1933,7 +1951,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                             </td>
                           </tr>
                         ))}
-                        {filteredArchivedReserveEntrys.length === 0 && (
+                        {filteredArchivedChannelEntries.length === 0 && (
                           <tr>
                             <td colSpan={6} className="px-6 py-8 text-center text-stone-400">No archived entrys match current filters.</td>
                           </tr>
@@ -2212,7 +2230,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                           {settlingEntryId !== l.id && (
                             <button
                               type="button"
-                              onClick={() => { setSettlingEntryId(l.id); setSettleAccountBase('reserve_account'); setSettleAccountLabel(''); }}
+                              onClick={() => { setSettlingEntryId(l.id); setSettleAccountBase('channel_account'); setSettleAccountLabel(''); }}
                               className="action-btn-tertiary px-2.5 py-1 text-xs text-emerald-700 dark:text-emerald-400"
                             >
                               Settle Entry
@@ -2383,7 +2401,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                                 <>
                                   <button
                                     type="button"
-                                    onClick={() => { setSettlingEntryId(l.id); setSettleAccountBase('reserve_account'); setSettleAccountLabel(''); }}
+                                    onClick={() => { setSettlingEntryId(l.id); setSettleAccountBase('channel_account'); setSettleAccountLabel(''); }}
                                     className="action-btn-tertiary px-2 py-1 text-[11px] mr-1.5 text-emerald-700 dark:text-emerald-400"
                                   >
                                     Settle Entry

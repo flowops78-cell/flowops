@@ -22,7 +22,7 @@ export default function UnitDetail() {
     updateUnit,
     entries,
     workspaces,
-    addReserveEntry,
+    addChannelEntry,
     recordSystemEvent,
     unitAccountEntries,
     outputRequests,
@@ -68,7 +68,7 @@ export default function UnitDetail() {
       .map(item => ({
         id: `tx-${item.id}`,
         occurredAt: item.created_at || `${item.date}T00:00:00.000Z`,
-        action: item.type === 'increment' ? 'Increase posted' : 'Adjustment assigned',
+        action: item.type === 'increment' ? 'Increment posted' : 'Adjustment assigned',
         amount: item.amount,
       }));
 
@@ -77,7 +77,7 @@ export default function UnitDetail() {
       .map(item => ({
         id: `req-${item.id}`,
         occurredAt: item.resolved_at || item.requested_at,
-        action: item.status === 'approved' ? 'Decrease approved' : 'Decrease rejected',
+        action: item.status === 'approved' ? 'Decrement approved' : 'Decrement rejected',
         amount: item.amount,
       }));
 
@@ -137,7 +137,7 @@ export default function UnitDetail() {
           <p className="text-sm text-stone-500 dark:text-stone-400">Unit not found.</p>
           <button type="button" onClick={() => navigate('/units')} className="action-btn-secondary">
             <ArrowLeft size={14} />
-            Back to Users
+            Back to Participants
           </button>
         </div>
       </div>
@@ -183,10 +183,10 @@ export default function UnitDetail() {
       transfer_method: entryMethod || undefined,
     });
 
-    // Sync with reserve ONLY for increments and decrements (not adjustments)
+    // Sync with channel ONLY for increments and decrements (not adjustments)
     if (entryType !== 'adjustment') {
       try {
-        await addReserveEntry({
+        await addChannelEntry({
           type: entryType === 'increment' ? 'decrement' : 'increment',
           amount,
           method: entryMethod,
@@ -234,7 +234,7 @@ export default function UnitDetail() {
 
     if (nextStatus === 'approved') {
       try {
-        await addReserveEntry({
+        await addChannelEntry({
           type: 'decrement',
           amount: request.amount,
           method: 'value',
@@ -309,9 +309,9 @@ export default function UnitDetail() {
         date: isoToday(),
       });
 
-      // Sync with reserve: override increase = decrement from source
+      // Sync with channel: override increase = decrement from source
       try {
-        await addReserveEntry({
+        await addChannelEntry({
           type: 'decrement',
           amount: Math.abs(delta),
           method: 'override_adjustment',
@@ -329,9 +329,9 @@ export default function UnitDetail() {
         request_id: `manual-override-${crypto.randomUUID()}`,
       });
 
-      // Sync with reserve: override decrease = increment to source
+      // Sync with channel: override decrease = increment to source
       try {
-        await addReserveEntry({
+        await addChannelEntry({
           type: 'increment',
           amount: Math.abs(delta),
           method: 'override_adjustment',
@@ -359,7 +359,7 @@ export default function UnitDetail() {
       <div className="section-card p-5 lg:p-6 flex items-center justify-between gap-4">
         <div>
           <p className="text-xs text-stone-500 dark:text-stone-400">Unit Detail</p>
-          <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">{unit.name || 'Unnamed Unit'}</h2>
+          <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">{unit.name || 'Unnamed Participant'}</h2>
           {unit.tags && unit.tags.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {unit.tags.map(tag => (
@@ -376,7 +376,7 @@ export default function UnitDetail() {
           </button>
           <button type="button" onClick={() => navigate('/units')} className="action-btn-secondary">
             <ArrowLeft size={14} />
-            Back to Users
+            Back to Participants
           </button>
         </div>
       </div>
