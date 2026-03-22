@@ -2939,6 +2939,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     if (functionError) throw new Error(functionError.message || 'Failed to switch organization cluster.');
+
+    if (Object.prototype.hasOwnProperty.call(data ?? {}, 'org_id')) {
+      setActiveOrgId(data?.org_id ?? null);
+    } else {
+      setActiveOrgId(orgId);
+    }
+
+    if (data?.managed_org_ids) {
+      setManagedOrgIds(data.managed_org_ids);
+    }
     
     // Clear the profiles cache to trigger reload
     profilesUnavailableRef.current = false;
@@ -2972,8 +2982,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (functionError) throw new Error(functionError.message || 'Failed to provision fresh workspace cluster.');
 
+    if (!data?.org_id) {
+      throw new Error('Provisioning completed without a new organization id.');
+    }
+
+    setActiveOrgId(data.org_id);
+
     if (data?.managed_org_ids) {
       setManagedOrgIds(data.managed_org_ids);
+    } else {
+      setManagedOrgIds((current) => current.includes(data.org_id) ? current : [...current, data.org_id]);
     }
 
     profilesUnavailableRef.current = false;
