@@ -135,6 +135,14 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [busyMetaOrgUserId, setBusyMetaOrgUserId] = React.useState<string | null>(null);
 
   const canManageGlobalData = canAccessAdminUi;
+  const profileId = user?.id ?? '';
+  const profileLookupSql = profileId
+    ? `select id, org_id, meta_org_id\nfrom public.profiles\nwhere id = '${profileId}';`
+    : `select id, org_id, meta_org_id\nfrom public.profiles\nwhere id = 'YOUR_AUTH_USER_ID';`;
+  const orgCandidatesSql = `select distinct org_id\nfrom public.workspaces\nwhere org_id is not null\norder by org_id;`;
+  const profileUpdateSql = profileId
+    ? `update public.profiles\nset org_id = 'YOUR_ORG_UUID'\nwhere id = '${profileId}';`
+    : `update public.profiles\nset org_id = 'YOUR_ORG_UUID'\nwhere id = 'YOUR_AUTH_USER_ID';`;
 
   const getAccessToken = React.useCallback(async () => {
     if (!supabase) return null;
@@ -598,6 +606,36 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
             )}
           </div>
         </div>
+
+        {!isDemoMode && user && !activeOrgId && (
+          <div className="section border border-amber-200 bg-amber-50/70 dark:border-amber-900/60 dark:bg-amber-950/20">
+            <h3 className="font-medium mb-2 text-amber-900 dark:text-amber-100">Organization Setup Required</h3>
+            <div className="space-y-3 text-sm text-amber-900/90 dark:text-amber-100/90">
+              <p>
+                This account does not have a workspace assignment yet. The app currently reads organization scope from
+                <span className="font-mono"> public.profiles.org_id</span>, and there is no self-service editor for it in the UI yet.
+              </p>
+              <p>
+                Current profile ID: <span className="font-mono break-all">{profileId || 'Unavailable until signed in'}</span>
+              </p>
+              <div>
+                <p className="font-medium mb-1">1. Confirm your profile row</p>
+                <pre className="rounded-lg bg-stone-950 text-stone-100 p-3 overflow-x-auto text-xs leading-5">{profileLookupSql}</pre>
+              </div>
+              <div>
+                <p className="font-medium mb-1">2. Find an existing organization ID</p>
+                <pre className="rounded-lg bg-stone-950 text-stone-100 p-3 overflow-x-auto text-xs leading-5">{orgCandidatesSql}</pre>
+              </div>
+              <div>
+                <p className="font-medium mb-1">3. Assign this account to that organization</p>
+                <pre className="rounded-lg bg-stone-950 text-stone-100 p-3 overflow-x-auto text-xs leading-5">{profileUpdateSql}</pre>
+              </div>
+              <p>
+                After updating the profile, sign out and sign back in so the app reloads your workspace scope.
+              </p>
+            </div>
+          </div>
+        )}
 
         {canManageMetaOrgAdmins && (
           <div className="section">

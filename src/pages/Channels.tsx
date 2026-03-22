@@ -736,8 +736,18 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     }
     try {
       if (editingAccount) {
+        await updateTransferAccount({
+          ...editingAccount,
+          name: acctName.trim(),
+          category: resolvedCategory
+        });
         notify({ type: 'success', message: 'Account updated.' });
       } else {
+        await addTransferAccount({
+          name: acctName.trim(),
+          category: resolvedCategory,
+          is_active: true
+        });
         notify({ type: 'success', message: 'Account saved.' });
       }
       setAccountSaveState('saved');
@@ -750,6 +760,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       }, 2000);
       setIsAddingAccount(false);
       setEditingAccount(null);
+      setAcctName('');
+      setAcctCategory('');
     } catch (err: any) {
       notify({ type: 'error', message: err?.message || 'Unable to save account.' });
     } finally {
