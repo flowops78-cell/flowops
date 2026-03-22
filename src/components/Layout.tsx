@@ -32,7 +32,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       items: [
         { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Brief', hint: 'Operational overview and key metrics' },
         { to: '/activity', icon: <History size={18} />, label: 'Activities', hint: 'Activity records and participant overview' },
-        { to: '/reserve', icon: <Landmark size={18} />, label: 'Reserve', hint: 'Reserve tracking and settings overview' },
+        { to: '/reserve', icon: <Landmark size={18} />, label: 'Channels', hint: 'Reserve tracking and settings overview' },
+        { to: '/contacts', icon: <Users size={18} />, label: 'Entities', hint: 'Partner network and relationship tracking' },
         { to: '/team', icon: <Users size={18} />, label: 'Team', hint: 'Team management and operator coverage' },
         { to: '/settings', icon: <Settings size={18} />, label: 'Config', hint: 'System preferences and access control' },
       ],
@@ -43,8 +44,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     {
       label: '',
       items: [
-        { to: '/activity', icon: <History size={18} />, label: 'Activitys', hint: 'Activity records and participant overview' },
-        { to: '/team', icon: <UserCog size={18} />, label: 'Operations', hint: 'Team management and activity block operations' },
+        { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Brief' },
+        { to: '/activity', icon: <History size={18} />, label: 'Activities' },
+        { to: '/reserve', icon: <Landmark size={18} />, label: 'Channels' },
+        { to: '/contacts', icon: <Users size={18} />, label: 'Entities' },
+        { to: '/team', icon: <UserCog size={18} />, label: 'Operations' },
       ],
     },
   ];
