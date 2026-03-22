@@ -548,7 +548,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
               value={referredBy}
               onChange={e => setReferredBy(e.target.value)}
             >
-              <option value="">Legacy Relationship (optional)</option>
+              <option value="">Partner referral (optional)</option>
               {partners.map(a => (
                 <option key={a.id} value={a.id}>{a.name} ({a.role})</option>
               ))}
@@ -1191,7 +1191,7 @@ function UnitRow({ unit, stats, updateUnit, onOpenProfile, onOpenSnapshot, partn
             value={data.referred_by_partner_id || ''}
             onChange={e => setData({...data, referred_by_partner_id: e.target.value || undefined})}
           >
-            <option value="">Legacy Relation (optional)</option>
+            <option value="">Partner referral (optional)</option>
             {partners.map(a => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
