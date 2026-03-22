@@ -52,8 +52,8 @@ export default defineConfig({
   build: {
     rollupOptions: {
       output: {
-        chunkFileNames: chunkInfo => `assets/${renameChunk(chunkInfo.name)}.js`,
-        entryFileNames: chunkInfo => `assets/${renameChunk(chunkInfo.name)}.js`,
+        chunkFileNames: chunkInfo => `assets/${renameChunk(chunkInfo.name)}-[hash].js`,
+        entryFileNames: chunkInfo => `assets/${renameChunk(chunkInfo.name)}-[hash].js`,
         assetFileNames: assetInfo => {
           const originalName = assetInfo.name ?? 'asset';
           const extension = path.extname(originalName);
@@ -61,13 +61,13 @@ export default defineConfig({
 
           if (extension === '.css') {
             if (normalizeName(baseName).startsWith('index')) {
-              return 'assets/styles.css';
+              return 'assets/styles-[hash].css';
             }
 
-            return `assets/${renameChunk(baseName)}.css`;
+            return `assets/${renameChunk(baseName)}-[hash].css`;
           }
 
-          return `assets/${renameChunk(baseName)}${extension}`;
+          return `assets/${renameChunk(baseName)}-[hash]${extension}`;
         },
         manualChunks(id) {
           if (!id.includes('node_modules')) return;
