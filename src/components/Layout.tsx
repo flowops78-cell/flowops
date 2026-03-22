@@ -313,7 +313,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {/* Desktop Sidebar */}
       <aside className={isFocusFullscreen
         ? "hidden"
-        : "desktop-sidebar-proportional hidden lg:flex fixed inset-y-0 left-0 bg-transparent border-r border-stone-200 dark:border-stone-800/60 flex-col z-30"
+        : "desktop-sidebar-proportional hidden lg:flex fixed inset-y-0 left-0 bg-stone-50/50 dark:bg-stone-900/50 backdrop-blur-md border-r border-stone-200/80 dark:border-stone-800/60 flex-col z-30"
       }>
         {/* App name */}
         <div className="h-14 px-4 flex items-center border-b border-stone-200 dark:border-stone-800/60 shrink-0">
