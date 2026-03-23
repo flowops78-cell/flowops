@@ -15,7 +15,7 @@ const navItems: NavItem[] = [
   { to: "/dashboard", icon: <LayoutDashboard size={20} />, label: "Brief", hint: "Operational dashboard and value summary" },
   { to: "/activity", icon: <History size={20} />, label: "Activities", hint: "Activity records and participant overview" },
   { to: "/channels", icon: <Circle size={20} />, label: "Channels", hint: "Channel tracking and settings overview" },
-  { to: "/contacts", icon: <Handshake size={20} />, label: "Partners", hint: "Partner network and relationship tracking" },
+  { to: "/contacts", icon: <Handshake size={20} />, label: "Associates", hint: "Associate network and relationship tracking" },
   { to: "/team", icon: <Users size={20} />, label: "Team", hint: "Team management and activity block operations" },
   { to: "/settings", icon: <Settings size={20} />, label: "Settings", hint: "System settings and data actions" },
 ];

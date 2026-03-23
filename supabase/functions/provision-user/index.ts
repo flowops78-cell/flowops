@@ -1,5 +1,8 @@
+/// <reference path="../_shared/edge-runtime.d.ts" />
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { checkRateLimit, resolveClientIp, rateLimitResponse } from '../_shared/rate-limiter.ts';
+import { ensureOrgMembership, getCallerAuthorityContext, syncOrgGraph } from '../_shared/auth-model.ts';
 import { getCorsHeaders } from '../_shared/cors.ts';
 
 const RATE_LIMIT = { maxRequests: 20, windowMs: 60_000 };
@@ -22,6 +25,12 @@ type ProvisionPayload = {
   access_token?: string;
 };
 
+type AuthUserSummary = {
+  id: string;
+  email?: string | null;
+  user_metadata?: Record<string, unknown> | null;
+};
+
 const json = (status: number, body: Record<string, unknown>, origin: string | null) =>
   new Response(JSON.stringify(body), {
     status,
@@ -35,6 +44,20 @@ const resolveTargetMetaOrgId = async (
   isGlobalAdmin: boolean,
   resolvedRole: DbRole,
 ) => {
+  const { data: existingOrgRow, error: orgError } = await adminClient
+    .from('orgs')
+    .select('cluster_id')
+    .eq('id', targetOrgId)
+    .maybeSingle();
+
+  if (orgError) {
+    throw new Error(`Unable to resolve org cluster: ${orgError.message}`);
+  }
+
+  if (existingOrgRow?.cluster_id) {
+    return existingOrgRow.cluster_id;
+  }
+
   if (callerMetaOrgId) return callerMetaOrgId;
 
   const { data: existingOrgMapping, error: mappingError } = await adminClient
@@ -97,7 +120,7 @@ const toMemberRole = (role: DbRole): 'admin' | 'operator' | 'viewer' => {
   return 'viewer';
 };
 
-Deno.serve(async (request) => {
+Deno.serve(async (request: Request) => {
   const origin = request.headers.get('Origin');
   if (request.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(origin) });
   if (request.method !== 'POST') return json(405, { error: 'Method not allowed' }, origin);
@@ -142,44 +165,32 @@ Deno.serve(async (request) => {
   }
 
   const callerUserId = authUserData.user.id;
-
-  const { data: callerRoleData, error: callerRoleError } = await adminClient
-    .from('user_roles')
-    .select('role')
-    .eq('user_id', callerUserId)
-    .single();
-
-  if (callerRoleError || !callerRoleData) {
-    return json(403, { error: 'Caller role not found in user_roles.' }, origin);
+  let callerAuthority;
+  try {
+    callerAuthority = await getCallerAuthorityContext(adminClient, callerUserId);
+  } catch (error) {
+    return json(400, { error: error instanceof Error ? error.message : 'Unable to resolve caller authority.' }, origin);
   }
 
-  if (callerRoleData.role !== 'admin') {
+  if (!callerAuthority.isAdmin) {
     return json(403, { error: 'Only admin accounts can provision users.' }, origin);
   }
 
-  const { data: callerProfileData, error: callerProfileError } = await adminClient
-    .from('profiles')
-    .select('org_id, meta_org_id')
-    .eq('id', callerUserId)
-    .maybeSingle();
+  const callerOrgId = callerAuthority.currentOrgId;
+  const callerMetaId = callerAuthority.metaOrgId;
+  const isGlobalAdmin = callerAuthority.isPlatformAdmin || (callerAuthority.source === 'legacy' && callerAuthority.role === 'admin' && !callerMetaId);
 
-  if (callerProfileError) {
-    return json(400, { error: `Unable to resolve caller org: ${callerProfileError.message}` }, origin);
+  if (!isGlobalAdmin && !callerOrgId && callerAuthority.managedOrgIds.length === 0) {
+    return json(400, { error: 'Caller has no organization authority.' }, origin);
   }
 
-  const callerOrgId = callerProfileData?.org_id ?? null;
-  const callerMetaId = callerProfileData?.meta_org_id ?? null;
-  const isGlobalAdmin = callerRoleData.role === 'admin' && !callerMetaId;
-
-  if (!isGlobalAdmin && !callerOrgId) {
-    return json(400, { error: 'Caller has no org_id in profiles.' }, origin);
-  }
-
-  const { data: requestRow, error: requestRowError } = await adminClient
+  const { data: requestRowData, error: requestRowError } = await adminClient
     .from('access_requests')
     .select('id, org_id, login_id, requested_role, status')
     .eq('id', payload.access_request_id)
-    .single<AccessRequestRow>();
+    .single();
+
+  const requestRow = requestRowData as AccessRequestRow | null;
 
   if (requestRowError || !requestRow) {
     return json(404, { error: 'Access request not found.' }, origin);
@@ -189,7 +200,7 @@ Deno.serve(async (request) => {
     return json(409, { error: 'Cannot provision a rejected access request.' }, origin);
   }
 
-  if (!isGlobalAdmin && requestRow.org_id !== callerOrgId) {
+  if (!isGlobalAdmin && !callerAuthority.managedOrgIds.includes(requestRow.org_id) && requestRow.org_id !== callerOrgId) {
     return json(403, { error: 'Access request is outside the caller org scope.' }, origin);
   }
 
@@ -241,7 +252,7 @@ Deno.serve(async (request) => {
     }
 
     const users = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    const existing = users?.data?.users?.find((u) => (u.email ?? '').toLowerCase() === resolvedLoginId);
+    const existing = users?.data?.users?.find((u: AuthUserSummary) => (u.email ?? '').toLowerCase() === resolvedLoginId);
     if (!existing) {
       return json(400, { error: 'User exists but could not be resolved from auth.users.' }, origin);
     }
@@ -277,6 +288,16 @@ Deno.serve(async (request) => {
 
   if (profileUpsertError) {
     return json(400, { error: `profiles upsert error: ${profileUpsertError.message}` }, origin);
+  }
+
+  try {
+    await syncOrgGraph(adminClient, targetOrgId, targetMetaOrgId);
+    await ensureOrgMembership(adminClient, provisionedUserId, targetOrgId, resolvedRole, {
+      isDefaultOrg: true,
+      status: 'active',
+    });
+  } catch (error) {
+    return json(400, { error: error instanceof Error ? error.message : 'Unable to sync membership auth model.' }, origin);
   }
 
   // Ensure org -> meta mapping exists if we have a cluster context

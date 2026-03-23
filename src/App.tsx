@@ -12,10 +12,11 @@ import LoadingLine from './components/LoadingLine';
 import { NotificationProvider } from './context/NotificationContext';
 import { preloadCoreRoutesOnIdle } from './lib/routePreloaders';
 import { enableHorizontalMouseDrag } from './lib/enableHorizontalMouseDrag';
+import { useData } from './context/DataContext';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const BriefFlowOverview = lazy(() => import('./pages/BriefFlowOverview'));
-const PartnerNetwork = lazy(() => import('./pages/PartnerNetwork'));
+const AssociateNetwork = lazy(() => import('./pages/AssociateNetwork'));
 const ActivityMonitor = lazy(() => import('./pages/ActivityMonitor'));
 const WorkspaceDetail = lazy(() => import('./pages/WorkspaceDetail'));
 const UnitDetail = lazy(() => import('./pages/UnitDetail'));
@@ -23,6 +24,7 @@ const Team = lazy(() => import('./pages/Team'));
 const Channels = lazy(() => import('./pages/Channels'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Auth = lazy(() => import('./pages/Auth'));
+const WaitingAssignment = lazy(() => import('./pages/WaitingAssignment'));
 
 function ActivityDetailRedirect() {
   const { id } = useParams<{ id: string }>();
@@ -31,6 +33,26 @@ function ActivityDetailRedirect() {
 
 function AppRoutes() {
   const { canAccessAdminUi } = useAppRole();
+  const { 
+    activeOrgId, 
+    loading: dataLoading,
+  } = useData();
+  const { loading: roleLoading } = useAppRole();
+
+  if ((dataLoading || roleLoading) && !activeOrgId) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4">
+        <div className="w-full max-w-sm">
+          <LoadingLine label="Syncing organization context…" />
+        </div>
+      </div>
+    );
+  }
+
+  // If not initial loading, not data loading, no active org, and no admin access, show WaitingAssignment
+  if (!activeOrgId && !canAccessAdminUi) {
+    return <WaitingAssignment />;
+  }
 
   return (
     <Layout>
@@ -51,7 +73,7 @@ function AppRoutes() {
           <Route path="/channels" element={canAccessAdminUi ? <Channels /> : <Navigate to="/activity" replace />} />
           <Route path="/channels-fallback" element={<Navigate to="/channels" replace />} />
           <Route path="/brief-flow" element={canAccessAdminUi ? <BriefFlowOverview /> : <Navigate to="/activity" replace />} />
-          <Route path="/contacts" element={canAccessAdminUi ? <PartnerNetwork /> : <Navigate to="/activity" replace />} />
+          <Route path="/contacts" element={canAccessAdminUi ? <AssociateNetwork /> : <Navigate to="/activity" replace />} />
           <Route path="/team" element={<Team />} />
           <Route path="/settings" element={canAccessAdminUi ? <Settings /> : <Navigate to="/activity" replace />} />
           <Route path="/distribution" element={<Navigate to="/dashboard" replace />} />
@@ -61,6 +83,8 @@ function AppRoutes() {
           <Route path="/accounting" element={<Navigate to={canAccessAdminUi ? '/channels' : '/activity'} replace />} />
           <Route path="/admin/diagnostics" element={<Navigate to="/settings" replace />} />
           <Route path="/workspaces/:id" element={<ActivityDetailRedirect />} />
+          <Route path="/waiting-assignment" element={<WaitingAssignment />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </Suspense>
     </Layout>

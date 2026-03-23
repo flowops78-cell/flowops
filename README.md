@@ -73,8 +73,9 @@ Access request signup workflow (optional):
 Deploy edge functions:
 - Install and login to Supabase CLI.
 - Run from project root: `supabase functions deploy submit-access-request provision-user`.
-- Set secret once: `supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your-service-role-key`.
+- Set secrets once: `supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your-service-role-key FLOW_OPS_ALLOWED_ORIGINS=https://your-app.example.com,https://your-preview.example.com`.
 - Verify both functions exist in Supabase Dashboard → Edge Functions.
+- `FLOW_OPS_ALLOWED_ORIGINS` must be a comma-separated list of exact browser origins allowed to call the edge functions. Wildcard preview domains are not trusted.
 - If the functions are not deployed, create/invite the account manually in Supabase Auth and set `app_role` plus organization scope id.
 
 Role-account checklist (recommended):

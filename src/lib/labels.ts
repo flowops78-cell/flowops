@@ -48,9 +48,21 @@ export const EVENT_LABELS: Record<string, string> = {
 	adjustment_updated: 'Pending entry updated',
 	adjustment_deleted: 'Pending entry removed',
 	channel_entry_added: 'Channel entry recorded',
-	partner_added: 'Partner added',
-	partner_updated: 'Partner updated',
-	partner_entry_added: 'Adjustment logged',
+	// Legacy keys — kept so existing DB audit rows still display correctly
+	partner_added: 'Associate added',
+	partner_updated: 'Associate updated',
+	partner_entry_added: 'Allocation logged',
+	partner_entry_deleted: 'Allocation removed',
+	// Canonical keys
+	associate_added: 'Associate added',
+	associate_updated: 'Associate updated',
+	associate_archived: 'Associate hidden',
+	associate_unarchived: 'Associate restored',
+	associate_deleted: 'Associate removed',
+	associate_allocation_added: 'Allocation logged',
+	associate_allocation_deleted: 'Allocation removed',
+	associate_allocation_archived: 'Allocation hidden',
+	associate_allocation_unarchived: 'Allocation restored',
 };
 
 export const t = (key: string): string => key;

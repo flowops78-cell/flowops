@@ -1,4 +1,7 @@
+/// <reference path="../_shared/edge-runtime.d.ts" />
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { ensureOrgMembership, getCallerAuthorityContext, syncOrgGraph } from '../_shared/auth-model.ts';
 import { getCorsHeaders } from '../_shared/cors.ts';
 interface HitRecord {
   timestamps: number[];
@@ -119,6 +122,48 @@ type ManagedAccount = {
   created_at: string | null;
 };
 
+type OrgIdRow = {
+  org_id: string | null;
+};
+
+type MembershipScopeRow = {
+  org_id: string;
+  is_default_org: boolean;
+  orgs?: { cluster_id?: string | null } | null;
+};
+
+type ProfileListRow = {
+  id: string;
+  org_id: string | null;
+  meta_org_id: string | null;
+  created_at: string | null;
+};
+
+type RoleListRow = {
+  user_id: string;
+  role: DbRole;
+};
+
+type MembershipRoleRow = {
+  user_id: string;
+  org_id: string;
+  role: DbRole;
+  is_default_org: boolean;
+};
+
+type MemberListRow = {
+  user_id: string | null;
+  member_id: string | null;
+  name: string | null;
+  org_id: string | null;
+};
+
+type AuthUserSummary = {
+  id: string;
+  email?: string | null;
+  user_metadata?: Record<string, unknown> | null;
+};
+
 const json = (status: number, body: Record<string, unknown>, origin: string | null) =>
   new Response(JSON.stringify(body), {
     status,
@@ -167,77 +212,24 @@ const loadClusterContext = async (
   callerUserId: string,
   requestedOrgId?: string,
 ) => {
-  const { data: callerRoleData, error: callerRoleError } = await adminClient
-    .from('user_roles')
-    .select('role')
-    .eq('user_id', callerUserId)
-    .single();
+  const authority = await getCallerAuthorityContext(adminClient, callerUserId, {
+    requestedOrgId: requestedOrgId ?? null,
+  });
 
-  if (callerRoleError || !callerRoleData) {
-    throw new Error('Caller role not found in user_roles.');
-  }
-
-  if (callerRoleData.role !== 'admin') {
+  if (!authority.isAdmin) {
     throw new Error('Only admin accounts can manage meta-org admins.');
   }
 
-  const { data: callerProfileData, error: callerProfileError } = await adminClient
-    .from('profiles')
-    .select('org_id, meta_org_id')
-    .eq('id', callerUserId)
-    .maybeSingle();
-
-  if (callerProfileError) {
-    throw new Error(`Unable to resolve caller profile: ${callerProfileError.message}`);
-  }
-
-  const callerOrgId = callerProfileData?.org_id ?? requestedOrgId ?? null;
-  let metaOrgId = callerProfileData?.meta_org_id ?? null;
-
-  if (!metaOrgId && callerOrgId) {
-    const { data: mappingData, error: mappingError } = await adminClient
-      .from('org_meta_mapping')
-      .select('meta_org_id')
-      .eq('org_id', callerOrgId)
-      .maybeSingle();
-
-    if (mappingError) {
-      throw new Error(`Unable to resolve org cluster mapping: ${mappingError.message}`);
-    }
-
-    metaOrgId = mappingData?.meta_org_id ?? null;
-  }
-
-  let managedOrgIds: string[] = [];
-  if (metaOrgId) {
-    const { data: mappingRows, error: mappingRowsError } = await adminClient
-      .from('org_meta_mapping')
-      .select('org_id')
-      .eq('meta_org_id', metaOrgId);
-
-    if (mappingRowsError) {
-      throw new Error(`Unable to resolve managed orgs: ${mappingRowsError.message}`);
-    }
-
-    managedOrgIds = (mappingRows ?? [])
-      .map((row) => row.org_id)
-      .filter((value): value is string => typeof value === 'string' && value.length > 0);
-  }
-
-  if (callerOrgId && !managedOrgIds.includes(callerOrgId)) {
-    managedOrgIds.unshift(callerOrgId);
-  }
-
-  managedOrgIds = Array.from(new Set(managedOrgIds));
-
   return {
-    callerOrgId,
-    metaOrgId,
-    managedOrgIds,
+    callerOrgId: authority.currentOrgId,
+    metaOrgId: authority.metaOrgId,
+    managedOrgIds: authority.managedOrgIds,
+    isPlatformAdmin: authority.isPlatformAdmin,
+    source: authority.source,
   };
 };
 
-Deno.serve(async (request) => {
+Deno.serve(async (request: Request) => {
   const origin = request.headers.get('Origin');
   if (request.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(origin) });
   if (request.method !== 'POST') return json(405, { error: 'Method not allowed' }, origin);
@@ -287,7 +279,7 @@ Deno.serve(async (request) => {
   }
 
   if (payload.action === 'list-org-contexts') {
-    if (clusterContext.metaOrgId === null) {
+    if (clusterContext.isPlatformAdmin || clusterContext.metaOrgId === null) {
       const { data: workspaceOrgRows, error: workspaceOrgRowsError } = await adminClient
         .from('workspaces')
         .select('org_id')
@@ -297,12 +289,12 @@ Deno.serve(async (request) => {
         return json(400, { error: `Unable to load workspace orgs: ${workspaceOrgRowsError.message}` }, origin);
       }
 
-      const { data: mappedOrgRows, error: mappedOrgRowsError } = await adminClient
-        .from('org_meta_mapping')
-        .select('org_id');
+      const { data: orgRows, error: orgRowsError } = await adminClient
+        .from('orgs')
+        .select('id');
 
-      if (mappedOrgRowsError) {
-        return json(400, { error: `Unable to load mapped orgs: ${mappedOrgRowsError.message}` }, origin);
+      if (orgRowsError) {
+        return json(400, { error: `Unable to load org graph: ${orgRowsError.message}` }, origin);
       }
 
       const { data: profileOrgRows, error: profileOrgRowsError } = await adminClient
@@ -315,9 +307,9 @@ Deno.serve(async (request) => {
       }
 
       const orgs = dedupeOrgIds([
-        ...(workspaceOrgRows ?? []).map((row) => row.org_id),
-        ...(mappedOrgRows ?? []).map((row) => row.org_id),
-        ...(profileOrgRows ?? []).map((row) => row.org_id),
+        ...((workspaceOrgRows ?? []) as OrgIdRow[]).map((row: OrgIdRow) => row.org_id),
+        ...((orgRows ?? []) as Array<{ id: string | null }>).map((row) => row.id),
+        ...((profileOrgRows ?? []) as OrgIdRow[]).map((row: OrgIdRow) => row.org_id),
       ]);
 
       return json(200, {
@@ -350,6 +342,17 @@ Deno.serve(async (request) => {
       return json(400, { error: `Unable to switch organization context: ${profileUpdateError.message}` }, origin);
     }
 
+    if (requestedOrgId) {
+      try {
+        await ensureOrgMembership(adminClient, callerUserId, requestedOrgId, 'admin', {
+          isDefaultOrg: true,
+          status: 'active',
+        });
+      } catch (error) {
+        return json(400, { error: error instanceof Error ? error.message : 'Unable to switch membership context.' }, origin);
+      }
+    }
+
     return json(200, {
       ok: true,
       org_id: requestedOrgId,
@@ -361,6 +364,25 @@ Deno.serve(async (request) => {
     const requestedOrgId = normalizeOrgId(payload.org_id) ?? crypto.randomUUID();
     const provisionedMetaOrgId = crypto.randomUUID();
 
+    // 1. Create the cluster record
+    const { error: clusterError } = await adminClient
+      .from('org_clusters')
+      .insert({ id: provisionedMetaOrgId, name: 'Default Cluster' });
+
+    if (clusterError) {
+      return json(400, { error: `Unable to initialize cluster: ${clusterError.message}` }, origin);
+    }
+
+    // 2. Create the org record
+    const { error: orgError } = await adminClient
+      .from('orgs')
+      .insert({ id: requestedOrgId, name: 'Default Organization', cluster_id: provisionedMetaOrgId });
+
+    if (orgError) {
+      return json(400, { error: `Unable to initialize organization: ${orgError.message}` }, origin);
+    }
+
+    // 3. Update the profile
     const { error: profileUpdateError } = await adminClient
       .from('profiles')
       .update({
@@ -375,6 +397,11 @@ Deno.serve(async (request) => {
 
     try {
       await upsertOrgMetaMapping(adminClient, requestedOrgId, provisionedMetaOrgId);
+      await syncOrgGraph(adminClient, requestedOrgId, provisionedMetaOrgId);
+      await ensureOrgMembership(adminClient, callerUserId, requestedOrgId, 'admin', {
+        isDefaultOrg: true,
+        status: 'active',
+      });
     } catch (error) {
       return json(400, { error: error instanceof Error ? error.message : 'Unable to persist fresh workspace mapping.' }, origin);
     }
@@ -471,8 +498,19 @@ Deno.serve(async (request) => {
       return json(400, { error: `Unable to update target role: ${roleUpsertError.message}` }, origin);
     }
 
+    try {
+      await ensureOrgMembership(adminClient, targetUserId, targetProfile.org_id, targetRole, {
+        status: 'active',
+      });
+      if (targetRole === 'admin' && resolvedMetaOrgId) {
+        await syncOrgGraph(adminClient, targetProfile.org_id, resolvedMetaOrgId);
+      }
+    } catch (error) {
+      return json(400, { error: error instanceof Error ? error.message : 'Unable to sync target membership role.' }, origin);
+    }
+
     const users = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    const targetUser = users.data.users.find((item) => item.id === targetUserId);
+    const targetUser = users.data.users.find((item: AuthUserSummary) => item.id === targetUserId);
     if (targetUser) {
       await adminClient.auth.admin.updateUserById(targetUserId, {
         user_metadata: { ...(targetUser.user_metadata ?? {}), app_role: targetRole },
@@ -515,6 +553,7 @@ Deno.serve(async (request) => {
 
     // Hierarchical Purge
     await adminClient.from('members').delete().eq('user_id', targetUserId);
+    await adminClient.from('org_memberships').delete().eq('user_id', targetUserId);
     await adminClient.from('user_roles').delete().eq('user_id', targetUserId);
     await adminClient.from('profiles').delete().eq('id', targetUserId);
     const { error: deleteError } = await adminClient.auth.admin.deleteUser(targetUserId);
@@ -545,14 +584,25 @@ Deno.serve(async (request) => {
     return json(400, { error: `Unable to load managed profiles: ${profileRowsError.message}` }, origin);
   }
 
-  const profileIds = (profileRows ?? []).map((row) => row.id).filter((value): value is string => Boolean(value));
-  const { data: roleRows, error: roleRowsError } = await adminClient
-    .from('user_roles')
-    .select('user_id, role')
-    .in('user_id', profileIds);
+  const typedProfileRows = (profileRows ?? []) as ProfileListRow[];
+  const profileIds = typedProfileRows.map((row: ProfileListRow) => row.id).filter((value: string | null): value is string => Boolean(value));
+  const [{ data: roleRows, error: roleRowsError }, { data: membershipRoleRows, error: membershipRoleRowsError }] = await Promise.all([
+    adminClient
+      .from('user_roles')
+      .select('user_id, role')
+      .in('user_id', profileIds),
+    adminClient
+      .from('org_memberships')
+      .select('user_id, org_id, role, is_default_org')
+      .in('org_id', managedOrgIds),
+  ]);
 
   if (roleRowsError) {
     return json(400, { error: `Unable to load managed roles: ${roleRowsError.message}` }, origin);
+  }
+
+  if (membershipRoleRowsError) {
+    return json(400, { error: `Unable to load managed memberships: ${membershipRoleRowsError.message}` }, origin);
   }
 
   const { data: memberRows, error: memberRowsError } = await adminClient
@@ -565,25 +615,28 @@ Deno.serve(async (request) => {
   }
 
   const authUsers = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
-  const emailByUserId = new Map(authUsers.data.users.map((item) => [item.id, item.email ?? null]));
-  const roleByUserId = new Map(roleRows?.map((item) => [item.user_id, item.role as DbRole]) ?? []);
-  const memberByUserId = new Map(memberRows?.map((item) => [item.user_id, item]) ?? []);
+  const emailByUserId = new Map<string, string | null>(
+    authUsers.data.users.map((item: AuthUserSummary) => [item.id, typeof item.email === 'string' ? item.email : null]),
+  );
+  const roleByUserId = new Map(((roleRows ?? []) as RoleListRow[]).map((item: RoleListRow) => [item.user_id, item.role]));
+  const roleByUserOrg = new Map(((membershipRoleRows ?? []) as MembershipRoleRow[]).map((item: MembershipRoleRow) => [`${item.user_id}:${item.org_id}`, item.role]));
+  const memberByUserId = new Map(((memberRows ?? []) as MemberListRow[]).map((item: MemberListRow) => [item.user_id, item]));
 
-  const accounts: ManagedAccount[] = (profileRows ?? [])
-    .map((profileRow) => {
+  const accounts: ManagedAccount[] = typedProfileRows
+    .map((profileRow: ProfileListRow) => {
       const matchedMember = memberByUserId.get(profileRow.id);
       return {
         user_id: profileRow.id,
         login_id: emailByUserId.get(profileRow.id) ?? null,
         org_id: profileRow.org_id ?? null,
         meta_org_id: profileRow.meta_org_id ?? null,
-        role: roleByUserId.get(profileRow.id) ?? 'viewer',
+        role: roleByUserOrg.get(`${profileRow.id}:${profileRow.org_id ?? ''}`) ?? roleByUserId.get(profileRow.id) ?? 'viewer',
         member_id: matchedMember?.member_id ?? null,
         member_name: matchedMember?.name ?? null,
         created_at: profileRow.created_at ?? null,
       };
     })
-    .sort((left, right) => {
+    .sort((left: ManagedAccount, right: ManagedAccount) => {
       if (left.role === right.role) {
         return (left.login_id ?? '').localeCompare(right.login_id ?? '');
       }

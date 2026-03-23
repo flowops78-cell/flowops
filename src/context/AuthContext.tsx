@@ -7,7 +7,6 @@ type AuthContextType = {
   activity: Session | null;
   loading: boolean;
   signInWithPassword: (email: string, password: string, options?: { keepSignedIn?: boolean }) => Promise<void>;
-  signInWithGoogle: (options?: { keepSignedIn?: boolean }) => Promise<void>;
   signOut: () => Promise<void>;
 };
 
@@ -156,26 +155,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActivity(data.session);
   };
 
-  const signInWithGoogle = async (options?: { keepSignedIn?: boolean }) => {
-    if (!supabase) throw new Error('Supabase is not configured.');
-    if (typeof window !== 'undefined' && typeof options?.keepSignedIn === 'boolean') {
-      sessionStorage.setItem(AUTH_PERSIST_ACTIVITY_KEY, options.keepSignedIn ? '1' : '0');
-    }
-
-    const redirectTo = typeof window !== 'undefined'
-      ? `${window.location.origin}/auth`
-      : undefined;
-
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo,
-      },
-    });
-
-    if (error) throw error;
-  };
-
   const signOut = async () => {
     if (!supabase) return;
     const { error } = await supabase.auth.signOut({ scope: 'local' });
@@ -203,7 +182,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     activity,
     loading,
     signInWithPassword,
-    signInWithGoogle,
     signOut,
   }), [activity, loading]);
 

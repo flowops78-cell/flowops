@@ -95,8 +95,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     expenses,
     adjustments,
     channelEntries,
-    partners,
-    partnerEntries,
     systemEvents,
     operatorLogs,
     recordSystemEvent,
@@ -104,6 +102,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     updateProfileOrgId,
     provisionProfileOrgContext,
     managedOrgIds,
+    metaOrgId,
   } = useData();
   const { role, canAccessAdminUi } = useAppRole();
   const { notify } = useNotification();
@@ -155,7 +154,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     }
     if (isClearingGlobalData) return;
 
-    const confirmed = window.confirm('Clear all operational data? This removes workspaces, participants, entries, member records, member activities, expenses, adjustment requests, partner network, and channel movements. This cannot be undone.');
+    const confirmed = window.confirm('Clear all operational data? This removes workspaces, participants, entries, member records, member activities, expenses, adjustment requests, associate network, and channel movements. This cannot be undone.');
     if (!confirmed) return;
 
     setIsClearingGlobalData(true);
@@ -170,6 +169,8 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
           'flow_ops_outflows',
           'flow_ops_adjustments',
           'flow_ops_channel_base',
+          'flow_ops_associates',
+          'flow_ops_associate_allocations',
           'flow_ops_partners',
           'flow_ops_partner_trans',
           'flow_ops_audit_events_v2',
@@ -178,7 +179,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
           'flow_ops_operator_log_user_id',
           'flow_ops_missing_supabase_workspaces',
         ];
-        demoKeys.forEach(key => localStorage.removeItem(key));
         demoKeys.forEach(key => localStorage.removeItem(key));
         await refreshData();
         notify({ type: 'success', message: 'Demo data cleared.' });
@@ -203,12 +203,12 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         await clearWorkspace('outflows');
         await clearWorkspace('adjustments');
         await clearWorkspace('channel_entries');
-        await clearWorkspace('partner_entries');
+        await clearWorkspace('associate_allocations');
         await clearWorkspace('workspaces');
         await clearWorkspace('members');
         await clearWorkspace('audit_events');
         await clearWorkspace('operator_activities');
-        await clearWorkspace('partners');
+        await clearWorkspace('associates');
         await clearWorkspace('units');
 
         await refreshData();
@@ -597,7 +597,94 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
           </div>
         </div>
 
-        <div className="section">
+        <div className="section border-t border-stone-200 dark:border-stone-800 pt-6">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-medium text-stone-900 dark:text-stone-100">Organization Context</h3>
+            {metaOrgId === null && role === 'admin' && (
+              <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50">
+                Global Admin
+              </span>
+            )}
+            {metaOrgId && (
+              <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300 border border-stone-200 dark:border-stone-700">
+                Cluster Admin
+              </span>
+            )}
+          </div>
+          
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Current Scope (Active Org ID)</label>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[13px] bg-stone-100 dark:bg-stone-800/50 px-2 py-1.5 rounded border border-stone-200 dark:border-stone-800 text-stone-600 dark:text-stone-400 flex-1 truncate">
+                    {activeOrgId || 'No Organization Assigned'}
+                  </span>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Cluster ID (Meta Org ID)</label>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[13px] bg-stone-100 dark:bg-stone-800/50 px-2 py-1.5 rounded border border-stone-200 dark:border-stone-800 text-stone-600 dark:text-stone-400 flex-1 truncate">
+                    {metaOrgId || 'None (Global Visibility)'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {managedOrgIds.length > 0 && (
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Switch Active Organization</label>
+                <div className="flex items-center gap-2 max-w-md">
+                  <select 
+                    className="control-input flex-1 text-xs"
+                    value={activeOrgId || ''}
+                    onChange={(e) => void updateProfileOrgId(e.target.value)}
+                  >
+                    <option value="">No Active Organization</option>
+                    {managedOrgIds.map(id => (
+                      <option key={id} value={id}>{id}</option>
+                    ))}
+                  </select>
+                  <button 
+                    type="button" 
+                    onClick={() => { void refreshData(); }}
+                    className="action-btn-secondary h-9 px-3"
+                    title="Refresh available list"
+                  >
+                    Refresh
+                  </button>
+                </div>
+                <p className="text-[11px] text-stone-400 dark:text-stone-500 italic">
+                  Switching organization context updates your RLS scope and reloads application data.
+                </p>
+              </div>
+            )}
+
+            {managedOrgIds.length === 0 && canAccessAdminUi && (
+              <div className="rounded-lg border border-stone-200 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-900/30 p-4">
+                <div className="flex items-center gap-3 mb-3">
+                  <AlertTriangle size={18} className="text-amber-600 dark:text-amber-400" />
+                  <p className="text-sm font-medium text-stone-900 dark:text-stone-100">No Managed Organizations Found</p>
+                </div>
+                <p className="text-xs text-stone-600 dark:text-stone-400 mb-4">
+                  You are an administrator but have no assigned organization context or cluster. 
+                  Provision a new organization to begin managing a workspace.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => { void provisionProfileOrgContext(); }}
+                  className="action-btn-primary text-xs flex items-center gap-2"
+                >
+                  <ShieldCheck size={14} />
+                  Provision My First Org Cluster
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="section border-t border-stone-200 dark:border-stone-800 pt-6">
           <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Access</h3>
           <div className="space-y-2 text-sm text-stone-700 dark:text-stone-300">
             <p><span className="font-medium">Role Source:</span> Locked</p>

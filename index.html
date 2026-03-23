@@ -5,7 +5,32 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'" />
     <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <link rel="preconnect" href="https://supabase.co" />
     <title>Flow Ops</title>
+    <style>
+      #root:empty {
+        background: #fafaf9;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      #root:empty::after {
+        content: "";
+        width: 32px;
+        height: 32px;
+        border: 2px solid #e7e5e4;
+        border-top-color: #1c1917;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      @media (prefers-color-scheme: dark) {
+        #root:empty { background: #0c0a09; }
+        #root:empty::after { border-color: #292524; border-top-color: #fafaf9; }
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

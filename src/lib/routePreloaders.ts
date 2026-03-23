@@ -14,7 +14,7 @@ const routePreloaders: Record<string, () => Promise<unknown>> = {
     preloadRoute('/channels'),
   ]),
   '/contacts': () => Promise.all([
-    import('../pages/PartnerNetwork'),
+    import('../pages/AssociateNetwork'),
   ]),
   '/team': () => Promise.all([
     import('../pages/Team'),

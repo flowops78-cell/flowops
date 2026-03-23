@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { Search, Plus, Tag, X, TrendingUp, TrendingDown, Calendar, Award, Edit2, Save, Eye, Clock, Download, LayoutGrid, List, ArrowRightLeft, Trash2 } from 'lucide-react';
-import { Unit } from '../types';
+import { Associate, Unit } from '../types';
 import { formatValue, formatDate } from '../lib/utils';
 import { cn } from '../lib/utils';
 import MobileRecordCard from '../components/MobileRecordCard';
@@ -20,7 +20,7 @@ const getUnitDisplayName = (name?: string | null) => {
 export default function Units({ embedded = false }: { embedded?: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { units, addUnit, requestAdjustment, importUnits, updateUnit, deleteUnit, transferUnitTotal, recordOutputRequest, entries, workspaces, partners } = useData();
+  const { units, addUnit, requestAdjustment, importUnits, updateUnit, deleteUnit, transferUnitTotal, recordOutputRequest, entries, workspaces, associates } = useData();
   const { canAccessAdminUi, canOperateLog, canManageValue } = useAppRole();
   const { getActionText, tx } = useLabels();
   const canRecordDeferred = canOperateLog;
@@ -43,7 +43,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
   const [profileTotal, setProfileTotal] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [currentTag, setCurrentTag] = useState('');
-  const [referredBy, setReferredBy] = useState('');
+  const [attributedAssociateId, setAttributedAssociateId] = useState('');
   const [transferFromUnitId, setTransferFromUnitId] = useState('');
   const [transferToUnitId, setTransferToUnitId] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
@@ -222,7 +222,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
         name: displayName,
         tags,
         total: Number.isFinite(parsedTotal as number) ? parsedTotal : undefined,
-        referred_by_partner_id: referredBy || undefined
+        attributed_associate_id: attributedAssociateId || undefined
       });
       setIsAdding(false);
       resetForm();
@@ -237,7 +237,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
     setProfileTotal('');
     setTags([]);
     setCurrentTag('');
-    setReferredBy('');
+    setAttributedAssociateId('');
   };
 
   const handleAddTag = (e: React.KeyboardEvent) => {
@@ -545,11 +545,11 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
             />
             <select
               className="control-input"
-              value={referredBy}
-              onChange={e => setReferredBy(e.target.value)}
+              value={attributedAssociateId}
+              onChange={e => setAttributedAssociateId(e.target.value)}
             >
-              <option value="">Partner referral (optional)</option>
-              {partners.map(a => (
+              <option value="">Associate attribution (optional)</option>
+              {associates.map(a => (
                 <option key={a.id} value={a.id}>{a.name} ({a.role})</option>
               ))}
             </select>
@@ -920,7 +920,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
                     updateUnit={updateUnit}
                     onOpenProfile={() => openUnitProfile(unit.id)}
                     onOpenSnapshot={() => setQuickViewUnit(unit)}
-                    partners={partners}
+                    associates={associates}
                     canManageValue={canManageValue}
                     canRecordDeferred={canRecordDeferred}
                     onTransferFromUnit={() => openTransferForm(unit.id)}
@@ -1153,7 +1153,7 @@ function UnitGridCard({
   );
 }
 
-function UnitRow({ unit, stats, updateUnit, onOpenProfile, onOpenSnapshot, partners, canManageValue, canRecordDeferred, onTransferFromUnit, onRecordDeferred, onDelete }: { unit: Unit, stats: any, updateUnit: (p: Unit) => Promise<void>, onOpenProfile: () => void, onOpenSnapshot: () => void, partners: any[], canManageValue: boolean, canRecordDeferred: boolean, onTransferFromUnit: () => void, onRecordDeferred: () => void, onDelete: () => void }) {
+function UnitRow({ unit, stats, updateUnit, onOpenProfile, onOpenSnapshot, associates, canManageValue, canRecordDeferred, onTransferFromUnit, onRecordDeferred, onDelete }: { unit: Unit, stats: any, updateUnit: (p: Unit) => Promise<void>, onOpenProfile: () => void, onOpenSnapshot: () => void, associates: Associate[], canManageValue: boolean, canRecordDeferred: boolean, onTransferFromUnit: () => void, onRecordDeferred: () => void, onDelete: () => void }) {
   const [isEditing, setIsEditing] = useState(false);
   const [data, setData] = useState(unit);
 
@@ -1188,11 +1188,11 @@ function UnitRow({ unit, stats, updateUnit, onOpenProfile, onOpenSnapshot, partn
         <td className="px-6 py-3" colSpan={2}>
           <select
             className="w-full p-1 border border-stone-300 dark:border-stone-600 rounded bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 text-xs mb-1"
-            value={data.referred_by_partner_id || ''}
-            onChange={e => setData({...data, referred_by_partner_id: e.target.value || undefined})}
+            value={data.attributed_associate_id || ''}
+            onChange={e => setData({...data, attributed_associate_id: e.target.value || undefined})}
           >
-            <option value="">Partner referral (optional)</option>
-            {partners.map(a => (
+            <option value="">Associate attribution (optional)</option>
+            {associates.map(a => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
           </select>

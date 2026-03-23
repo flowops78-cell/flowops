@@ -7,6 +7,7 @@
 -- ─────────────────────────────────────────────────────────────────────────────
 -- DESTROY EXISTING SCHEMA
 -- ─────────────────────────────────────────────────────────────────────────────
+drop view if exists associates cascade;
 drop view if exists partners cascade;
 
 drop table if exists access_requests cascade;
@@ -15,13 +16,14 @@ drop table if exists adjustment_requests cascade;
 drop table if exists adjustments cascade;
 drop table if exists output_requests cascade;
 drop table if exists unit_account_entries cascade;
+drop table if exists associate_allocations cascade;
 drop table if exists partner_entries cascade;
+drop table if exists associates cascade;
 drop table if exists partners cascade;
 drop table if exists allocations cascade;
 drop table if exists transfer_accounts cascade;
 drop table if exists expenses cascade;
 drop table if exists channel_entries cascade;
-drop table if exists reserve_entries cascade;
 drop table if exists activity_logs cascade;
 drop table if exists entries cascade;
 drop table if exists members cascade;
@@ -29,18 +31,16 @@ drop table if exists units cascade;
 drop table if exists workspaces cascade;
 drop table if exists profiles cascade;
 drop table if exists org_meta_mapping cascade;
+drop table if exists org_memberships cascade;
+drop table if exists orgs cascade;
+drop table if exists org_clusters cascade;
+drop table if exists platform_roles cascade;
 drop table if exists user_roles cascade;
 drop table if exists operator_activities cascade;
 drop table if exists access_invites cascade;
 
--- keep legacy drops for backwards compatibility with very old dev instances
-drop table if exists logs cascade;
-drop table if exists members cascade;
-
 drop function if exists get_my_role() cascade;
 drop function if exists channel_base_transfer(text, text, numeric, timestamptz, uuid) cascade;
-drop function if exists reserve_base_transfer(text, text, numeric, timestamptz, uuid) cascade;
-drop function if exists reserve_base_transfer(text, text, numeric, timestamptz, text, uuid) cascade;
 drop type if exists app_role;
 
 -- ─────────────────────────────────────────────────────────────────────────────
@@ -49,9 +49,17 @@ drop type if exists app_role;
 create extension if not exists "uuid-ossp";
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- ROLE ENUM & USER ROLES
+-- ROLE ENUM & PLATFORM IDENTITY
 -- ─────────────────────────────────────────────────────────────────────────────
 create type app_role as enum ('admin', 'operator', 'viewer');
+
+create table if not exists platform_roles (
+  id           uuid primary key default uuid_generate_v4(),
+  user_id      uuid not null references auth.users(id) on delete cascade,
+  role         text not null default 'platform_admin',
+  created_at   timestamptz not null default now(),
+  constraint uq_platform_roles_user_id unique (user_id)
+);
 
 create table if not exists user_roles (
   id          uuid primary key default uuid_generate_v4(),
@@ -61,43 +69,73 @@ create table if not exists user_roles (
   constraint uq_user_roles_user_id unique (user_id)
 );
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- ORGANIZATIONAL GRAPH
+-- ─────────────────────────────────────────────────────────────────────────────
+create table if not exists org_clusters (
+  id           uuid primary key default uuid_generate_v4(),
+  name         text not null,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
+create table if not exists orgs (
+  id           uuid primary key default uuid_generate_v4(),
+  cluster_id   uuid references org_clusters(id) on delete set null,
+  name         text not null,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
 create table if not exists org_meta_mapping (
-  org_id      uuid primary key,
-  meta_org_id uuid not null,
+  org_id      uuid primary key references orgs(id) on delete cascade,
+  meta_org_id uuid not null references org_clusters(id) on delete cascade,
   created_at  timestamptz not null default now()
 );
 
+create table if not exists org_memberships (
+  id              uuid primary key default uuid_generate_v4(),
+  user_id         uuid not null references auth.users(id) on delete cascade,
+  org_id          uuid not null references orgs(id) on delete cascade,
+  role            app_role not null default 'viewer',
+  status          text not null default 'active' check (status in ('active', 'invited', 'disabled', 'revoked')),
+  is_default_org  boolean not null default false,
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now(),
+  constraint uq_org_memberships_user_org unique (user_id, org_id)
+);
+
 -- ─────────────────────────────────────────────────────────────────────────────
--- PROFILES (org scoping foundation)
+-- PROFILES (personal context)
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists profiles (
   id                  uuid primary key references auth.users(id) on delete cascade,
-  org_id              uuid,
-  meta_org_id         uuid,
+  org_id              uuid references orgs(id) on delete set null,
+  meta_org_id         uuid references org_clusters(id) on delete set null,
   current_session_id  uuid,
   created_at          timestamptz not null default now(),
   updated_at          timestamptz not null default now()
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- WORKSPACES
+-- OPERATIONAL WORKSPACES
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists workspaces (
   id                   uuid primary key default uuid_generate_v4(),
-  org_id               uuid not null,
+  org_id               uuid not null references orgs(id) on delete cascade,
   name                 text,
-  channel             text,
+  channel              text,
   org_code             text,
-  activity_category        text not null default 'standard',
+  activity_category    text not null default 'standard',
   workspace_mode       text not null default 'cash',
   status               text not null default 'active' check (status in ('active', 'completed', 'archived')),
   assigned_operator_id uuid references auth.users(id) on delete set null,
   location             text,
   start_time           timestamptz,
   end_time             timestamptz,
-  system_contribution numeric(12, 2),
-  channel_value    numeric(12, 2),
-  activity_frequency    numeric(10, 2),
+  system_contribution  numeric(12, 2),
+  channel_value        numeric(12, 2),
+  activity_frequency   numeric(10, 2),
   date                 timestamptz not null default now(),
   created_at           timestamptz not null default now(),
   updated_at           timestamptz not null default now()
@@ -108,20 +146,21 @@ create table if not exists workspaces (
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists units (
   id          uuid primary key default uuid_generate_v4(),
-  org_id      uuid not null,
+  org_id      uuid not null references orgs(id) on delete cascade,
   name                    text not null,
   tags                    text[],
-  referred_by_partner_id uuid,
+  attributed_associate_id uuid, -- reworded from referred_by_partner_id
+  referred_by_partner_id  uuid, -- legacy alias for backward compatibility
   created_at              timestamptz not null default now(),
   updated_at              timestamptz not null default now()
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- ENTRIES (input/output transactions per unit in workspace)
+-- ENTRIES
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists entries (
   id              uuid primary key default uuid_generate_v4(),
-  org_id          uuid not null,
+  org_id          uuid not null references orgs(id) on delete cascade,
   workspace_id    uuid not null references workspaces(id) on delete cascade,
   unit_id         uuid references units(id) on delete set null,
   unit_name       text,
@@ -142,28 +181,28 @@ create table if not exists entries (
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists members (
   id          uuid primary key default uuid_generate_v4(),
-  org_id      uuid not null,
+  org_id      uuid not null references orgs(id) on delete cascade,
   user_id     uuid references auth.users(id) on delete set null,
-  member_id   text, -- custom human-readable ID
+  member_id   text,
   name        text not null,
   role        app_role not null default 'viewer',
-
   incentive_type text not null default 'hourly' check (incentive_type in ('hourly', 'monthly', 'none')),
-  service_rate numeric(12, 2),
-  retainer_rate numeric(12, 2),
+  overhead_weight numeric(12, 2), -- reworded from service_rate
+  service_rate    numeric(12, 2), -- legacy alias
+  retainer_rate   numeric(12, 2),
   status      text not null default 'active' check (status in ('active', 'completed', 'archived')),
   tags        text[],
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now(),
-  unique(org_id, member_id) -- custom IDs must be unique within an org
+  unique(org_id, member_id)
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- ACTIVITY_LOGS (session records)
+-- ACTIVITY_LOGS
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists activity_logs (
   id              uuid primary key default uuid_generate_v4(),
-  org_id          uuid not null,
+  org_id          uuid not null references orgs(id) on delete cascade,
   member_id       uuid references members(id) on delete set null,
   workspace_id    uuid references workspaces(id) on delete set null,
   user_id         uuid references auth.users(id) on delete set null,
@@ -182,7 +221,7 @@ create table if not exists activity_logs (
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists channel_entries (
   id          uuid primary key default uuid_generate_v4(),
-  org_id      uuid not null,
+  org_id      uuid not null references orgs(id) on delete cascade,
   type        text not null check (type in ('increment', 'adjustment', 'decrement')),
   amount      numeric(12, 2) not null,
   method      text not null,
@@ -195,28 +234,35 @@ create table if not exists channel_entries (
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- PARTNERS
+-- ASSOCIATES (formerly Partners)
 -- ─────────────────────────────────────────────────────────────────────────────
-create table if not exists partners (
+create table if not exists associates (
   id          uuid primary key default uuid_generate_v4(),
-  org_id      uuid not null,
+  org_id      uuid not null references orgs(id) on delete cascade,
   name        text not null,
-  role        text not null default 'channel' check (role in ('partner', 'channel', 'hybrid')),
+  role        text not null default 'channel' check (role in ('associate', 'partner', 'channel', 'hybrid')),
   contact_method text not null default 'none' check (contact_method in ('none', 'internal', 'email', 'telegram', 'signal', 'whatsapp')),
-  contact_value text,
-  total       numeric(12, 2) not null default 0,
+  contact_value  text,
+  allocation_factor numeric(12, 2) not null default 0,
+  partner_arrangement_rate numeric(12, 2) not null default 0, -- legacy alias
+  overhead_weight numeric(12, 2) not null default 0,
+  system_allocation_percent numeric(12, 2) not null default 0, -- legacy alias
+  total_number numeric(12, 2) not null default 0,
+  total       numeric(12, 2) not null default 0, -- legacy alias
   status      text not null default 'active' check (status in ('active', 'inactive')),
   created_at  timestamptz not null default now(),
   updated_at  timestamptz not null default now()
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- PARTNER ENTRIES
+-- ASSOCIATE ALLOCATIONS (formerly Partner Entries)
 -- ─────────────────────────────────────────────────────────────────────────────
-create table if not exists partner_entries (
+create table if not exists associate_allocations (
   id            uuid primary key default uuid_generate_v4(),
-  org_id        uuid not null,
-  partner_id  uuid references partners(id) on delete cascade,
+  org_id        uuid not null references orgs(id) on delete cascade,
+  attributed_associate_id uuid references associates(id) on delete cascade,
+  associate_id  uuid references associates(id) on delete cascade, -- legacy alias
+  partner_id    uuid references associates(id) on delete cascade, -- legacy alias
   amount        numeric(12, 2) not null,
   type          text not null check (type in ('input', 'alignment', 'output', 'adjustment')),
   date          timestamptz not null default now(),
@@ -397,8 +443,14 @@ create table if not exists access_invites (
 );
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- ENABLE ROW LEVEL SECURITY
+-- RLS ENABLEMENT
 -- ─────────────────────────────────────────────────────────────────────────────
+alter table platform_roles enable row level security;
+alter table org_clusters enable row level security;
+alter table orgs enable row level security;
+alter table org_meta_mapping enable row level security;
+alter table org_memberships enable row level security;
+
 alter table user_roles enable row level security;
 alter table profiles enable row level security;
 alter table access_requests enable row level security;
@@ -410,8 +462,8 @@ alter table activity_logs enable row level security;
 alter table allocations enable row level security;
 alter table adjustments enable row level security;
 alter table channel_entries enable row level security;
-alter table partners enable row level security;
-alter table partner_entries enable row level security;
+alter table associates enable row level security;
+alter table associate_allocations enable row level security;
 alter table unit_account_entries enable row level security;
 alter table adjustment_requests enable row level security;
 alter table output_requests enable row level security;
@@ -422,14 +474,49 @@ alter table transfer_accounts enable row level security;
 alter table audit_events enable row level security;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- HELPER FUNCTION
+-- HELPER FUNCTIONS & RPCS
 -- ─────────────────────────────────────────────────────────────────────────────
+
+create or replace function get_my_platform_role()
+returns text
+language sql stable security definer
+set search_path = public
+as $$
+  select role
+  from platform_roles
+  where user_id = auth.uid()
+  limit 1;
+$$;
+
 create or replace function get_my_role()
 returns app_role
 language sql stable security definer
 set search_path = public
 as $$
-  select role from user_roles where user_id = auth.uid() limit 1;
+  select coalesce(
+    (
+      select membership.role
+      from org_memberships as membership
+      where membership.user_id = auth.uid()
+        and membership.status in ('active', 'invited')
+      order by
+        case membership.role
+          when 'admin' then 0
+          when 'operator' then 1
+          else 2
+        end,
+        membership.is_default_org desc,
+        membership.created_at asc,
+        membership.org_id asc
+      limit 1
+    ),
+    (
+      select user_role.role
+      from user_roles as user_role
+      where user_role.user_id = auth.uid()
+      limit 1
+    )
+  );
 $$;
 
 create or replace function get_my_org_id()
@@ -437,7 +524,22 @@ returns uuid
 language sql stable security definer
 set search_path = public
 as $$
-  select org_id from profiles where id = auth.uid() limit 1;
+  select coalesce(
+    (
+      select membership.org_id
+      from org_memberships as membership
+      where membership.user_id = auth.uid()
+        and membership.status in ('active', 'invited')
+      order by membership.is_default_org desc, membership.created_at asc, membership.org_id asc
+      limit 1
+    ),
+    (
+      select profile.org_id
+      from profiles as profile
+      where profile.id = auth.uid()
+      limit 1
+    )
+  );
 $$;
 
 create or replace function get_my_meta_org_id()
@@ -445,36 +547,156 @@ returns uuid
 language sql stable security definer
 set search_path = public
 as $$
-  select meta_org_id from profiles where id = auth.uid() limit 1;
+  select coalesce(
+    (
+      select org.cluster_id
+      from org_memberships as membership
+      join orgs as org on org.id = membership.org_id
+      where membership.user_id = auth.uid()
+        and membership.status in ('active', 'invited')
+      order by membership.is_default_org desc, membership.created_at asc, membership.org_id asc
+      limit 1
+    ),
+    (
+      select profile.meta_org_id
+      from profiles as profile
+      where profile.id = auth.uid()
+      limit 1
+    )
+  );
+$$;
+
+create or replace function get_my_org_role(p_org_id uuid)
+returns app_role
+language sql stable security definer
+set search_path = public
+as $$
+  select coalesce(
+    (
+      select membership.role
+      from org_memberships as membership
+      where membership.user_id = auth.uid()
+        and membership.org_id = p_org_id
+        and membership.status in ('active', 'invited')
+      order by
+        case membership.role
+          when 'admin' then 0
+          when 'operator' then 1
+          else 2
+        end,
+        membership.is_default_org desc,
+        membership.created_at asc
+      limit 1
+    ),
+    (
+      select user_role.role
+      from user_roles as user_role
+      where user_role.user_id = auth.uid()
+        and p_org_id = get_my_org_id()
+      limit 1
+    )
+  );
+$$;
+
+create or replace function has_org_membership(p_org_id uuid)
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from org_memberships as membership
+    where membership.user_id = auth.uid()
+      and membership.org_id = p_org_id
+      and membership.status in ('active', 'invited')
+  );
 $$;
 
 create or replace function is_org_in_my_cluster(p_org_id uuid)
 returns boolean
 language plpgsql stable security definer
+set search_path = public
 as $$
 declare
-  v_meta_id uuid;
-  v_role app_role;
+  v_profile_meta_id uuid;
+  v_profile_role app_role;
 begin
-  select meta_org_id, role into v_meta_id, v_role
-  from profiles
-  join user_roles on profiles.id = user_roles.user_id
-  where profiles.id = auth.uid();
+  if auth.uid() is null then
+    return false;
+  end if;
 
-  -- Global Admins (null meta_id) see everything
-  if v_role = 'admin' and v_meta_id is null then
+  if get_my_platform_role() = 'platform_admin' then
     return true;
   end if;
 
-  -- Use mapping table for cluster check
+  if exists (
+    select 1
+    from org_memberships as membership
+    where membership.user_id = auth.uid()
+      and membership.org_id = p_org_id
+      and membership.status in ('active', 'invited')
+      and membership.role = 'admin'
+  ) then
+    return true;
+  end if;
+
+  if exists (
+    select 1
+    from org_memberships as membership
+    join orgs as actor_org on actor_org.id = membership.org_id
+    join orgs as target_org on target_org.id = p_org_id
+    where membership.user_id = auth.uid()
+      and membership.status in ('active', 'invited')
+      and membership.role = 'admin'
+      and actor_org.cluster_id = target_org.cluster_id
+  ) then
+    return true;
+  end if;
+
+  select profile.meta_org_id, user_role.role
+    into v_profile_meta_id, v_profile_role
+  from profiles as profile
+  left join user_roles as user_role on user_role.user_id = profile.id
+  where profile.id = auth.uid()
+  limit 1;
+
+  if v_profile_role = 'admin' and v_profile_meta_id is null then
+    return true;
+  end if;
+
   return exists (
-    select 1 from org_meta_mapping
-    where org_id = p_org_id and meta_org_id = v_meta_id
+    select 1
+    from org_meta_mapping as mapping
+    where mapping.org_id = p_org_id
+      and mapping.meta_org_id = v_profile_meta_id
   );
 end;
 $$;
 
--- Atomic Unit Total Adjustments
+create or replace function can_access_org(p_org_id uuid)
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select is_org_in_my_cluster(p_org_id) or has_org_membership(p_org_id);
+$$;
+
+create or replace function can_manage_org(p_org_id uuid)
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select is_org_in_my_cluster(p_org_id) or get_my_org_role(p_org_id) = 'operator';
+$$;
+
+create or replace function can_administer_org(p_org_id uuid)
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select is_org_in_my_cluster(p_org_id) or get_my_org_role(p_org_id) = 'admin';
+$$;
+
 create or replace function adjust_unit_balance(p_unit_id uuid, p_amount numeric)
 returns void
 language plpgsql
@@ -482,22 +704,26 @@ security definer
 set search_path = public
 as $$
 begin
-  update units set total = total + p_amount where id = p_unit_id;
+  update units
+    set total = coalesce(total, 0) + p_amount
+    where id = p_unit_id;
 end;
 $$;
 
-create or replace function adjust_partner_total(p_partner_id uuid, p_amount numeric)
+create or replace function adjust_associate_total(p_associate_id uuid, p_amount numeric)
 returns void
 language plpgsql
 security definer
 set search_path = public
 as $$
 begin
-  update partners set total = total + p_amount where id = p_partner_id;
+  update associates
+    set total = total + p_amount,
+        total_number = total_number + p_amount
+    where id = p_associate_id;
 end;
 $$;
 
--- Secure Audit Event Insertion via RPC
 create or replace function log_audit_event(
   p_action text,
   p_entity text default null,
@@ -509,7 +735,7 @@ create or replace function log_audit_event(
 )
 returns uuid
 language plpgsql
-security definer -- Bypass RLS for log creation
+security definer
 set search_path = public
 as $$
 declare
@@ -521,9 +747,9 @@ begin
     return null;
   end if;
 
-  select org_id into v_org_id from profiles where id = auth.uid();
-  select role into v_actor_role from user_roles where user_id = auth.uid();
-  
+  v_org_id := get_my_org_id();
+  v_actor_role := coalesce(get_my_org_role(v_org_id), get_my_role());
+
   if v_org_id is null then
     return null;
   end if;
@@ -543,7 +769,7 @@ begin
     v_org_id,
     auth.uid(),
     nullif(trim(coalesce(p_actor_label, '')), ''),
-    v_actor_role,
+    coalesce(v_actor_role, 'viewer'::app_role),
     p_action,
     p_entity,
     p_entity_id,
@@ -580,13 +806,13 @@ begin
     raise exception 'Authentication required';
   end if;
 
-  if get_my_role() <> 'admin' then
-    raise exception 'Only admin can transfer channel values.';
-  end if;
-
-  select org_id into v_org_id from profiles where id = auth.uid();
+  v_org_id := get_my_org_id();
   if v_org_id is null then
     raise exception 'No organization found for current user';
+  end if;
+
+  if not can_administer_org(v_org_id) then
+    raise exception 'Only admin can transfer channel values.';
   end if;
 
   v_from_method := nullif(trim(p_from_method), '');
@@ -667,307 +893,191 @@ begin
 end;
 $$;
 
+create or replace function associate_record_allocation(
+  p_associate_id uuid,
+  p_type text,
+  p_amount numeric,
+  p_date timestamptz,
+  p_org_id uuid
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_entry_id uuid;
+  v_delta numeric;
+begin
+  if not can_manage_org(p_org_id) then
+    raise exception 'Permission denied';
+  end if;
+
+  insert into associate_allocations (
+    org_id,
+    attributed_associate_id,
+    associate_id,
+    partner_id,
+    type,
+    amount,
+    date
+  ) values (
+    p_org_id,
+    p_associate_id,
+    p_associate_id,
+    p_associate_id,
+    p_type,
+    p_amount,
+    coalesce(p_date, now())
+  ) returning id into v_entry_id;
+
+  v_delta := case when p_type = 'input' then p_amount else -p_amount end;
+  perform adjust_associate_total(p_associate_id, v_delta);
+
+  return v_entry_id;
+end;
+$$;
+
 revoke all on function adjust_unit_balance(uuid, numeric) from public;
-revoke all on function adjust_partner_total(uuid, numeric) from public;
+revoke all on function adjust_associate_total(uuid, numeric) from public;
 revoke all on function log_audit_event(text, text, uuid, numeric, text, text, uuid) from public;
 revoke all on function channel_base_transfer(text, text, numeric, timestamptz, uuid) from public;
+revoke all on function associate_record_allocation(uuid, text, numeric, timestamptz, uuid) from public;
 
 grant execute on function adjust_unit_balance(uuid, numeric) to service_role;
-grant execute on function adjust_partner_total(uuid, numeric) to service_role;
+grant execute on function adjust_associate_total(uuid, numeric) to service_role;
 grant execute on function log_audit_event(text, text, uuid, numeric, text, text, uuid) to authenticated;
 grant execute on function log_audit_event(text, text, uuid, numeric, text, text, uuid) to service_role;
 grant execute on function channel_base_transfer(text, text, numeric, timestamptz, uuid) to authenticated;
 grant execute on function channel_base_transfer(text, text, numeric, timestamptz, uuid) to service_role;
+grant execute on function associate_record_allocation(uuid, text, numeric, timestamptz, uuid) to authenticated;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- RLS POLICIES (simplified & working)
+-- POLICIES: ARCHITECTURE
 -- ─────────────────────────────────────────────────────────────────────────────
 
--- user_roles: users can read own role, admins see all
-create policy "user_roles_read" on user_roles
-  for select
-  using (user_id = auth.uid());
+-- platform_roles: platform admins see all roles; self-read allowed
+create policy "platform_roles_select" on platform_roles for select
+  using (user_id = auth.uid() or exists (select 1 from platform_roles where user_id = auth.uid()));
 
--- Keep client writes disabled to avoid recursive RLS on user_roles.
--- Role writes should be done by service-role paths (edge functions / SQL editor).
-create policy "user_roles_write_insert" on user_roles
-  for insert
-  with check (false);
+-- org_clusters: admins see their cluster; platform admins see all
+create policy "org_clusters_select" on org_clusters for select
+  using (id = get_my_meta_org_id() or exists (select 1 from platform_roles where user_id = auth.uid()));
 
-create policy "user_roles_write_update" on user_roles
-  for update
-  using (false)
-  with check (false);
+-- orgs: cluster-scoped read
+create policy "orgs_select" on orgs for select
+  using (is_org_in_my_cluster(id));
 
-create policy "user_roles_write_delete" on user_roles
-  for delete
-  using (false);
+-- org_memberships: visible to self or org admins
+create policy "org_memberships_select" on org_memberships for select
+  using (user_id = auth.uid() or (get_my_role() = 'admin' and is_org_in_my_cluster(org_id)));
 
--- profiles: users read their own profile; admins can read cluster profiles.
-create policy "profiles_read" on profiles
-  for select
-  using (
-    id = auth.uid() 
-    or (
-      get_my_role() = 'admin' 
-      and (get_my_meta_org_id() is null or meta_org_id = get_my_meta_org_id())
-    )
-  );
+-- ─────────────────────────────────────────────────────────────────────────────
+-- POLICIES: OPERATIONAL DATA
+-- ─────────────────────────────────────────────────────────────────────────────
 
--- workspaces: admins see cluster; viewers are read-only within org; operators are limited to assigned active rows plus finished rows.
-create policy "workspaces_read" on workspaces
-  for select
-  using (
-    (get_my_role() = 'admin' and is_org_in_my_cluster(org_id))
-    or (
-      auth.uid() is not null
-      and org_id = get_my_org_id()
-      and (
-        get_my_role() = 'viewer'
-        or (
-          get_my_role() = 'operator'
-          and (
-            status in ('completed', 'archived')
-            or (status = 'active' and assigned_operator_id = auth.uid())
-          )
-        )
-      )
-    )
-  );
+-- user_roles: users read own role; cluster admins see cluster roles
+create policy "user_roles_select" on user_roles for select
+  using (user_id = auth.uid() or (get_my_role() = 'admin' and exists (select 1 from profiles where id = user_roles.user_id and is_org_in_my_cluster(org_id))));
 
-create policy "workspaces_write" on workspaces
-  for all
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()))
-  with check ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
+-- profiles: read own or cluster-scoped read
+create policy "profiles_select" on profiles for select
+  using (id = auth.uid() or (get_my_role() = 'admin' and is_org_in_my_cluster(org_id)));
 
--- units: readable within org; writable by admins and operators only.
-create policy "units_read" on units
-  for select
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (auth.uid() is not null and org_id = get_my_org_id()));
+-- workspaces: cluster-aware read/write
+create policy "workspaces_select" on workspaces for select
+  using (is_org_in_my_cluster(org_id));
 
-create policy "units_write" on units
-  for all
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()))
-  with check ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
+create policy "workspaces_all" on workspaces for all
+  using (get_my_role() in ('admin', 'operator') and is_org_in_my_cluster(org_id))
+  with check (get_my_role() in ('admin', 'operator') and is_org_in_my_cluster(org_id));
 
--- entries: readable within org; writable by admins and operators only.
-create policy "entries_read" on entries
-  for select
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or org_id = get_my_org_id());
+-- units: cluster-aware read/write
+create policy "units_select" on units for select
+  using (is_org_in_my_cluster(org_id));
 
-create policy "entries_write" on entries
-  for all
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()))
-  with check ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
+create policy "units_all" on units for all
+  using (get_my_role() in ('admin', 'operator') and is_org_in_my_cluster(org_id))
+  with check (get_my_role() in ('admin', 'operator') and is_org_in_my_cluster(org_id));
 
--- activity_logs: readable within org; writable by admins and operators only.
-create policy "activity_logs_read" on activity_logs
-  for select
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or org_id = get_my_org_id());
+-- entries: group-scoped transaction read/write
+create policy "entries_select" on entries for select
+  using (is_org_in_my_cluster(org_id));
 
-create policy "activity_logs_write" on activity_logs
-  for all
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()))
-  with check ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
+create policy "entries_all" on entries for all
+  using (get_my_role() in ('admin', 'operator') and is_org_in_my_cluster(org_id))
+  with check (get_my_role() in ('admin', 'operator') and is_org_in_my_cluster(org_id));
 
--- channel_entries: org users can read; only admins and operators can write.
-create policy "channel_entries_read" on channel_entries
-  for select
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or org_id = get_my_org_id());
+-- associates: read and manage scoped to group
+create policy "associates_select" on associates for select
+  using (is_org_in_my_cluster(org_id));
 
-create policy "channel_entries_write" on channel_entries
-  for all
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()))
-  with check ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
+create policy "associates_all" on associates for all
+  using (get_my_role() in ('admin', 'operator') and is_org_in_my_cluster(org_id))
+  with check (get_my_role() in ('admin', 'operator') and is_org_in_my_cluster(org_id));
 
--- partners + partner_entries: readable within org; writable by admins and operators only.
-create policy "partners_read" on partners
-  for select
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or org_id = get_my_org_id());
+-- associate_allocations: strictly scoped
+create policy "associate_allocations_select" on associate_allocations for select
+  using (is_org_in_my_cluster(org_id));
 
-create policy "partners_write" on partners
-  for all
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()))
-  with check ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
+create policy "associate_allocations_all" on associate_allocations for all
+  using (get_my_role() in ('admin', 'operator') and is_org_in_my_cluster(org_id))
+  with check (get_my_role() in ('admin', 'operator') and is_org_in_my_cluster(org_id));
 
-create policy "partner_entries_read" on partner_entries
-  for select
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or org_id = get_my_org_id());
+-- unit_account_entries: specialized protection for decrements
+create policy "unit_account_entries_select" on unit_account_entries for select
+  using (is_org_in_my_cluster(org_id));
 
-create policy "partner_entries_write" on partner_entries
-  for all
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()))
-  with check ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
-
--- Deferred unit records: readable within org; writable by admins and operators only.
-create policy "allocations_read" on allocations
-  for select
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or org_id = get_my_org_id());
-
-create policy "allocations_write" on allocations
-  for all
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()))
-  with check ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
-
--- Live deferred adjustments: readable within org; writable by admins and operators only.
-create policy "adjustments_read" on adjustments
-  for select
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or org_id = get_my_org_id());
-
-create policy "adjustments_write" on adjustments
-  for all
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()))
-  with check ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
-
--- unit_account_entries: viewers are read-only; operators cannot directly post decrement rows.
-create policy "unit_account_entries_read" on unit_account_entries
-  for select
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or org_id = get_my_org_id());
-
-create policy "unit_account_entries_write" on unit_account_entries
-  for all
+create policy "unit_account_entries_all" on unit_account_entries for all
   using (
     (get_my_role() = 'admin' and is_org_in_my_cluster(org_id))
-    or (get_my_role() = 'operator' and org_id = get_my_org_id() and type <> 'decrement')
+    or (get_my_role() = 'operator' and is_org_in_my_cluster(org_id) and type <> 'decrement')
   )
   with check (
     (get_my_role() = 'admin' and is_org_in_my_cluster(org_id))
-    or (get_my_role() = 'operator' and org_id = get_my_org_id() and type <> 'decrement')
+    or (get_my_role() = 'operator' and is_org_in_my_cluster(org_id) and type <> 'decrement')
   );
 
--- Deferred entry request queue: admins can resolve; operators can create pending requests.
-create policy "adjustment_requests_read" on adjustment_requests
-  for select
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or org_id = get_my_org_id());
+-- Transfer accounts, Expenses, Audit logs, Members: Cluster Scoped
+create policy "audit_events_select" on audit_events for select using (is_org_in_my_cluster(org_id));
+create policy "members_select" on members for select using (is_org_in_my_cluster(org_id));
+create policy "members_all" on members for all using (get_my_role() in ('admin', 'operator') and is_org_in_my_cluster(org_id));
+create policy "expenses_select" on expenses for select using (is_org_in_my_cluster(org_id));
+create policy "expenses_all" on expenses for all using (get_my_role() in ('admin', 'operator') and is_org_in_my_cluster(org_id));
+create policy "transfer_accounts_select" on transfer_accounts for select using (is_org_in_my_cluster(org_id));
+create policy "transfer_accounts_all" on transfer_accounts for all using (get_my_role() = 'admin' and is_org_in_my_cluster(org_id));
 
-create policy "adjustment_requests_insert" on adjustment_requests
-  for insert
-  with check ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id() and status = 'pending'));
+-- Request Queues (Adjustment/Output): Insertion permitted for operators, resolution only for admins
+create policy "adjustment_requests_select" on adjustment_requests for select using (is_org_in_my_cluster(org_id));
+create policy "adjustment_requests_insert" on adjustment_requests for insert with check (is_org_in_my_cluster(org_id));
+create policy "adjustment_requests_resolve" on adjustment_requests for update using (get_my_role() = 'admin' and is_org_in_my_cluster(org_id));
 
-create policy "adjustment_requests_update" on adjustment_requests
-  for update
-  using (get_my_role() = 'admin' and is_org_in_my_cluster(org_id))
-  with check (get_my_role() = 'admin' and is_org_in_my_cluster(org_id));
-
--- Approved output queue: admins can resolve; operators can create pending requests.
-create policy "output_requests_read" on output_requests
-  for select
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or org_id = get_my_org_id());
-
-create policy "output_requests_insert" on output_requests
-  for insert
-  with check ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id() and status = 'pending'));
-
-create policy "output_requests_update" on output_requests
-  for update
-  using (get_my_role() = 'admin' and is_org_in_my_cluster(org_id))
-  with check (get_my_role() = 'admin' and is_org_in_my_cluster(org_id));
-
--- operator_activities: users see their own activity; operators see org activity; admins see cluster activity.
-create policy "operator_activities_read" on operator_activities
-  for select
-  using (
-    (get_my_role() = 'admin' and is_org_in_my_cluster(org_id))
-    or actor_user_id = auth.uid() 
-    or (get_my_role() = 'operator' and org_id = get_my_org_id())
-  );
-
-create policy "operator_activities_write" on operator_activities
-  for all
-  using (actor_user_id = auth.uid() and get_my_role() in ('admin', 'operator') and org_id = get_my_org_id())
-  with check (actor_user_id = auth.uid() and get_my_role() in ('admin', 'operator') and org_id = get_my_org_id());
-
--- members: org-scoped. regional admins see cluster.
-create policy "members_read" on members
-  for select
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or org_id = get_my_org_id());
-
-create policy "members_write" on members
-  for all
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()))
-  with check ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
-
--- expenses: platform admins see all. regional admins see cluster.
-create policy "expenses_read" on expenses
-  for select
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or org_id = get_my_org_id());
-
-create policy "expenses_write" on expenses
-  for all
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()))
-  with check ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
-
--- transfer_accounts: platform admins see all. regional admins see cluster.
-create policy "transfer_accounts_read" on transfer_accounts
-  for select
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or org_id = get_my_org_id());
-
-create policy "transfer_accounts_write" on transfer_accounts
-  for all
-  using (get_my_role() = 'admin' and is_org_in_my_cluster(org_id))
-  with check (get_my_role() = 'admin' and is_org_in_my_cluster(org_id));
-
--- audit_events: platform admins see all. regional admins see cluster.
-create policy "audit_events_read" on audit_events
-  for select
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or org_id = get_my_org_id());
-
--- access_requests: request creation is edge-function only. regional admins see cluster.
-create policy "access_requests_read" on access_requests
-  for select
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
-
-create policy "access_requests_update" on access_requests
-  for update
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()))
-  with check ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
-
--- access_invites: regional admins see cluster.
-create policy "access_invites_read" on access_invites
-  for select
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
-
-create policy "access_invites_insert" on access_invites
-  for insert
-  with check ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
-
-create policy "access_invites_update" on access_invites
-  for update
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()))
-  with check ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
-
-create policy "access_invites_delete" on access_invites
-  for delete
-  using ((get_my_role() = 'admin' and is_org_in_my_cluster(org_id)) or (get_my_role() = 'operator' and org_id = get_my_org_id()));
+create policy "output_requests_select" on output_requests for select using (is_org_in_my_cluster(org_id));
+create policy "output_requests_insert" on output_requests for insert with check (is_org_in_my_cluster(org_id));
+create policy "output_requests_resolve" on output_requests for update using (get_my_role() = 'admin' and is_org_in_my_cluster(org_id));
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- INDEXES
+-- INDEXES (Matching New Naming)
 -- ─────────────────────────────────────────────────────────────────────────────
+create index idx_org_memberships_user on org_memberships(user_id);
+create index idx_org_memberships_org on org_memberships(org_id);
+create index idx_org_meta_cluster on org_meta_mapping(meta_org_id);
+
 create index idx_profiles_org_id on profiles(org_id);
+create index idx_profiles_meta_id on profiles(meta_org_id);
 create index idx_workspaces_org_id on workspaces(org_id);
 create index idx_units_org_id on units(org_id);
 create index idx_entries_org_id on entries(org_id);
 create index idx_entries_workspace_id on entries(workspace_id);
-create index idx_activity_logs_org_id on activity_logs(org_id);
-create index idx_activity_logs_workspace_id on activity_logs(workspace_id);
-create index idx_allocations_org_id on allocations(org_id);
-create index idx_adjustments_org_id on adjustments(org_id);
-create index idx_channel_entries_org_id on channel_entries(org_id);
-create index idx_partners_org_id on partners(org_id);
-create index idx_partner_entries_org_id on partner_entries(org_id);
+create index idx_associates_org_id on associates(org_id);
+create index idx_associate_allocations_org_id on associate_allocations(org_id);
+create index idx_associate_allocations_attributed_associate_id on associate_allocations(attributed_associate_id);
+create index idx_associate_allocations_associate_id on associate_allocations(associate_id);
 create index idx_unit_account_entries_org_id on unit_account_entries(org_id);
 create index idx_adjustment_requests_org_id on adjustment_requests(org_id);
-create index idx_adjustment_requests_unit_id on adjustment_requests(unit_id);
 create index idx_output_requests_org_id on output_requests(org_id);
-create index idx_output_requests_unit_id on output_requests(unit_id);
-create index idx_operator_activities_org_id on operator_activities(org_id);
-create index idx_operator_activities_actor_user_id on operator_activities(actor_user_id);
 create index idx_members_org_id on members(org_id);
-create unique index idx_members_org_user_unique on members(org_id, user_id);
-create index idx_expenses_org_id on expenses(org_id);
-create index idx_transfer_accounts_org_id on transfer_accounts(org_id);
 create index idx_audit_events_org_id on audit_events(org_id);
 create index idx_access_requests_org_id on access_requests(org_id);
 create index idx_access_invites_org_id on access_invites(org_id);
-create index idx_access_invites_active_lookup on access_invites(token_hash, revoked_at, expires_at);
 create index idx_workspaces_status on workspaces(status);

@@ -2122,7 +2122,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     disabled={!canOperateValue || isSavingAdjustment}
                     required
                   >
-                    <option value="">Select Partner...</option>
+                    <option value="">Select Associate...</option>
                     {units.map(p => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}

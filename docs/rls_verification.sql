@@ -15,8 +15,8 @@ where table_schema = 'public'
     'allocations',
     'adjustments',
     'channel_entries',
-    'partners',
-    'partner_entries',
+    'associates',
+    'associate_allocations',
     'unit_account_entries',
     'adjustment_requests',
     'output_requests',
@@ -26,7 +26,11 @@ where table_schema = 'public'
     'transfer_accounts',
     'audit_events',
     'access_requests',
-    'access_invites'
+    'access_invites',
+    'org_clusters',
+    'orgs',
+    'org_memberships',
+    'platform_roles'
   )
 order by table_name;
 
@@ -62,7 +66,7 @@ where schemaname = 'public'
 select t.relname as table_name, c.conname, pg_get_constraintdef(c.oid) as definition
 from pg_constraint c
 join pg_class t on t.oid = c.conrelid
-where t.relname in ('workspaces', 'adjustments', 'channel_entries', 'partner_entries', 'unit_account_entries', 'adjustment_requests', 'output_requests', 'members')
+where t.relname in ('workspaces', 'adjustments', 'channel_entries', 'associate_allocations', 'unit_account_entries', 'adjustment_requests', 'output_requests', 'members')
   and c.contype = 'c'
 order by t.relname, c.conname;
 
@@ -77,10 +81,10 @@ where table_schema = 'public'
     ))
     or
     (table_name = 'units' and column_name in (
-      'org_id', 'tags', 'referred_by_partner_id'
+      'org_id', 'tags', 'attributed_associate_id'
     ))
     or
-    (table_name = 'partners' and column_name in (
+    (table_name = 'associates' and column_name in (
       'org_id', 'contact_method', 'contact_value'
     ))
     or
@@ -90,7 +94,7 @@ where table_schema = 'public'
     ))
     or
     (table_name = 'members' and column_name in (
-      'user_id', 'member_id', 'incentive_type', 'service_rate', 'retainer_rate', 'tags'
+      'user_id', 'member_id', 'incentive_type', 'overhead_weight', 'retainer_rate', 'tags'
     ))
     or
     (table_name = 'adjustment_requests' and column_name in (
@@ -122,7 +126,7 @@ where table_schema = 'public'
   and (
     (table_name = 'access_requests' and column_name in ('requested_name', 'requested_password'))
     or
-    (table_name = 'partners' and column_name = 'contact')
+    (table_name = 'associates' and column_name = 'contact')
     or
     (table_name = 'units' and column_name = 'phone')
   )
@@ -135,8 +139,16 @@ where specific_schema = 'public'
   and routine_name in (
     'get_my_role',
     'get_my_org_id',
+    'get_my_org_role',
+    'get_my_meta_org_id',
+    'get_my_platform_role',
+    'has_org_membership',
+    'can_access_org',
+    'can_manage_org',
+    'can_administer_org',
+    'is_org_in_my_cluster',
     'adjust_unit_balance',
-    'adjust_partner_total',
+    'adjust_associate_total',
     'log_audit_event',
     'channel_base_transfer'
   )
@@ -148,7 +160,7 @@ from information_schema.role_routine_grants
 where specific_schema = 'public'
   and routine_name in (
     'adjust_unit_balance',
-    'adjust_partner_total',
+    'adjust_associate_total',
     'log_audit_event',
     'channel_base_transfer'
   )
@@ -169,8 +181,8 @@ where n.nspname = 'public'
     'allocations',
     'adjustments',
     'channel_entries',
-    'partners',
-    'partner_entries',
+    'associates',
+    'associate_allocations',
     'unit_account_entries',
     'adjustment_requests',
     'output_requests',
@@ -180,7 +192,11 @@ where n.nspname = 'public'
     'transfer_accounts',
     'audit_events',
     'access_requests',
-    'access_invites'
+    'access_invites',
+    'org_clusters',
+    'orgs',
+    'org_memberships',
+    'platform_roles'
   )
 order by c.relname;
 
@@ -210,6 +226,14 @@ where schemaname = 'public'
     ))
     or
     (tablename = 'audit_events' and policyname = 'audit_events_read')
+    or
+    (tablename = 'org_memberships' and policyname = 'org_memberships_read')
+    or
+    (tablename = 'orgs' and policyname = 'orgs_read')
+    or
+    (tablename = 'org_clusters' and policyname = 'org_clusters_read')
+    or
+    (tablename = 'platform_roles' and policyname = 'platform_roles_read')
   )
 order by tablename, policyname;
 
@@ -241,8 +265,8 @@ where schemaname = 'public'
     'idx_allocations_org_id',
     'idx_adjustments_org_id',
     'idx_channel_entries_org_id',
-    'idx_partners_org_id',
-    'idx_partner_entries_org_id',
+    'idx_associates_org_id',
+    'idx_associate_allocations_org_id',
     'idx_unit_account_entries_org_id',
     'idx_adjustment_requests_org_id',
     'idx_output_requests_org_id',

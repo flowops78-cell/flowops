@@ -127,7 +127,7 @@ export default function UnitDetail() {
       serviceFee += workspace.operational_contribution || 0;
     });
 
-    return { serviceFee, workspaces: workspacesCount };
+    return { surcharge: serviceFee, workspaces: workspacesCount };
   }, [id, entries, workspaces, rangeStart, rangeEnd]);
 
   if (!unit) {
@@ -263,7 +263,7 @@ export default function UnitDetail() {
       return;
     }
 
-    const adjustmentAmount = serviceFeeRangeTotal.serviceFee * (percent / 100);
+    const adjustmentAmount = (serviceFeeRangeTotal.surcharge || 0) * (percent / 100);
     if (adjustmentAmount <= 0) {
       notify({ type: 'error', message: 'Calculated adjustment is 0 or negative.' });
       return;
@@ -458,7 +458,7 @@ export default function UnitDetail() {
             </button>
           </div>
           <p className="text-xs text-stone-500 dark:text-stone-400">
-            Eligible service total in range: {formatValue(serviceFeeRangeTotal.serviceFee)} across {serviceFeeRangeTotal.workspaces} activities.
+            Eligible operational total in range: {formatValue(serviceFeeRangeTotal.surcharge || 0)} across {serviceFeeRangeTotal.workspaces} activities.
           </p>
         </div>
       )}

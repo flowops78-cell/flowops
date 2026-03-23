@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { getSupabase, getSupabaseAccessToken, isSupabaseConfigured, SUPABASE_ANON_KEY, supabase } from '../lib/supabase';
-import { Unit, Workspace, Entry, Member, ActivityLog, Expense, Adjustment, AdjustmentRequest, ChannelEntry, Partner, PartnerEntry, SystemEvent, OperatorLog, TransferAccount, UnitAccountEntry, OutputRequest } from '../types';
+import { getSupabase, getSupabaseAccessToken, getUserAuthorityContext, isSupabaseConfigured, SUPABASE_ANON_KEY, supabase } from '../lib/supabase';
+import { Unit, Workspace, Entry, Member, ActivityLog, Expense, Adjustment, AdjustmentRequest, ChannelEntry, Associate, AssociateAllocation, SystemEvent, OperatorLog, TransferAccount, UnitAccountEntry, OutputRequest } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { APP_MIN_DATE, isDateOnOrAfter, isValidIsoDate } from '../lib/utils';
 import { DbRole, appRoleToDbRole, dbRoleToAppRole } from '../lib/roles';
@@ -31,8 +31,8 @@ interface DataContextType {
   unitAccountEntries: UnitAccountEntry[];
   outputRequests: OutputRequest[];
   transferAccounts: TransferAccount[];
-  partners: Partner[];
-  partnerEntries: PartnerEntry[];
+  associates: Associate[];
+  associateAllocations: AssociateAllocation[];
   systemEvents: SystemEvent[];
   operatorLogs: OperatorLog[];
   activeOrgId: string | null;
@@ -94,15 +94,17 @@ interface DataContextType {
   updateTransferAccount: (account: TransferAccount) => Promise<void>;
   deleteTransferAccount: (id: string) => Promise<void>;
 
-  // Partner Actions
-  addPartner: (partner: Omit<Partner, 'id' | 'created_at'>) => Promise<void>;
-  updatePartner: (partner: Partner) => Promise<void>;
-  deletePartner: (id: string) => Promise<void>;
-  addPartnerEntry: (entry: Omit<PartnerEntry, 'id' | 'created_at'>) => Promise<void>;
-  deletePartnerEntry: (id: string) => Promise<void>;
+  // Associate Actions
+  addAssociate: (associate: Omit<Associate, 'id' | 'created_at'>) => Promise<void>;
+  updateAssociate: (associate: Associate) => Promise<void>;
+  deleteAssociate: (id: string) => Promise<void>;
+  addAssociateAllocation: (entry: Omit<AssociateAllocation, 'id' | 'created_at'>) => Promise<void>;
+  deleteAssociateAllocation: (id: string) => Promise<void>;
+
   updateProfileOrgId: (orgId: string | null) => Promise<void>;
   provisionProfileOrgContext: () => Promise<ProvisionOrgContextResult>;
   managedOrgIds: string[];
+  metaOrgId: string | null;
   recordSystemEvent: (event: Omit<SystemEvent, 'id' | 'timestamp' | 'actor_role'>) => Promise<void>;
 
   refreshData: () => Promise<void>;
@@ -125,13 +127,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [unitAccountEntries, setUnitAccountEntries] = useState<UnitAccountEntry[]>([]);
   const [outputRequests, setOutputRequests] = useState<OutputRequest[]>([]);
   const [transferAccounts, setTransferAccounts] = useState<TransferAccount[]>([]);
-  const [partners, setPartners] = useState<Partner[]>([]);
-  const [partnerEntries, setPartnerEntries] = useState<PartnerEntry[]>([]);
+  const [associates, setAssociates] = useState<Associate[]>([]);
+  const [associateAllocations, setAssociateAllocations] = useState<AssociateAllocation[]>([]);
   const [systemEvents, setSystemEvents] = useState<SystemEvent[]>([]);
   const [operatorLogs, setOperatorLogs] = useState<OperatorLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
-  const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
+  const [activeOrgId, setActiveOrgId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem('flow_ops_last_org_id');
+  });
+  const [activeMetaOrgId, setActiveMetaOrgId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return localStorage.getItem('flow_ops_last_meta_org_id');
+  });
   const loadingProgressTimerRef = useRef<number | null>(null);
   const loadingProgressResetTimerRef = useRef<number | null>(null);
   const fetchVersionRef = useRef(0);
@@ -525,12 +534,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     ...unitData,
     name: unitData.name?.trim() ?? '',
     tags: unitData.tags?.map(tag => tag.trim()).filter(Boolean) ?? [],
+    attributed_associate_id: unitData.attributed_associate_id ?? undefined,
   });
 
-  const stripUnitPartnerColumn = <T extends { referred_by_partner_id?: string | undefined }>(
+  const stripUnitAssociateColumn = <T extends { attributed_associate_id?: string | undefined; referred_by_partner_id?: string | undefined }>(
     payload: T,
-  ): Omit<T, 'referred_by_partner_id'> => {
-    const { referred_by_partner_id, ...rest } = payload;
+  ): Omit<T, 'attributed_associate_id' | 'referred_by_partner_id'> => {
+    const { attributed_associate_id, referred_by_partner_id, ...rest } = payload;
     return rest;
   };
 
@@ -595,62 +605,133 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return normalized;
   };
 
-  const normalizePartnerRole = (value: unknown): Partner['role'] => {
+  const normalizeAssociateRole = (value: unknown): Associate['role'] => {
     const rawRole = String(value ?? '').trim().toLowerCase();
-    if (rawRole === 'partner' || rawRole === 'referrer') return 'partner';
-    if (rawRole === 'channel' || rawRole === 'viewer' || rawRole === 'operator' || rawRole === 'operator') return 'channel';
+    // Map all legacy partner-era role names to canonical values
+    if (rawRole === 'partner' || rawRole === 'referrer' || rawRole === 'associate') return 'associate';
+    if (rawRole === 'channel' || rawRole === 'viewer' || rawRole === 'operator') return 'channel';
     if (rawRole === 'hybrid' || rawRole === 'both') return 'hybrid';
     return 'channel';
   };
 
+  const sanitizeAssociateInput = (associateData: Omit<Associate, 'id' | 'created_at'>) => {
+    const allocationFactor = typeof associateData.allocation_factor === 'number' && Number.isFinite(associateData.allocation_factor)
+      ? Math.max(0, associateData.allocation_factor)
+      : typeof associateData.partner_arrangement_rate === 'number' && Number.isFinite(associateData.partner_arrangement_rate)
+        ? Math.max(0, associateData.partner_arrangement_rate)
+      : 0;
+    const overheadWeight = typeof associateData.overhead_weight === 'number' && Number.isFinite(associateData.overhead_weight)
+      ? Math.max(0, associateData.overhead_weight)
+      : typeof associateData.system_allocation_percent === 'number' && Number.isFinite(associateData.system_allocation_percent)
+        ? Math.max(0, associateData.system_allocation_percent)
+      : 0;
+    const totalNumber = typeof associateData.total_number === 'number' && Number.isFinite(associateData.total_number)
+      ? associateData.total_number
+      : typeof associateData.total === 'number' && Number.isFinite(associateData.total)
+        ? associateData.total
+        : 0;
 
-
-  const sanitizePartnerInput = (partnerData: Omit<Partner, 'id' | 'created_at'>) => {
     return {
-      ...partnerData,
-      name: partnerData.name?.trim() ?? '',
-      partner_arrangement_rate: typeof partnerData.partner_arrangement_rate === 'number' && Number.isFinite(partnerData.partner_arrangement_rate) ? Math.max(0, partnerData.partner_arrangement_rate) : 0,
-      system_allocation_percent: typeof partnerData.system_allocation_percent === 'number' && Number.isFinite(partnerData.system_allocation_percent) ? Math.max(0, partnerData.system_allocation_percent) : 0,
-      role: normalizePartnerRole(partnerData.role),
-      status: partnerData.status ?? 'active',
+      ...associateData,
+      name: associateData.name?.trim() ?? '',
+      allocation_factor: allocationFactor,
+      partner_arrangement_rate: allocationFactor,
+      overhead_weight: overheadWeight,
+      system_allocation_percent: overheadWeight,
+      total: totalNumber,
+      total_number: totalNumber,
+      role: normalizeAssociateRole(associateData.role),
+      status: associateData.status ?? 'active',
     };
   };
 
-  const sanitizePartnerRecord = (
-    partnerData: Partner | (Partial<Partner> & { id: string; name: string; role: Partner['role']; status: Partner['status']; total: number; contact?: string | null })
-  ): Partner => {
+  const sanitizeAssociateRecord = (associateData: Associate): Associate => {
+    const allocationFactor = typeof associateData.allocation_factor === 'number' && Number.isFinite(associateData.allocation_factor)
+      ? Math.max(0, associateData.allocation_factor)
+      : typeof associateData.partner_arrangement_rate === 'number' && Number.isFinite(associateData.partner_arrangement_rate)
+        ? Math.max(0, associateData.partner_arrangement_rate)
+      : 0;
+    const overheadWeight = typeof associateData.overhead_weight === 'number' && Number.isFinite(associateData.overhead_weight)
+      ? Math.max(0, associateData.overhead_weight)
+      : typeof associateData.system_allocation_percent === 'number' && Number.isFinite(associateData.system_allocation_percent)
+        ? Math.max(0, associateData.system_allocation_percent)
+      : 0;
+    const totalNumber = typeof associateData.total_number === 'number' && Number.isFinite(associateData.total_number)
+      ? associateData.total_number
+      : typeof associateData.total === 'number' && Number.isFinite(associateData.total)
+        ? associateData.total
+        : 0;
+
     return {
-      ...partnerData,
-      name: partnerData.name?.trim() ?? '',
-      partner_arrangement_rate: typeof partnerData.partner_arrangement_rate === 'number' && Number.isFinite(partnerData.partner_arrangement_rate) ? Math.max(0, partnerData.partner_arrangement_rate) : 0,
-      system_allocation_percent: typeof partnerData.system_allocation_percent === 'number' && Number.isFinite(partnerData.system_allocation_percent) ? Math.max(0, partnerData.system_allocation_percent) : 0,
-      role: normalizePartnerRole(partnerData.role),
-      status: partnerData.status ?? 'active',
-    } as Partner;
+      ...associateData,
+      name: associateData.name?.trim() ?? '',
+      allocation_factor: allocationFactor,
+      partner_arrangement_rate: allocationFactor,
+      overhead_weight: overheadWeight,
+      system_allocation_percent: overheadWeight,
+      total: totalNumber,
+      total_number: totalNumber,
+      role: normalizeAssociateRole(associateData.role),
+      status: associateData.status ?? 'active',
+    } as Associate;
   };
 
-  type StoredPartnerEntryType = PartnerEntry['type'];
-
-  const normalizePartnerEntryType = (value: unknown): StoredPartnerEntryType => {
+  const normalizeAssociateAllocationType = (value: unknown): AssociateAllocation['type'] => {
     const rawType = String(value ?? '').trim().toLowerCase();
     if (rawType === 'input') return 'input';
-    if (rawType === 'closure') return 'closure';
+    if (rawType === 'alignment' || rawType === 'closure') return 'alignment';
     if (rawType === 'output') return 'output';
     if (rawType === 'adjustment') return 'adjustment';
     return 'input';
   };
 
-  const normalizePartnerEntryRecord = (entry: PartnerEntry): PartnerEntry => ({
+  const normalizeAssociateAllocationRecord = (entry: AssociateAllocation): AssociateAllocation => ({
     ...entry,
-    type: normalizePartnerEntryType(entry.type),
+    // Accept both column names from DB rows to ease migration
+    attributed_associate_id: (entry as any).attributed_associate_id ?? (entry as any).associate_id ?? (entry as any).partner_id ?? '',
+    type: normalizeAssociateAllocationType(entry.type),
   });
 
-  const sanitizePartnerEntryInput = (entryData: Omit<PartnerEntry, 'id' | 'created_at'>) => ({
+  const sanitizeAssociateAllocationInput = (entryData: Omit<AssociateAllocation, 'id' | 'created_at'>) => ({
     ...entryData,
-    type: normalizePartnerEntryType(entryData.type),
+    attributed_associate_id: (entryData as any).attributed_associate_id ?? (entryData as any).associate_id ?? (entryData as any).partner_id ?? '',
+    type: normalizeAssociateAllocationType(entryData.type),
     amount: requirePositiveAmount(entryData.amount, 'Entry amount'),
-    date: requireValidDate(entryData.date, 'Partner entry date'),
+    date: requireValidDate(entryData.date, 'Associate entry date'),
   });
+
+  const toAssociateWritePayload = (associateData: Omit<Associate, 'id' | 'created_at'> | Associate) => {
+    const sanitizedAssociate = 'id' in associateData
+      ? sanitizeAssociateRecord(associateData as Associate)
+      : sanitizeAssociateInput(associateData);
+    const {
+      id,
+      created_at,
+      total_number,
+      overhead_weight,
+      role,
+      ...rest
+    } = sanitizedAssociate as Associate;
+
+    return {
+      ...rest,
+      role: role === 'associate' ? 'partner' : role,
+      allocation_factor: sanitizedAssociate.allocation_factor ?? sanitizedAssociate.partner_arrangement_rate ?? 0,
+      partner_arrangement_rate: sanitizedAssociate.allocation_factor ?? sanitizedAssociate.partner_arrangement_rate ?? 0,
+      system_allocation_percent: overhead_weight ?? sanitizedAssociate.system_allocation_percent ?? 0,
+      total: total_number ?? sanitizedAssociate.total ?? 0,
+    };
+  };
+
+  const toAssociateAllocationWritePayload = (entryData: Omit<AssociateAllocation, 'id' | 'created_at'> | AssociateAllocation) => {
+    const sanitizedEntry = sanitizeAssociateAllocationInput(entryData as Omit<AssociateAllocation, 'id' | 'created_at'>);
+    const { id: _id, created_at: _ca, attributed_associate_id, ...rest } = sanitizedEntry as AssociateAllocation;
+    return {
+      ...rest,
+      associate_id: attributed_associate_id,
+      partner_id: attributed_associate_id,
+    };
+  };
 
   const parseStoredJson = <T,>(raw: string | null, key: string): T | null => {
     if (!raw) return null;
@@ -665,8 +746,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const normalizeMemberArrangement = (member: Member): Member => {
     const incentiveType = member.arrangement_type ?? 'none';
-    const serviceRate = typeof member.service_rate === 'number' && Number.isFinite(member.service_rate)
-      ? member.service_rate
+    const overheadWeight = typeof member.overhead_weight === 'number' && Number.isFinite(member.overhead_weight)
+      ? member.overhead_weight
+      : typeof member.service_rate === 'number' && Number.isFinite(member.service_rate)
+        ? member.service_rate
       : undefined;
     const retainerRate = typeof member.retainer_rate === 'number' && Number.isFinite(member.retainer_rate)
       ? member.retainer_rate
@@ -675,7 +758,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return {
       ...member,
       arrangement_type: incentiveType,
-      service_rate: serviceRate,
+      overhead_weight: overheadWeight,
+      service_rate: overheadWeight,
       retainer_rate: retainerRate,
     };
   };
@@ -706,8 +790,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUnitAccountEntries([]);
     setOutputRequests([]);
     setTransferAccounts([]);
-    setPartners([]);
-    setPartnerEntries([]);
+    setAssociates([]);
+    setAssociateAllocations([]);
     setSystemEvents([]);
     setOperatorLogs([]);
   };
@@ -799,10 +883,41 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     let resolvedOrgId: string | null = null;
 
+    if (user) {
+      const authority = await getUserAuthorityContext(user.id);
+      if (authority.source === 'memberships') {
+        resolvedOrgId = authority.activeOrgId;
+        setActiveOrgId(resolvedOrgId);
+        setActiveMetaOrgId(authority.metaOrgId);
+        setManagedOrgIds(authority.managedOrgIds);
+        if (typeof window !== 'undefined') {
+          if (resolvedOrgId) localStorage.setItem('flow_ops_last_org_id', resolvedOrgId);
+          else localStorage.removeItem('flow_ops_last_org_id');
+          if (authority.metaOrgId) localStorage.setItem('flow_ops_last_meta_org_id', authority.metaOrgId);
+          else localStorage.removeItem('flow_ops_last_meta_org_id');
+        }
+        return resolvedOrgId;
+      }
+
+      if (authority.source === 'legacy') {
+        resolvedOrgId = authority.activeOrgId;
+        setActiveOrgId(resolvedOrgId);
+        setActiveMetaOrgId(authority.metaOrgId);
+        setManagedOrgIds(authority.managedOrgIds);
+        if (typeof window !== 'undefined') {
+          if (resolvedOrgId) localStorage.setItem('flow_ops_last_org_id', resolvedOrgId);
+          else localStorage.removeItem('flow_ops_last_org_id');
+          if (authority.metaOrgId) localStorage.setItem('flow_ops_last_meta_org_id', authority.metaOrgId);
+          else localStorage.removeItem('flow_ops_last_meta_org_id');
+        }
+        return resolvedOrgId;
+      }
+    }
+
     if (user && !profilesUnavailableRef.current && !hasMissingWorkspace('profiles')) {
       const { data: profileRelData, error: profileRelError } = await supabase
         .from('profiles')
-        .select('org_id')
+        .select('org_id, meta_org_id')
         .eq('id', user.id)
         .single();
 
@@ -829,10 +944,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } else {
         resolvedOrgId = profileRelData?.org_id ?? null;
         setActiveOrgId(resolvedOrgId);
+        setActiveMetaOrgId(profileRelData?.meta_org_id ?? null);
+        setManagedOrgIds(resolvedOrgId ? [resolvedOrgId] : []);
+        
+        // Cache for faster next load
+        if (typeof window !== 'undefined') {
+          if (resolvedOrgId) localStorage.setItem('flow_ops_last_org_id', resolvedOrgId);
+          else localStorage.removeItem('flow_ops_last_org_id');
+          if (profileRelData?.meta_org_id) localStorage.setItem('flow_ops_last_meta_org_id', profileRelData.meta_org_id);
+          else localStorage.removeItem('flow_ops_last_meta_org_id');
+        }
       }
-    } else {
+    }
+ else {
       resolvedOrgId = null;
       setActiveOrgId(null);
+      setManagedOrgIds([]);
     }
 
     return resolvedOrgId;
@@ -852,8 +979,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         channelEntriesRes,
         unitAccountEntriesRes,
         outputRequestsRes,
-        partnersRes,
-        partnerTransRes,
+        associatesRes,
+        associateAllocationsRes,
         transferAccountsRes,
       ] = await Promise.all([
         queryWorkspace<ActivityLog>('activity_logs', () => client.from('activity_logs').select('*').order('start_time', { ascending: false })),
@@ -863,8 +990,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         queryWorkspace<ChannelEntry>('channel_entries', () => client.from('channel_entries').select('*').order('date', { ascending: false })),
         queryWorkspace<UnitAccountEntry>('unit_account_entrys', () => client.from('unit_account_entries').select('*').order('date', { ascending: false })),
         queryWorkspace<OutputRequest>('output_requests', () => client.from('output_requests').select('*').order('requested_at', { ascending: false })),
-        queryWorkspace<Partner>('partners', () => client.from('partners').select('*').order('name')),
-        queryWorkspace<PartnerEntry>('partner_entries', () => client.from('partner_entries').select('*').order('date', { ascending: false })),
+        queryWorkspace<Associate>('associates', () => client.from('associates').select('*').order('name')),
+        queryWorkspace<AssociateAllocation>('associate_allocations', () => client.from('associate_allocations').select('*').order('date', { ascending: false })),
         queryWorkspace<TransferAccount>('transfer_accounts', () => client.from('transfer_accounts').select('*').order('name')),
       ]);
 
@@ -880,8 +1007,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setChannelEntries(resolveRows<ChannelEntry>(channelEntriesRes, 'channel_entries'));
       setUnitAccountEntries(resolveRows<UnitAccountEntry>(unitAccountEntriesRes, 'unit_account_entrys'));
       setOutputRequests(resolveRows<OutputRequest>(outputRequestsRes, 'output_requests'));
-      setPartners(resolveRows<Partner>(partnersRes, 'partners').map(sanitizePartnerRecord));
-      setPartnerEntries(resolveRows<PartnerEntry>(partnerTransRes, 'partner_entries').map(normalizePartnerEntryRecord));
+      setAssociates(resolveRows<Associate>(associatesRes, 'associates').map(sanitizeAssociateRecord));
+      setAssociateAllocations(resolveRows<AssociateAllocation>(associateAllocationsRes, 'associate_allocations').map(normalizeAssociateAllocationRecord));
       setTransferAccounts(resolveRows<TransferAccount>(transferAccountsRes, 'transfer_accounts'));
     } catch (error) {
       console.error('Error refreshing deferred datasets:', error);
@@ -1071,8 +1198,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         channelEntriesRes,
         unitAccountEntriesRes,
         outputRequestsRes,
-        partnersRes,
-        partnerTransRes,
+        associatesRes,
+        associateAllocationsRes,
         auditEventsRes,
         operatorLogsRes,
         transferAccountsRes,
@@ -1088,8 +1215,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         queryWorkspace<ChannelEntry>('channel_entries', () => client.from('channel_entries').select('*').order('date', { ascending: false })),
         queryWorkspace<UnitAccountEntry>('unit_account_entrys', () => client.from('unit_account_entries').select('*').order('date', { ascending: false })),
         queryWorkspace<OutputRequest>('output_requests', () => client.from('output_requests').select('*').order('requested_at', { ascending: false })),
-        queryWorkspace<Partner>('partners', () => client.from('partners').select('*').order('name')),
-        queryWorkspace<PartnerEntry>('partner_entries', () => client.from('partner_entries').select('*').order('date', { ascending: false })),
+        queryWorkspace<Associate>('associates', () => client.from('associates').select('*').order('name')),
+        queryWorkspace<AssociateAllocation>('associate_allocations', () => client.from('associate_allocations').select('*').order('date', { ascending: false })),
         queryWorkspace<AuditEventRow>('audit_events', () =>
           client
             .from('audit_events')
@@ -1120,8 +1247,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const channelEntriesData = resolveRows<ChannelEntry>(channelEntriesRes, 'channel_entries');
       const unitAccountEntriesData = resolveRows<UnitAccountEntry>(unitAccountEntriesRes, 'unit_account_entrys');
       const outputRequestsData = resolveRows<OutputRequest>(outputRequestsRes, 'output_requests');
-      const partnersData = resolveRows<Partner>(partnersRes, 'partners').map(sanitizePartnerRecord);
-      const partnerTransData = resolveRows<PartnerEntry>(partnerTransRes, 'partner_entries').map(normalizePartnerEntryRecord);
+      const associatesData = resolveRows<Associate>(associatesRes, 'associates').map(sanitizeAssociateRecord);
+      const associateAllocationsData = resolveRows<AssociateAllocation>(associateAllocationsRes, 'associate_allocations').map(normalizeAssociateAllocationRecord);
       const transferAccountsData = resolveRows<TransferAccount>(transferAccountsRes, 'transfer_accounts');
       const auditRows = resolveRows<AuditEventRow>(auditEventsRes, 'audit_events');
       const operatorLogsRows = resolveRows<OperatorLogRow>(operatorLogsRes, OPERATOR_ACTIVITY_WORKSPACE);
@@ -1142,8 +1269,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setChannelEntries(channelEntriesData);
       setUnitAccountEntries(unitAccountEntriesData);
       setOutputRequests(outputRequestsData);
-      setPartners(partnersData);
-      setPartnerEntries(partnerTransData);
+      setAssociates(associatesData);
+      setAssociateAllocations(associateAllocationsData);
       setTransferAccounts(transferAccountsData);
       setSystemEvents(auditEventsData);
       setOperatorLogs(operatorLogsData);
@@ -1163,6 +1290,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setManagedOrgIds([]);
       setActiveOrgId(null);
       setLoading(false);
+      localStorage.removeItem('flow_ops_last_org_id');
+      localStorage.removeItem('flow_ops_last_meta_org_id');
       return;
     }
 
@@ -1402,20 +1531,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const insertPayload = {
         ...sanitizedUnit,
         org_id: scopedOrgId,
-        ...(unitPartnerColumnUnavailableRef.current ? {} : { referred_by_partner_id: sanitizedUnit.referred_by_partner_id })
+        ...(unitPartnerColumnUnavailableRef.current ? {} : { attributed_associate_id: sanitizedUnit.attributed_associate_id })
       };
 
       const insertResult = await supabase.from('units').insert([insertPayload]).select('id').single();
       if (insertResult.error) {
         const error = insertResult.error;
-        if (isMissingColumnError(error, 'units', 'referred_by_partner_id')) {
+        if (isMissingColumnError(error, 'units', 'attributed_associate_id')) {
           unitPartnerColumnUnavailableRef.current = true;
           warnOnce(
-            'missing-units-referred-by-partner-id',
-            'Supabase units.referred_by_partner_id column is missing. Unit writes will continue without partner linkage until migration is applied.',
+            'missing-units-attributed-associate-id',
+            'Supabase units.attributed_associate_id column is missing. Unit writes will continue without associate attribution until migration is applied.',
             error.message ?? undefined,
           );
-          const fallbackPayload = stripUnitPartnerColumn(sanitizedUnit);
+          const fallbackPayload = stripUnitAssociateColumn(sanitizedUnit);
           const fallbackResult = await supabase.from('units').insert([{ ...fallbackPayload, org_id: scopedOrgId }]).select('id').single();
           if (fallbackResult.error) throw fallbackResult.error;
           if (!fallbackResult.data?.id) throw new Error('Unit was created but no id was returned.');
@@ -1451,19 +1580,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const insertPayload = sanitizedUnits.map(unit => ({
         ...unit,
         org_id: scopedOrgId,
-        ...(unitPartnerColumnUnavailableRef.current ? {} : { referred_by_partner_id: unit.referred_by_partner_id })
+        ...(unitPartnerColumnUnavailableRef.current ? {} : { attributed_associate_id: unit.attributed_associate_id })
       }));
 
       const { error } = await supabase.from('units').insert(insertPayload);
       if (error) {
-        if (isMissingColumnError(error, 'units', 'referred_by_partner_id')) {
+        if (isMissingColumnError(error, 'units', 'attributed_associate_id')) {
           unitPartnerColumnUnavailableRef.current = true;
           warnOnce(
-            'missing-units-referred-by-partner-id',
-            'Supabase units.referred_by_partner_id column is missing. Unit writes will continue without partner linkage until migration is applied.',
+            'missing-units-attributed-associate-id',
+            'Supabase units.attributed_associate_id column is missing. Unit writes will continue without associate attribution until migration is applied.',
             error.message ?? undefined,
           );
-          const fallbackPayload = sanitizedUnits.map(item => ({ ...stripUnitPartnerColumn(item), org_id: scopedOrgId }));
+          const fallbackPayload = sanitizedUnits.map(item => ({ ...stripUnitAssociateColumn(item), org_id: scopedOrgId }));
           const fallbackResult = await supabase.from('units').insert(fallbackPayload);
           if (fallbackResult.error) throw fallbackResult.error;
         } else {
@@ -1488,19 +1617,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const updatePayload = {
         ...sanitizedUnit,
         org_id: scopedOrgId,
-        ...(unitPartnerColumnUnavailableRef.current ? {} : { referred_by_partner_id: sanitizedUnit.referred_by_partner_id })
+        ...(unitPartnerColumnUnavailableRef.current ? {} : { attributed_associate_id: sanitizedUnit.attributed_associate_id })
       };
 
       const { error } = await supabase.from('units').update(updatePayload).eq('id', unit.id).eq('org_id', scopedOrgId);
       if (error) {
-        if (isMissingColumnError(error, 'units', 'referred_by_partner_id')) {
+        if (isMissingColumnError(error, 'units', 'attributed_associate_id')) {
           unitPartnerColumnUnavailableRef.current = true;
           warnOnce(
-            'missing-units-referred-by-partner-id',
-            'Supabase units.referred_by_partner_id column is missing. Unit writes will continue without partner linkage until migration is applied.',
+            'missing-units-attributed-associate-id',
+            'Supabase units.attributed_associate_id column is missing. Unit writes will continue without associate attribution until migration is applied.',
             error.message ?? undefined,
           );
-          const fallbackPayload = stripUnitPartnerColumn({ ...unit, ...sanitizedUnit });
+          const fallbackPayload = stripUnitAssociateColumn({ ...unit, ...sanitizedUnit });
           const fallbackResult = await supabase.from('units').update({ ...fallbackPayload, org_id: scopedOrgId }).eq('id', unit.id).eq('org_id', scopedOrgId);
           if (fallbackResult.error) throw fallbackResult.error;
         } else {
@@ -1609,18 +1738,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const client = supabase;
         if (!client) return;
         const updatePayload = unitPartnerColumnUnavailableRef.current
-          ? stripUnitPartnerColumn(unitRecord)
+          ? stripUnitAssociateColumn(unitRecord)
           : unitRecord;
         const { error } = await client.from('units').update({ ...updatePayload, org_id: scopedOrgId }).eq('id', unitRecord.id).eq('org_id', scopedOrgId);
         if (error) {
-          if (isMissingColumnError(error, 'units', 'referred_by_partner_id')) {
+          if (isMissingColumnError(error, 'units', 'attributed_associate_id')) {
             unitPartnerColumnUnavailableRef.current = true;
             warnOnce(
-              'missing-units-referred-by-partner-id',
-              'Supabase units.referred_by_partner_id column is missing. Unit writes will continue without partner linkage until migration is applied.',
+              'missing-units-attributed-associate-id',
+              'Supabase units.attributed_associate_id column is missing. Unit writes will continue without associate attribution until migration is applied.',
               error.message ?? undefined,
             );
-            const fallbackPayload = stripUnitPartnerColumn(unitRecord);
+            const fallbackPayload = stripUnitAssociateColumn(unitRecord);
             const fallbackResult = await client.from('units').update({ ...fallbackPayload, org_id: scopedOrgId }).eq('id', unitRecord.id).eq('org_id', scopedOrgId);
             if (fallbackResult.error) throw fallbackResult.error;
             return;
@@ -2695,99 +2824,98 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await fetchData();
   };
 
-  const addPartner = async (partnerData: Omit<Partner, 'id' | 'created_at'>) => {
-    const sanitizedPartner = sanitizePartnerInput(partnerData);
+  const addAssociate = async (associateData: Omit<Associate, 'id' | 'created_at'>) => {
+    const sanitizedAssociate = sanitizeAssociateInput(associateData);
     if (isDemoMode) {
-      const newPartner = { ...sanitizedPartner, id: uuidv4(), created_at: new Date().toISOString() };
-      const updated = [...partners, newPartner];
-      setPartners(updated);
-      localStorage.setItem('flow_ops_partners', JSON.stringify(updated));
-      void appendSystemEvent({ action: 'partner_added', entity: 'partner', entity_id: newPartner.id, details: newPartner.name });
+      const newAssociate = { ...sanitizedAssociate, id: uuidv4(), created_at: new Date().toISOString() };
+      const updated = [...associates, newAssociate];
+      setAssociates(updated);
+      localStorage.setItem('flow_ops_associates', JSON.stringify(updated));
+      void appendSystemEvent({ action: 'associate_added', entity: 'associate', entity_id: newAssociate.id, details: newAssociate.name });
     } else {
       if (!supabase) return;
       const scopedOrgId = requireOrgScope();
-      const { error } = await supabase.from('partners').insert([{ ...sanitizedPartner, org_id: scopedOrgId }]);
+      const { error } = await supabase.from('associates').insert([{ ...toAssociateWritePayload(sanitizedAssociate), org_id: scopedOrgId }]);
       if (error) throw error;
       await fetchData();
-      void appendSystemEvent({ action: 'partner_added', entity: 'partner', details: sanitizedPartner.name });
+      void appendSystemEvent({ action: 'associate_added', entity: 'associate', details: sanitizedAssociate.name });
     }
   };
 
-  const updatePartner = async (partnerData: Partner) => {
-    const sanitizedPartner = sanitizePartnerRecord(partnerData);
+  const updateAssociate = async (associateData: Associate) => {
+    const sanitizedAssociate = sanitizeAssociateRecord(associateData);
     if (isDemoMode) {
-      const updated = partners.map(a => a.id === sanitizedPartner.id ? sanitizedPartner : a);
-      setPartners(updated);
-      localStorage.setItem('flow_ops_partners', JSON.stringify(updated));
-      void appendSystemEvent({ action: 'partner_updated', entity: 'partner', entity_id: sanitizedPartner.id, details: sanitizedPartner.name });
+      const updated = associates.map(a => a.id === sanitizedAssociate.id ? sanitizedAssociate : a);
+      setAssociates(updated);
+      localStorage.setItem('flow_ops_associates', JSON.stringify(updated));
+      void appendSystemEvent({ action: 'associate_updated', entity: 'associate', entity_id: sanitizedAssociate.id, details: sanitizedAssociate.name });
     } else {
       if (!supabase) return;
       const scopedOrgId = requireOrgScope();
-      const { error } = await supabase.from('partners').update(sanitizedPartner).eq('id', sanitizedPartner.id).eq('org_id', scopedOrgId);
+      const { error } = await supabase.from('associates').update(toAssociateWritePayload(sanitizedAssociate)).eq('id', sanitizedAssociate.id).eq('org_id', scopedOrgId);
       if (error) throw error;
       await fetchData();
-      void appendSystemEvent({ action: 'partner_updated', entity: 'partner', entity_id: sanitizedPartner.id, details: sanitizedPartner.name });
+      void appendSystemEvent({ action: 'associate_updated', entity: 'associate', entity_id: sanitizedAssociate.id, details: sanitizedAssociate.name });
     }
   };
 
-  const deletePartner = async (id: string) => {
-    requirePermission(canManageValue, 'Only admin/operator can remove partners.');
-    const existingPartner = partners.find(item => item.id === id);
-    if (!existingPartner) return;
+  const deleteAssociate = async (id: string) => {
+    requirePermission(canManageValue, 'Only admin/operator can remove associates.');
+    const existingAssociate = associates.find(item => item.id === id);
+    if (!existingAssociate) return;
 
-    const hasEntrys = partnerEntries.some(entry => entry.partner_id === id);
+    const hasEntrys = associateAllocations.some(entry => entry.attributed_associate_id === id);
     if (hasEntrys) {
       throw new Error('Cannot remove entity with entry history. Remove related entries first.');
     }
 
-    const hasReferredUnits = units.some(unit => unit.referred_by_partner_id === id);
+    const hasReferredUnits = units.some(unit => unit.attributed_associate_id === id);
     if (hasReferredUnits) {
       throw new Error('Cannot remove entity while units are still linked. Reassign or clear unit entity links first.');
     }
 
     if (isDemoMode) {
-      const updated = partners.filter(item => item.id !== id);
-      setPartners(updated);
-      localStorage.setItem('flow_ops_partners', JSON.stringify(updated));
-      void appendSystemEvent({ action: 'partner_deleted', entity: 'partner', entity_id: id, details: existingPartner.name });
+      const updated = associates.filter(item => item.id !== id);
+      setAssociates(updated);
+      localStorage.setItem('flow_ops_associates', JSON.stringify(updated));
+      void appendSystemEvent({ action: 'associate_deleted', entity: 'associate', entity_id: id, details: existingAssociate.name });
       return;
     }
 
     if (!supabase) return;
     const scopedOrgId = requireOrgScope();
-    const { error } = await supabase.from('partners').delete().eq('id', id).eq('org_id', scopedOrgId);
+    const { error } = await supabase.from('associates').delete().eq('id', id).eq('org_id', scopedOrgId);
     if (error) throw normalizeSupabaseWriteError(error);
     await fetchData();
-    void appendSystemEvent({ action: 'partner_deleted', entity: 'partner', entity_id: id, details: existingPartner.name });
+    void appendSystemEvent({ action: 'associate_deleted', entity: 'associate', entity_id: id, details: existingAssociate.name });
   };
 
-  const addPartnerEntry = async (entryData: Omit<PartnerEntry, 'id' | 'created_at'>) => {
-    requirePermission(canManageValue, 'Only admin/operator can add partner entries.');
-    const sanitizedEntry = sanitizePartnerEntryInput(entryData);
+  const addAssociateAllocation = async (entryData: Omit<AssociateAllocation, 'id' | 'created_at'>) => {
+    requirePermission(canManageValue, 'Only admin/operator can add associate allocations.');
+    const sanitizedEntry = sanitizeAssociateAllocationInput(entryData);
     if (isDemoMode) {
       const newEntry = { ...sanitizedEntry, id: uuidv4(), created_at: new Date().toISOString() };
-      const updated = [newEntry, ...partnerEntries];
-      setPartnerEntries(updated);
-      localStorage.setItem('flow_ops_partner_trans', JSON.stringify(updated));
-      void appendSystemEvent({ action: 'partner_entry_added', entity: 'partner_entry', entity_id: newEntry.id, amount: sanitizedEntry.amount, details: sanitizedEntry.type });
+      const updated = [newEntry, ...associateAllocations];
+      setAssociateAllocations(updated);
+      localStorage.setItem('flow_ops_associate_allocations', JSON.stringify(updated));
+      void appendSystemEvent({ action: 'associate_allocation_added', entity: 'associate_allocation', entity_id: newEntry.id, amount: sanitizedEntry.amount, details: sanitizedEntry.type });
 
-      // Update Partner Total automatically
-      const partner = partners.find(a => a.id === sanitizedEntry.partner_id);
-      if (partner) {
+      // Update Associate total_number automatically
+      const associate = associates.find(a => a.id === sanitizedEntry.attributed_associate_id);
+      if (associate) {
         let totalChange = 0;
-        // Input increases entity total; other entry types reduce it.
         if (sanitizedEntry.type === 'input') totalChange = sanitizedEntry.amount;
         else totalChange = -sanitizedEntry.amount;
 
-        const updatedPartner = { ...partner, total: partner.total + totalChange };
-        await updatePartner(updatedPartner);
+        const updatedAssociate = { ...associate, total_number: (associate.total_number || 0) + totalChange };
+        await updateAssociate(updatedAssociate);
       }
 
     } else {
       if (!supabase) return;
       const scopedOrgId = requireOrgScope();
-      const rpcResult = await supabase.rpc('partner_record_entry', {
-        p_partner_id: sanitizedEntry.partner_id,
+      const rpcResult = await supabase.rpc('associate_record_allocation', {
+        p_associate_id: sanitizedEntry.attributed_associate_id,
         p_type: sanitizedEntry.type,
         p_amount: sanitizedEntry.amount,
         p_date: sanitizedEntry.date,
@@ -2795,42 +2923,41 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (!rpcResult.error) {
-        void appendSystemEvent({ action: 'partner_entry_added', entity: 'partner_entry', amount: sanitizedEntry.amount, details: sanitizedEntry.type });
+        void appendSystemEvent({ action: 'associate_allocation_added', entity: 'associate_allocation', amount: sanitizedEntry.amount, details: sanitizedEntry.type });
         await fetchData();
         return;
       }
 
-      if (!isMissingFunctionError(rpcResult.error, 'partner_record_entry')) {
+      if (!isMissingFunctionError(rpcResult.error, 'associate_record_allocation')) {
         throw rpcResult.error;
       }
 
       const createdEntryRes = await supabase
-        .from('partner_entries')
+        .from('associate_allocations')
         .insert([{
-          ...sanitizedEntry,
+          ...toAssociateAllocationWritePayload(sanitizedEntry),
           org_id: scopedOrgId,
         }])
         .select('id')
         .single();
       if (createdEntryRes.error) throw createdEntryRes.error;
-      void appendSystemEvent({ action: 'partner_entry_added', entity: 'partner_entry', entity_id: createdEntryRes.data?.id, amount: sanitizedEntry.amount, details: sanitizedEntry.type });
+      void appendSystemEvent({ action: 'associate_allocation_added', entity: 'associate_allocation', entity_id: createdEntryRes.data?.id, amount: sanitizedEntry.amount, details: sanitizedEntry.type });
       
-      // Trigger total update via Supabase trigger or manual update here? 
-      // For now, manual update to keep logic consistent
-      const partner = partners.find(a => a.id === sanitizedEntry.partner_id);
-      if (partner) {
+      // Manual total_number update to keep logic consistent until DB trigger is added
+      const associate = associates.find(a => a.id === sanitizedEntry.attributed_associate_id);
+      if (associate) {
         let totalChange = 0;
         if (sanitizedEntry.type === 'input') totalChange = sanitizedEntry.amount;
         else totalChange = -sanitizedEntry.amount;
         
         const { error: totalUpdateError } = await supabase
-          .from('partners')
-          .update({ total: partner.total + totalChange })
-          .eq('id', partner.id)
+          .from('associates')
+          .update({ total: (associate.total_number || 0) + totalChange })
+          .eq('id', associate.id)
           .eq('org_id', scopedOrgId);
         if (totalUpdateError) {
           if (createdEntryRes.data?.id) {
-            await supabase.from('partner_entries').delete().eq('id', createdEntryRes.data.id).eq('org_id', scopedOrgId);
+            await supabase.from('associate_allocations').delete().eq('id', createdEntryRes.data.id).eq('org_id', scopedOrgId);
           }
           throw totalUpdateError;
         }
@@ -2840,50 +2967,50 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const deletePartnerEntry = async (id: string) => {
-    requirePermission(canManageValue, 'Only admin/operator can remove partner entries.');
-    const existingEntry = partnerEntries.find(item => item.id === id);
+  const deleteAssociateAllocation = async (id: string) => {
+    requirePermission(canManageValue, 'Only admin/operator can remove associate allocations.');
+    const existingEntry = associateAllocations.find(item => item.id === id);
     if (!existingEntry) return;
 
-    const relatedPartner = partners.find(item => item.id === existingEntry.partner_id);
+    const relatedAssociate = associates.find(item => item.id === existingEntry.attributed_associate_id);
     const reverseTotalChange = existingEntry.type === 'input'
       ? -existingEntry.amount
       : existingEntry.amount;
 
     if (isDemoMode) {
-      const updatedEntrys = partnerEntries.filter(item => item.id !== id);
-      setPartnerEntries(updatedEntrys);
-      localStorage.setItem('flow_ops_partner_trans', JSON.stringify(updatedEntrys));
+      const updatedEntries = associateAllocations.filter(item => item.id !== id);
+      setAssociateAllocations(updatedEntries);
+      localStorage.setItem('flow_ops_associate_allocations', JSON.stringify(updatedEntries));
 
-      if (relatedPartner) {
-        const updatedPartners = partners.map(item => (
-          item.id === relatedPartner.id
-            ? { ...item, total: item.total + reverseTotalChange }
+      if (relatedAssociate) {
+        const updatedAssociates = associates.map(item =>
+          item.id === relatedAssociate.id
+            ? { ...item, total_number: (item.total_number || 0) + reverseTotalChange }
             : item
-        ));
-        setPartners(updatedPartners);
-        localStorage.setItem('flow_ops_partners', JSON.stringify(updatedPartners));
+        );
+        setAssociates(updatedAssociates);
+        localStorage.setItem('flow_ops_associates', JSON.stringify(updatedAssociates));
       }
 
-      void appendSystemEvent({ action: 'partner_entry_deleted', entity: 'partner_entry', entity_id: id, amount: existingEntry.amount, details: existingEntry.type });
+      void appendSystemEvent({ action: 'associate_allocation_deleted', entity: 'associate_allocation', entity_id: id, amount: existingEntry.amount, details: existingEntry.type });
       return;
     }
 
     if (!supabase) return;
     const scopedOrgId = requireOrgScope();
-    const { error: deleteError } = await supabase.from('partner_entries').delete().eq('id', id).eq('org_id', scopedOrgId);
+    const { error: deleteError } = await supabase.from('associate_allocations').delete().eq('id', id).eq('org_id', scopedOrgId);
     if (deleteError) throw normalizeSupabaseWriteError(deleteError);
 
-    if (relatedPartner) {
+    if (relatedAssociate) {
       const { error: totalUpdateError } = await supabase
-        .from('partners')
-        .update({ total: relatedPartner.total + reverseTotalChange })
-        .eq('id', relatedPartner.id)
-        .eq('org_id', scopedOrgId);
+        .from('associates')
+          .update({ total: (relatedAssociate.total_number || 0) + reverseTotalChange })
+          .eq('id', relatedAssociate.id)
+          .eq('org_id', scopedOrgId);
 
       if (totalUpdateError) {
-        await supabase.from('partner_entries').insert([{
-          ...existingEntry,
+        await supabase.from('associate_allocations').insert([{
+          ...toAssociateAllocationWritePayload(existingEntry),
           org_id: scopedOrgId,
         }]);
     throw normalizeSupabaseWriteError(totalUpdateError);
@@ -2891,12 +3018,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     await fetchData();
-    void appendSystemEvent({ action: 'partner_entry_deleted', entity: 'partner_entry', entity_id: id, amount: existingEntry.amount, details: existingEntry.type });
+    void appendSystemEvent({ action: 'associate_allocation_deleted', entity: 'associate_allocation', entity_id: id, amount: existingEntry.amount, details: existingEntry.type });
   };
 
   const fetchAvailableOrgs = async () => {
     if (role !== 'admin' || isDemoMode || !supabase) return;
     try {
+      if (user?.id) {
+        const authority = await getUserAuthorityContext(user.id);
+        if (authority.managedOrgIds.length > 0) {
+          setManagedOrgIds((current) => Array.from(new Set([...current, ...authority.managedOrgIds])));
+        }
+      }
+
       const accessToken = await getSupabaseAccessToken();
       if (!accessToken) return;
 
@@ -2911,7 +3045,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (!error && data?.managed_org_ids) {
-        setManagedOrgIds(data.managed_org_ids);
+        setManagedOrgIds((current) => Array.from(new Set([...current, ...data.managed_org_ids])));
       }
     } catch (err) {
       console.error('Failed to fetch available orgs:', err);
@@ -2949,6 +3083,29 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setActiveOrgId(data?.org_id ?? null);
     } else {
       setActiveOrgId(orgId);
+    }
+
+    if (user?.id && orgId) {
+      const { data: membershipRow } = await supabase
+        .from('org_memberships')
+        .select('id')
+        .eq('user_id', user.id)
+        .eq('org_id', orgId)
+        .maybeSingle();
+
+      if (membershipRow?.id) {
+        await supabase
+          .from('org_memberships')
+          .update({ is_default_org: false })
+          .eq('user_id', user.id)
+          .neq('org_id', orgId);
+
+        await supabase
+          .from('org_memberships')
+          .update({ is_default_org: true, status: 'active' })
+          .eq('user_id', user.id)
+          .eq('org_id', orgId);
+      }
     }
 
     if (data?.managed_org_ids) {
@@ -3014,73 +3171,74 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const contextValue: DataContextType = {
-      units,
-      workspaces,
-      entries,
-      members,
-      activityLogs,
-      expenses,
-      adjustments,
-      adjustmentRequests,
-      channelEntries: channelEntries,
-      unitAccountEntries,
-      outputRequests,
-      transferAccounts,
-      partners,
-      partnerEntries,
-      systemEvents,
-      operatorLogs,
-      activeOrgId,
-      setActiveOrgId,
-      loading,
-      loadingProgress,
-      isDemoMode,
-      addUnit,
-      updateUnit,
-      deleteUnit,
-      importUnits,
-      transferUnitTotal,
-      recordOutputRequest,
-      addUnitAccountEntry,
-      requestOutput,
-      resolveOutputRequest,
-      requestAdjustment,
-      resolveAdjustmentRequest,
-      addWorkspace,
-      updateWorkspace,
-      deleteWorkspace,
-      addEntry,
-      updateEntry,
-      deleteEntry,
-      addMember,
-      updateMember,
-      importMembers,
-      deleteMember,
-      addActivityLog,
-      updateActivityLog,
-      endActivityLog,
-      addExpense,
-      deleteExpense,
-      addAdjustment,
-      updateAdjustment,
-      deleteAdjustment,
-      addChannelEntry: addChannelEntry,
-      deleteChannelEntry: deleteChannelEntry,
-      transferChannelValues: transferChannelValues,
-      addTransferAccount,
-      updateTransferAccount,
-      deleteTransferAccount,
-      addPartner,
-      updatePartner,
-      deletePartner,
-      addPartnerEntry,
-      deletePartnerEntry,
-      updateProfileOrgId,
-      provisionProfileOrgContext,
-      managedOrgIds,
-      recordSystemEvent: appendSystemEvent,
-      refreshData: fetchData
-    };
+    units,
+    workspaces,
+    entries,
+    members,
+    activityLogs,
+    expenses,
+    adjustments,
+    adjustmentRequests,
+    channelEntries,
+    unitAccountEntries,
+    outputRequests,
+    transferAccounts,
+    associates,
+    associateAllocations,
+    systemEvents,
+    operatorLogs,
+    activeOrgId,
+    setActiveOrgId,
+    loading,
+    loadingProgress,
+    isDemoMode,
+    addUnit,
+    updateUnit,
+    deleteUnit,
+    importUnits,
+    transferUnitTotal,
+    recordOutputRequest,
+    addUnitAccountEntry,
+    requestOutput,
+    resolveOutputRequest,
+    requestAdjustment,
+    resolveAdjustmentRequest,
+    addWorkspace,
+    updateWorkspace,
+    deleteWorkspace,
+    addEntry,
+    updateEntry,
+    deleteEntry,
+    addMember,
+    updateMember,
+    importMembers,
+    deleteMember,
+    addActivityLog,
+    updateActivityLog,
+    endActivityLog,
+    addExpense,
+    deleteExpense,
+    addAdjustment,
+    updateAdjustment,
+    deleteAdjustment,
+    addChannelEntry,
+    deleteChannelEntry,
+    transferChannelValues,
+    addTransferAccount,
+    updateTransferAccount,
+    deleteTransferAccount,
+    addAssociate,
+    updateAssociate,
+    deleteAssociate,
+    addAssociateAllocation,
+    deleteAssociateAllocation,
+    updateProfileOrgId,
+    provisionProfileOrgContext,
+    managedOrgIds,
+    metaOrgId: activeMetaOrgId,
+    recordSystemEvent: appendSystemEvent,
+    refreshData: fetchData,
+  };
 
   lastKnownDataContextValue = contextValue;
 

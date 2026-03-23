@@ -93,7 +93,6 @@ export default defineConfig({
           }
 
           if (id.includes('papaparse')) return 'data-export';
-          if (id.includes('lucide-react')) return 'icons';
           if (id.includes('date-fns')) return 'date-utils';
 
           if (

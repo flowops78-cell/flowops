@@ -1,15 +1,50 @@
 const STATIC_ORIGINS = [
   'https://flow-ops78.netlify.app',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:4173',
+  'http://127.0.0.1:4173',
 ];
 
+const ALLOWED_ORIGIN_ENV_KEYS = [
+  'FLOW_OPS_ALLOWED_ORIGINS',
+  'APP_ALLOWED_ORIGINS',
+  'PUBLIC_APP_URL',
+  'SITE_URL',
+];
+
+const normalizeOrigin = (value: string | null | undefined): string | null => {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+};
+
+const parseOriginList = (value: string | null | undefined): string[] => {
+  if (!value) return [];
+
+  return value
+    .split(',')
+    .map((item) => normalizeOrigin(item))
+    .filter((item): item is string => Boolean(item));
+};
+
+const ALLOWED_ORIGINS = Array.from(new Set([
+  ...STATIC_ORIGINS,
+  ...ALLOWED_ORIGIN_ENV_KEYS.flatMap((key) => parseOriginList(Deno.env.get(key))),
+]));
+
 const isAllowedOrigin = (origin: string | null): origin is string => {
-  if (!origin) return false;
+  const normalizedOrigin = normalizeOrigin(origin);
+  if (!normalizedOrigin) return false;
 
-  if (STATIC_ORIGINS.includes(origin)) return true;
-
-  if (origin.endsWith('.workers.dev')) return true;
-
-  return false;
+  return ALLOWED_ORIGINS.includes(normalizedOrigin);
 };
 
 export const getCorsHeaders = (origin: string | null) => ({

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { getUserAuthorityContext, isSupabaseConfigured, supabase } from '../lib/supabase';
 import { AppRole, normalizeAppRole } from '../lib/roles';
 import { useAuth } from './AuthContext';
 
@@ -48,20 +48,16 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       setProfileRoleLoading(true);
 
-      const { data, error } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', user.id)
-        .maybeSingle();
+      const authority = await getUserAuthorityContext(user.id);
 
       if (cancelled) return;
-      if (error) {
+      if (authority.source === 'none') {
         setProfileRole(null);
         setProfileRoleLoading(false);
         return;
       }
 
-      const roleFromProfile = normalizeAppRole(data?.role);
+      const roleFromProfile = normalizeAppRole(authority.role);
       setProfileRole(roleFromProfile);
       setProfileRoleLoading(false);
     };

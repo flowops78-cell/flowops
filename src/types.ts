@@ -1,12 +1,13 @@
 export interface Unit {
   id: string;
+  org_id?: string;
+  meta_org_id?: string | null;
   name: string;
   tags?: string[];
   total?: number;
   created_at?: string;
+  attributed_associate_id?: string;
   referred_by_partner_id?: string;
-  
-  // Real-time stats (cached)
   last_active_at?: string;
   total_input?: number;
   total_net?: number;
@@ -14,11 +15,14 @@ export interface Unit {
 
 export interface Member {
   id: string;
+  org_id?: string;
+  meta_org_id?: string | null;
   name: string;
   member_id?: string;
   user_id?: string;
   role: 'operator' | 'viewer' | 'admin';
   arrangement_type?: 'hourly' | 'monthly' | 'none';
+  overhead_weight?: number;
   service_rate?: number;
   retainer_rate?: number;
   status: 'active' | 'completed' | 'archived';
@@ -28,6 +32,8 @@ export interface Member {
 
 export interface ActivityLog {
   id: string;
+  org_id?: string;
+  meta_org_id?: string | null;
   member_id: string;
   workspace_id?: string;
   user_id?: string;
@@ -42,6 +48,8 @@ export interface ActivityLog {
 
 export interface Expense {
   id: string;
+  org_id?: string;
+  meta_org_id?: string | null;
   category: 'structural' | 'software' | 'distribution' | 'operations' | 'other';
   amount: number;
   date: string;
@@ -136,6 +144,8 @@ export interface ChannelEntry {
 
 export interface UnitAccountEntry {
   id: string;
+  org_id?: string;
+  meta_org_id?: string | null;
   unit_id: string;
   type: 'increment' | 'adjustment' | 'decrement';
   amount: number;
@@ -161,26 +171,27 @@ export interface OutputRequest {
 
 
 
-export interface Partner {
+export interface Associate {
   id: string;
   name: string;
-  role: 'partner' | 'channel' | 'hybrid';
+  role: 'associate' | 'partner' | 'channel' | 'hybrid';
+  allocation_factor?: number;
+  overhead_weight?: number;
   partner_arrangement_rate?: number;
   system_allocation_percent?: number;
-  total: number; // Positive: Entity owes workspace. Negative: Workspace owes entity.
+  total?: number;
+  total_number: number; 
   status: 'active' | 'inactive';
   created_at?: string;
 }
 
-export interface PartnerEntry {
+export interface AssociateAllocation {
   id: string;
-  partner_id: string;
+  attributed_associate_id: string;
+  associate_id?: string;
+  partner_id?: string;
   amount: number;
-  type: 'input' | 'closure' | 'output' | 'adjustment';
-  // input: value comes into system via entity (entity total +)
-  // closure: value closed back to system (entity total -)
-  // output: value goes from system to unit (entity total -)
-  // adjustment: value adjustment reducing entity total (entity total -)
+  type: 'input' | 'alignment' | 'output' | 'adjustment';
   date: string;
   created_at?: string;
 }
@@ -193,7 +204,7 @@ export interface SystemEvent {
   operator_activity_id?: string;
   actor_role: 'admin' | 'operator' | 'viewer';
   action: string;
-  entity: 'workspace' | 'entries' | 'expense' | 'adjustment' | 'channel' | 'activity' | 'operator' | 'unit' | 'member' | 'activity_log' | 'access_request' | 'partner' | 'partner_entry' | 'unit_account_entry' | 'log';
+  entity: 'workspace' | 'entries' | 'expense' | 'adjustment' | 'channel' | 'activity' | 'operator' | 'unit' | 'member' | 'activity_log' | 'access_request' | 'partner' | 'partner_entry' | 'associate' | 'associate_allocation' | 'unit_account_entry' | 'log';
   entity_id?: string;
   amount?: number;
   details?: string;

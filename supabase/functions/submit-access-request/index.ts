@@ -1,3 +1,5 @@
+/// <reference path="../_shared/edge-runtime.d.ts" />
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { checkRateLimit, resolveClientIp, rateLimitResponse } from '../_shared/rate-limiter.ts';
 import { getCorsHeaders } from '../_shared/cors.ts';
@@ -51,7 +53,7 @@ const sha256Hex = async (input: string) => {
     .join('');
 };
 
-Deno.serve(async (request) => {
+Deno.serve(async (request: Request) => {
   const origin = request.headers.get('Origin');
   if (request.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(origin) });
   if (request.method !== 'POST') return json(405, { error: 'Method not allowed' }, origin);
@@ -97,11 +99,13 @@ Deno.serve(async (request) => {
   }
 
   const tokenHash = await sha256Hex(rawInviteToken);
-  const { data: inviteRow, error: inviteError } = await adminClient
+  const { data: inviteRowData, error: inviteError } = await adminClient
     .from('access_invites')
     .select('id, org_id, token_hash, expires_at, revoked_at, use_count, max_uses')
     .eq('token_hash', tokenHash)
-    .maybeSingle<InviteRow>();
+    .maybeSingle();
+
+  const inviteRow = inviteRowData as InviteRow | null;
 
   if (inviteError) {
     return json(400, { error: `Unable to validate invite token: ${inviteError.message}` }, origin);

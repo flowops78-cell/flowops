@@ -48,13 +48,34 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
   }, [adjustments]);
   const activeWorkspacesCount = useMemo(() => workspaces.filter(g => !g.end_time).length, [workspaces]);
 
-  // Calculate unit net value_change
+  // Optimize O(N^2) operations with indexed lookups
+  const entriesByUnit = useMemo(() => {
+    const map: Record<string, typeof entries> = {};
+    entries.forEach(entry => {
+      if (!map[entry.unit_id]) map[entry.unit_id] = [];
+      map[entry.unit_id].push(entry);
+    });
+    return map;
+  }, [entries]);
+
+  const entriesByWorkspace = useMemo(() => {
+    const map: Record<string, typeof entries> = {};
+    entries.forEach(entry => {
+      if (entry.workspace_id) {
+        if (!map[entry.workspace_id]) map[entry.workspace_id] = [];
+        map[entry.workspace_id].push(entry);
+      }
+    });
+    return map;
+  }, [entries]);
+
+  // Calculate unit net value_change - Optimized to O(N)
   const unitStats = useMemo(() => units.map(unit => {
-    const unitEntries = entries.filter(l => l.unit_id === unit.id);
+    const unitEntries = entriesByUnit[unit.id] || [];
     const net = unitEntries.reduce((sum, entry) => sum + entry.net, 0);
     const workspacesPlayed = unitEntries.length;
     return { ...unit, net, workspacesPlayed };
-  }), [units, entries]);
+  }), [units, entriesByUnit]);
 
   const topOutcomes = useMemo(() => [...unitStats].sort((a, b) => b.net - a.net).slice(0, 5), [unitStats]);
   
@@ -95,12 +116,12 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
     return last7Days.map(dateStr => {
       const dailyWorkspaces = workspaces.filter(g => (g.date || '').startsWith(dateStr));
       const dailyFlow = dailyWorkspaces.reduce((sum, workspace) => {
-        const workspaceEntries = entries.filter(l => l.workspace_id === workspace.id);
+        const workspaceEntries = entriesByWorkspace[workspace.id] || [];
         return sum + workspaceEntries.reduce((entriesSum, entry) => entriesSum + entry.input_amount, 0);
       }, 0);
       return { date: new Date(dateStr).toLocaleDateString(undefined, { weekday: 'short' }), value: dailyFlow };
     });
-  }, [workspaces, entries]);
+  }, [workspaces, entriesByWorkspace]);
 
   return (
     <div className="page-shell animate-in fade-in">
