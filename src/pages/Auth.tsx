@@ -22,7 +22,7 @@ const ROLE_DOMAIN_MAP: Record<RequestedRole, string> = {
 };
 
 export default function Auth() {
-  const { signInWithPassword } = useAuth();
+  const { signInWithPassword, signInWithGoogle } = useAuth();
   const { notify } = useNotification();
   const [mode, setMode] = useState<'signin' | 'request'>('signin');
   const [email, setEmail] = useState('');
@@ -102,6 +102,19 @@ export default function Auth() {
         notify({ type: 'error', message: authError?.message || 'Unable to sign in.' });
       }
     } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setError(null);
+    setRequestSuccess(null);
+    setSubmitting(true);
+    try {
+      await signInWithGoogle({ keepSignedIn });
+    } catch (authError: any) {
+      setError(authError?.message || 'Unable to sign in with Google.');
+      notify({ type: 'error', message: authError?.message || 'Unable to sign in with Google.' });
       setSubmitting(false);
     }
   };
@@ -190,6 +203,21 @@ export default function Auth() {
                 <form onSubmit={handleSubmit} className="space-y-4">
                   {mode === 'signin' ? (
                     <>
+                      <button
+                        type="button"
+                        onClick={() => { void handleGoogleSignIn(); }}
+                        disabled={submitting}
+                        className="w-full border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 py-3 rounded-xl hover:bg-stone-50 dark:hover:bg-stone-800 transition-all text-sm font-semibold disabled:opacity-50"
+                      >
+                        Continue with Google
+                      </button>
+
+                      <div className="flex items-center gap-3">
+                        <div className="h-px flex-1 bg-stone-200 dark:bg-stone-800" />
+                        <span className="text-[10px] uppercase tracking-[0.2em] text-stone-400 dark:text-stone-500">or</span>
+                        <div className="h-px flex-1 bg-stone-200 dark:bg-stone-800" />
+                      </div>
+
                       <div className="space-y-2">
                         <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400 dark:text-stone-500 ml-1">Login ID</label>
                         <div className="relative group">
