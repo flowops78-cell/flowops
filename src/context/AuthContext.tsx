@@ -124,8 +124,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (typeof window !== 'undefined' && typeof options?.keepSignedIn === 'boolean') {
       sessionStorage.setItem(AUTH_PERSIST_ACTIVITY_KEY, options.keepSignedIn ? '1' : '0');
     }
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
+
+    const clearError = await supabase.auth.signOut({ scope: 'local' });
+    if (clearError.error) {
+      const status = typeof (clearError.error as { status?: unknown }).status === 'number'
+        ? (clearError.error as { status: number }).status
+        : undefined;
+      const message = (clearError.error.message ?? '').toLowerCase();
+      const ignorable = status === 401 || status === 403 || message.includes('session') || message.includes('jwt');
+      if (!ignorable) throw clearError.error;
+    }
+
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      setActivity(null);
+      throw error;
+    }
+
+    if (!data.session?.access_token) {
+      setActivity(null);
+      throw new Error('Sign in succeeded without an active session.');
+    }
+
+    const { data: authUserData, error: authUserError } = await supabase.auth.getUser(data.session.access_token);
+    if (authUserError || !authUserData.user) {
+      setActivity(null);
+      throw new Error(authUserError?.message || 'Signed in, but the session could not be validated.');
+    }
+
+    setActivity(data.session);
   };
 
   const signOut = async () => {
