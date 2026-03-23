@@ -117,6 +117,12 @@ This is a static Vite app. Deploy the `dist/` output from `npm run build`.
 2. Upload `dist/`
 3. Configure env vars at build time
 
+Cloudflare response headers:
+- The app ships a static header file at [public/_headers](public/_headers) so hosts that support Pages-style header manifests can enforce CSP and anti-framing headers at the HTTP layer.
+- `frame-ancestors` must be delivered as a response header. Browsers ignore it inside a `<meta http-equiv="Content-Security-Policy">` tag.
+- The CSP in [index.html](index.html) is limited to directives that still work from a meta tag. The stronger anti-framing policy is defined in [public/_headers](public/_headers).
+- If your Cloudflare deployment path does not consume `_headers`, set the same `Content-Security-Policy`, `X-Frame-Options`, `Referrer-Policy`, and `X-Content-Type-Options` values in Cloudflare response-header rules or your Worker config.
+
 ## Script Reference
 
 - `npm run dev` — local development server on port 3000
