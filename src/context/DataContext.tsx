@@ -12,6 +12,12 @@ type NewWorkspaceInput = Omit<Workspace, 'id' | 'created_at' | 'org_id'> & {
   org_id?: string;
 };
 
+type ProvisionOrgContextResult = {
+  org_id: string;
+  meta_org_id: string | null;
+  managed_org_ids: string[];
+};
+
 interface DataContextType {
   units: Unit[];
   workspaces: Workspace[];
@@ -95,7 +101,7 @@ interface DataContextType {
   addPartnerEntry: (entry: Omit<PartnerEntry, 'id' | 'created_at'>) => Promise<void>;
   deletePartnerEntry: (id: string) => Promise<void>;
   updateProfileOrgId: (orgId: string | null) => Promise<void>;
-  provisionProfileOrgContext: () => Promise<void>;
+  provisionProfileOrgContext: () => Promise<ProvisionOrgContextResult>;
   managedOrgIds: string[];
   recordSystemEvent: (event: Omit<SystemEvent, 'id' | 'timestamp' | 'actor_role'>) => Promise<void>;
 
@@ -2313,7 +2319,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    if (!supabase) return;
+    if (!supabase) throw new Error('Supabase is not configured.');
     const scopedOrgId = requireOrgScope();
     const { error } = await supabase.from('channel_entries').delete().eq('id', id).eq('org_id', scopedOrgId);
     if (error) throw normalizeSupabaseWriteError(error);
@@ -2966,13 +2972,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await fetchData();
   };
 
-  const provisionProfileOrgContext = async () => {
+  const provisionProfileOrgContext = async (): Promise<ProvisionOrgContextResult> => {
     if (!canAccessAdminUi) throw new Error('Only admin accounts can provision workspace clusters.');
     if (!user) throw new Error('You must be signed in to provision organization context.');
 
     if (isDemoMode) {
-      setActiveOrgId(crypto.randomUUID());
-      return;
+      const orgId = crypto.randomUUID();
+      setActiveOrgId(orgId);
+      return {
+        org_id: orgId,
+        meta_org_id: null,
+        managed_org_ids: [orgId],
+      };
     }
 
     if (!supabase) return;
@@ -3007,6 +3018,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     profilesUnavailableRef.current = false;
     await fetchData();
+
+    return {
+      org_id: data.org_id,
+      meta_org_id: data.meta_org_id ?? null,
+      managed_org_ids: data.managed_org_ids ?? [data.org_id],
+    };
   };
 
   const contextValue: DataContextType = {

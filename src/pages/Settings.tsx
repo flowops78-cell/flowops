@@ -282,8 +282,12 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     setInviteLoading(false);
   }, [canViewOperatorLogs]);
 
-  const fetchMetaOrgAdmins = React.useCallback(async () => {
-    if (!isSupabaseConfigured || !supabase || !canManageMetaOrgAdmins || !activeOrgId) return;
+  const fetchMetaOrgAdmins = React.useCallback(async (
+    orgIdOverride?: string,
+    fallbackState?: Pick<ManageMetaOrgAdminsResult, 'meta_org_id' | 'managed_org_ids'>,
+  ) => {
+    const orgId = orgIdOverride ?? activeOrgId;
+    if (!isSupabaseConfigured || !supabase || !canManageMetaOrgAdmins || !orgId) return;
 
     setMetaOrgAdminsLoading(true);
     setMetaOrgAdminsNotice(null);
@@ -302,7 +306,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       },
       body: {
         action: 'list',
-        org_id: activeOrgId,
+        org_id: orgId,
         access_token: accessToken,
       },
     });
@@ -318,8 +322,16 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     }
 
     setMetaOrgAccounts(data?.accounts ?? []);
-    setManagedMetaOrgId(data?.meta_org_id ?? null);
-    setMetaManagedOrgIds(data?.managed_org_ids ?? []);
+    setManagedMetaOrgId((current) => data?.meta_org_id ?? fallbackState?.meta_org_id ?? current);
+    setMetaManagedOrgIds((current) => {
+      if (data?.managed_org_ids && data.managed_org_ids.length > 0) {
+        return data.managed_org_ids;
+      }
+      if (fallbackState?.managed_org_ids && fallbackState.managed_org_ids.length > 0) {
+        return fallbackState.managed_org_ids;
+      }
+      return current;
+    });
     setMetaOrgAdminsLoading(false);
   }, [activeOrgId, canManageMetaOrgAdmins, getAccessToken]);
 
@@ -669,7 +681,22 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                 <button 
                   onClick={() => {
                     if (window.confirm('Provision and join a fresh workspace cluster?')) {
-                      void provisionProfileOrgContext();
+                      void (async () => {
+                        try {
+                          const result = await provisionProfileOrgContext();
+                          if (Object.prototype.hasOwnProperty.call(result, 'meta_org_id')) {
+                            setManagedMetaOrgId(result.meta_org_id);
+                          }
+                          setMetaManagedOrgIds(result.managed_org_ids);
+                          void fetchMetaOrgAdmins(result.org_id, {
+                            meta_org_id: result.meta_org_id,
+                            managed_org_ids: result.managed_org_ids,
+                          });
+                        } catch (error) {
+                          const detailedError = error instanceof Error ? error.message : 'Unable to provision fresh workspace cluster.';
+                          notify({ type: 'error', message: detailedError });
+                        }
+                      })();
                     }
                   }}
                   className="w-full interactive-3d bg-stone-900 dark:bg-emerald-600 text-white p-2.5 rounded-xl text-sm font-medium hover:bg-stone-800 dark:hover:bg-emerald-500 transition-colors shadow-sm"

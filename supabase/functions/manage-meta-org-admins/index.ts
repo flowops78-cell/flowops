@@ -379,11 +379,17 @@ Deno.serve(async (request) => {
       return json(400, { error: error instanceof Error ? error.message : 'Unable to persist fresh workspace mapping.' }, origin);
     }
 
+    try {
+      clusterContext = await loadClusterContext(adminClient, callerUserId, requestedOrgId);
+    } catch (error) {
+      return json(400, { error: error instanceof Error ? error.message : 'Unable to reload provisioned admin scope.' }, origin);
+    }
+
     return json(200, {
       ok: true,
       org_id: requestedOrgId,
       meta_org_id: provisionedMetaOrgId,
-      managed_org_ids: [requestedOrgId],
+      managed_org_ids: clusterContext.managedOrgIds,
     }, origin);
   }
 
