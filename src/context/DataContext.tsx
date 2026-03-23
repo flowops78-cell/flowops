@@ -8,6 +8,10 @@ import { useAppRole } from './AppRoleContext';
 import { useAuth } from './AuthContext';
 import { isAllowedWorkspaceStatusTransition, normalizeWorkspaceStatus } from '../lib/activityRules';
 
+type NewWorkspaceInput = Omit<Workspace, 'id' | 'created_at' | 'org_id'> & {
+  org_id?: string;
+};
+
 interface DataContextType {
   units: Unit[];
   workspaces: Workspace[];
@@ -46,7 +50,7 @@ interface DataContextType {
   resolveAdjustmentRequest: (requestId: string, status: 'approved' | 'rejected') => Promise<void>;
   
   // Workspace Actions
-  addWorkspace: (workspace: Omit<Workspace, 'id' | 'created_at'>) => Promise<string>;
+  addWorkspace: (workspace: NewWorkspaceInput) => Promise<string>;
   updateWorkspace: (workspace: Workspace) => Promise<void>;
   deleteWorkspace: (id: string) => Promise<void>;
   
@@ -428,8 +432,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!allowed) throw new Error(message);
   };
 
-  const requireOrgScope = () => {
-    if (isDemoMode) return null;
+  const requireOrgScope = (): string => {
+    if (isDemoMode) {
+      const demoOrgId = activeOrgId ?? crypto.randomUUID();
+      if (!activeOrgId) {
+        setActiveOrgId(demoOrgId);
+      }
+      return demoOrgId;
+    }
     if (!activeOrgId) {
       if (role === 'admin') {
         throw new Error('As an administrator, you must select an organization context before performing this action. Use the organization switcher to set a target scope.');
@@ -1773,12 +1783,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return transferId;
   };
 
-  const addWorkspace = async (workspaceData: Omit<Workspace, 'id' | 'created_at'>): Promise<string> => {
+  const addWorkspace = async (workspaceData: NewWorkspaceInput): Promise<string> => {
     requirePermission(canOperateLog, 'Only admin or operator can create activitys.');
     if (!workspaceData.date) throw new Error('Workspace date is required.');
     requireValidDate(workspaceData.date, 'Workspace date');
+    const scopedOrgId = workspaceData.org_id ?? requireOrgScope();
     const normalizedWorkspaceData: Omit<Workspace, 'id' | 'created_at'> = {
       ...workspaceData,
+      org_id: scopedOrgId,
       status: normalizeWorkspaceStatus(workspaceData.status),
       org_code: requireValidOrgCode(workspaceData.org_code),
     };
@@ -1790,7 +1802,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       void appendSystemEvent({ action: 'activity_created', entity: 'workspace', entity_id: newWorkspace.id, details: `Status: ${newWorkspace.status}` });
       return newWorkspace.id;
     } else {
-      const scopedOrgId = requireOrgScope();
       if (!supabase) throw new Error("Supabase not initialized");
       const insertResult = await supabase.from('workspaces').insert([{ ...normalizedWorkspaceData, org_id: scopedOrgId }]).select();
       if (insertResult.error) throw insertResult.error;
