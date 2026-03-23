@@ -35,36 +35,55 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     let mounted = true;
 
-    const bootstrap = async () => {
+    const adoptSession = async (nextSession: Session | null, options?: { persistSessionId?: boolean }) => {
       const client = supabase;
-      if (!client) return;
-      const { data } = await client.auth.getSession();
-      if (!mounted) return;
-      setActivity(data.session);
-      setLoading(false);
+      if (!client || !mounted) return;
 
-      if (data.session) {
-        // Record this session as the active one
-        await client
-          .from('profiles')
-          .update({ current_session_id: sessionId })
-          .eq('id', data.session.user.id);
+      if (!nextSession?.access_token) {
+        setActivity(null);
+        setLoading(false);
+        return;
       }
-    };
 
-    void bootstrap();
+      const { data: authUserData, error: authUserError } = await client.auth.getUser(nextSession.access_token);
+      if (!mounted) return;
 
-    const { data } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
+      if (authUserError || !authUserData.user) {
+        await client.auth.signOut({ scope: 'local' });
+        if (!mounted) return;
+        setActivity(null);
+        setLoading(false);
+        return;
+      }
+
       setActivity(nextSession);
       setLoading(false);
 
-      const client = supabase;
-      if (event === 'SIGNED_IN' && nextSession && client) {
+      if (options?.persistSessionId !== false) {
         await client
           .from('profiles')
           .update({ current_session_id: sessionId })
           .eq('id', nextSession.user.id);
       }
+    };
+
+    const bootstrap = async () => {
+      const client = supabase;
+      if (!client) return;
+      const { data } = await client.auth.getSession();
+      await adoptSession(data.session);
+    };
+
+    void bootstrap();
+
+    const { data } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
+      if (event === 'SIGNED_OUT') {
+        setActivity(null);
+        setLoading(false);
+        return;
+      }
+
+      await adoptSession(nextSession, { persistSessionId: event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' });
     });
 
     // Realtime enforcement for Single Session
