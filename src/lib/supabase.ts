@@ -44,8 +44,26 @@ export async function getSupabaseAccessToken() {
   if (!supabase) return null;
 
   const { data, error } = await supabase.auth.getSession();
-  if (error || !data.session?.access_token) return null;
-  return data.session.access_token;
+  const session = data.session;
+  if (error || !session?.access_token) return null;
+
+  const { data: authUserData, error: authUserError } = await supabase.auth.getUser(session.access_token);
+  if (!authUserError && authUserData.user) {
+    return session.access_token;
+  }
+
+  const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+  const refreshedSession = refreshData.session;
+  if (refreshError || !refreshedSession?.access_token) {
+    return null;
+  }
+
+  const { data: refreshedUserData, error: refreshedUserError } = await supabase.auth.getUser(refreshedSession.access_token);
+  if (refreshedUserError || !refreshedUserData.user) {
+    return null;
+  }
+
+  return refreshedSession.access_token;
 }
 
 export function getSupabase() {
