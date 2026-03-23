@@ -154,7 +154,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const auditEventsUnavailableRef = useRef(false);
   const outputRequestsUnavailableRef = useRef(false);
   const operatorLogsUnavailableRef = useRef(false);
-  const { role, canAccessAdminUi, canOperateLog, canManageValue, canAlign } = useAppRole();
+  const { role, loading: roleLoading, canAccessAdminUi, canOperateLog, canManageValue, canAlign } = useAppRole();
   const { user, loading: authLoading } = useAuth();
 
   const isDemoMode = !isSupabaseConfigured;
@@ -1156,7 +1156,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
-    if (authLoading) return;
+    if (authLoading || roleLoading) return;
 
     if (!isDemoMode && !user) {
       clearScopedDatasets();
@@ -1167,7 +1167,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     void fetchDataStaged();
-  }, [authLoading, isDemoMode, user?.id, role]);
+  }, [authLoading, isDemoMode, role, roleLoading, user?.id]);
 
   useEffect(() => {
     if (isDemoMode || !supabase || !user || !activeOrgId || operatorLogsUnavailableRef.current) return;
@@ -2903,7 +2903,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data, error } = await supabase.functions.invoke('manage-meta-org-admins', {
         body: {
           action: 'list-org-contexts',
-          access_token: accessToken,
         },
         headers: {
           Authorization: `Bearer ${accessToken}`,
@@ -2937,7 +2936,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       body: {
         action: 'switch-org-context',
         org_id: orgId,
-        access_token: accessToken,
       },
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -2984,7 +2982,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data, error: functionError } = await supabase.functions.invoke('manage-meta-org-admins', {
       body: {
         action: 'provision-org-context',
-        access_token: accessToken,
       },
       headers: {
         Authorization: `Bearer ${accessToken}`,

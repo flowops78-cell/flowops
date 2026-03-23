@@ -8,6 +8,7 @@ export type { AppRole } from '../lib/roles';
 type AppRoleContextType = {
   role: AppRole;
   setRole: (role: AppRole) => void;
+  loading: boolean;
   roleLocked: boolean;
   canAccessAdminUi: boolean;
   canOperateLog: boolean;
@@ -20,13 +21,15 @@ const APP_ROLE_STORAGE_KEY = 'flow_ops_role';
 const AppRoleContext = createContext<AppRoleContextType | undefined>(undefined);
 
 export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [role, setRoleState] = useState<AppRole>('viewer');
   const [profileRole, setProfileRole] = useState<AppRole | null>(null);
+  const [profileRoleLoading, setProfileRoleLoading] = useState(false);
   const roleFromMetadata = user?.user_metadata?.app_role;
   const metadataRole = normalizeAppRole(roleFromMetadata);
   const effectiveServerRole = metadataRole ?? profileRole;
   const roleLocked = isSupabaseConfigured && !!user;
+  const loading = authLoading || (isSupabaseConfigured && !!user && !metadataRole && profileRoleLoading);
 
   useEffect(() => {
     let cancelled = false;
@@ -34,8 +37,16 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const loadProfileRole = async () => {
       if (!isSupabaseConfigured || !supabase || !user?.id) {
         setProfileRole(null);
+        setProfileRoleLoading(false);
         return;
       }
+
+      if (metadataRole) {
+        setProfileRoleLoading(false);
+        return;
+      }
+
+      setProfileRoleLoading(true);
 
       const { data, error } = await supabase
         .from('user_roles')
@@ -46,18 +57,20 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
       if (cancelled) return;
       if (error) {
         setProfileRole(null);
+        setProfileRoleLoading(false);
         return;
       }
 
       const roleFromProfile = normalizeAppRole(data?.role);
       setProfileRole(roleFromProfile);
+      setProfileRoleLoading(false);
     };
 
     void loadProfileRole();
     return () => {
       cancelled = true;
     };
-  }, [user?.id]);
+  }, [metadataRole, user?.id]);
 
   useEffect(() => {
     if (effectiveServerRole) {
@@ -80,13 +93,14 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return {
       role,
       setRole,
+      loading,
       roleLocked,
       canAccessAdminUi,
       canOperateLog,
       canManageValue,
       canAlign,
     };
-  }, [role, roleLocked]);
+  }, [loading, role, roleLocked]);
 
   return <AppRoleContext.Provider value={value}>{children}</AppRoleContext.Provider>;
 };

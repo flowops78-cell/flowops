@@ -68,7 +68,8 @@ function AppRoutes() {
 }
 
 function AppShell() {
-  const { user, loading } = useAuth();
+  const { user, loading: authLoading } = useAuth();
+  const { loading: roleLoading } = useAppRole();
 
   useEffect(() => {
     return preloadCoreRoutesOnIdle();
@@ -78,11 +79,11 @@ function AppShell() {
     return enableHorizontalMouseDrag();
   }, []);
 
-  if (loading) {
+  if (authLoading || roleLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="w-full max-w-sm">
-          <LoadingLine label="Initializing authentication…" />
+          <LoadingLine label="Initializing session…" />
         </div>
       </div>
     );

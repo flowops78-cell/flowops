@@ -294,7 +294,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       body: {
         action: 'list',
         org_id: orgId,
-        access_token: accessToken,
       },
     });
 
@@ -364,7 +363,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
           member_id: pendingMemberIds[request.id]?.trim() || undefined,
           password: initialPassword,
           approved_role: pendingApprovedRoles[request.id] || request.requested_role,
-          access_token: accessToken,
         },
       });
       if (error) {
@@ -447,7 +445,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         org_id: activeOrgId,
         target_user_id: account.user_id,
         target_role: nextRole,
-        access_token: accessToken,
       },
     });
 
@@ -492,7 +489,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         action: 'delete-user',
         org_id: activeOrgId,
         target_user_id: account.user_id,
-        access_token: accessToken,
       },
     });
 
