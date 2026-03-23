@@ -5,7 +5,7 @@ import { useAppRole } from '../context/AppRoleContext';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
 import { DbRole, dbRoleToAppRole } from '../lib/roles';
-import { isSupabaseConfigured, SUPABASE_ANON_KEY, supabase } from '../lib/supabase';
+import { getSupabaseAccessToken, isSupabaseConfigured, SUPABASE_ANON_KEY, supabase } from '../lib/supabase';
 import { useNotification } from '../context/NotificationContext';
 import LoadingLine from '../components/LoadingLine';
 import CollapsibleWorkspaceSection from '../components/CollapsibleWorkspaceSection';
@@ -148,19 +148,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     ? `update public.profiles\nset org_id = 'YOUR_ORG_UUID'\nwhere id = '${profileId}';`
     : `update public.profiles\nset org_id = 'YOUR_ORG_UUID'\nwhere id = 'YOUR_AUTH_USER_ID';`;
 
-  const getAccessToken = React.useCallback(async () => {
-    if (!supabase) return null;
-    const { data: sessionData } = await supabase.auth.getSession();
-    const session = sessionData.session;
-    if (session?.refresh_token) {
-      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-      if (!refreshError && refreshData.session?.access_token) {
-        return refreshData.session.access_token;
-      }
-    }
-    return session?.access_token ?? null;
-  }, []);
-
   const clearGlobalData = async () => {
     if (!canManageGlobalData) {
       notify({ type: 'error', message: 'Only admin can clear global data.' });
@@ -292,7 +279,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     setMetaOrgAdminsLoading(true);
     setMetaOrgAdminsNotice(null);
 
-    const accessToken = await getAccessToken();
+    const accessToken = await getSupabaseAccessToken();
     if (!accessToken) {
       setMetaOrgAdminsNotice('Meta-org admin loading requires an active auth session. Sign in again and retry.');
       setMetaOrgAdminsLoading(false);
@@ -333,7 +320,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       return current;
     });
     setMetaOrgAdminsLoading(false);
-  }, [activeOrgId, canManageMetaOrgAdmins, getAccessToken]);
+  }, [activeOrgId, canManageMetaOrgAdmins]);
 
   React.useEffect(() => {
     void fetchAccessRequests();
@@ -357,7 +344,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         return;
       }
 
-      const accessToken = await getAccessToken();
+      const accessToken = await getSupabaseAccessToken();
 
       if (!accessToken) {
         const detailedError = 'Approval failed: missing active auth activity. Please sign out and sign in again.';
@@ -441,7 +428,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     const nextRole = pendingMetaOrgRoles[account.user_id] || (account.role === 'admin' ? 'admin' : 'operator');
     if (nextRole === account.role) return;
 
-    const accessToken = await getAccessToken();
+    const accessToken = await getSupabaseAccessToken();
     if (!accessToken) {
       setMetaOrgAdminsNotice('Meta-org admin updates require an active auth session. Sign in again and retry.');
       return;
@@ -487,7 +474,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     if (!supabase || !activeOrgId) return;
     if (!window.confirm(`Permanently delete account ${account.login_id ?? account.user_id}? This will remove the authentication record and all associated identity mapping. This cannot be undone.`)) return;
 
-    const accessToken = await getAccessToken();
+    const accessToken = await getSupabaseAccessToken();
     if (!accessToken) {
       setMetaOrgAdminsNotice('Meta-org admin updates require an active auth session. Sign in again and retry.');
       return;

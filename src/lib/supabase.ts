@@ -34,9 +34,19 @@ export const supabase = isSupabaseConfigured
       auth: {
         storage: authStorage,
         persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
       },
     })
   : null;
+
+export async function getSupabaseAccessToken() {
+  if (!supabase) return null;
+
+  const { data, error } = await supabase.auth.getSession();
+  if (error || !data.session?.access_token) return null;
+  return data.session.access_token;
+}
 
 export function getSupabase() {
   if (!supabase) throw new Error('Supabase project connectivity is not configured in environment variables.');

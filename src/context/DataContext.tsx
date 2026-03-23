@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { supabase, isSupabaseConfigured, getSupabase, SUPABASE_ANON_KEY } from '../lib/supabase';
+import { getSupabase, getSupabaseAccessToken, isSupabaseConfigured, SUPABASE_ANON_KEY, supabase } from '../lib/supabase';
 import { Unit, Workspace, Entry, Member, ActivityLog, Expense, Adjustment, AdjustmentRequest, ChannelEntry, Partner, PartnerEntry, SystemEvent, OperatorLog, TransferAccount, UnitAccountEntry, OutputRequest } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { APP_MIN_DATE, isDateOnOrAfter, isValidIsoDate } from '../lib/utils';
@@ -155,7 +155,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const outputRequestsUnavailableRef = useRef(false);
   const operatorLogsUnavailableRef = useRef(false);
   const { role, canAccessAdminUi, canOperateLog, canManageValue, canAlign } = useAppRole();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   const isDemoMode = !isSupabaseConfigured;
   const AUDIT_EVENTS_KEY = 'flow_ops_audit_events_v2';
@@ -356,26 +356,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const requireNonEmpty = (value: string | undefined, field: string) => {
     if (!value || !value.trim()) throw new Error(`${field} is required.`);
     return value.trim();
-  };
-
-  const getFreshAccessToken = async () => {
-    if (!supabase) return null;
-
-    const { data: sessionData } = await supabase.auth.getSession();
-    const session = sessionData.session;
-
-    if (session?.refresh_token) {
-      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-      if (!refreshError && refreshData.session?.access_token) {
-        return refreshData.session.access_token;
-      }
-
-      if (!session.access_token) {
-        throw new Error(`Authentication session expired: ${refreshError?.message ?? 'missing session token'}`);
-      }
-    }
-
-    return session?.access_token ?? null;
   };
 
   const FREEFORM_AUDIT_DETAIL_MAX_LENGTH = 120;
@@ -1176,8 +1156,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   useEffect(() => {
+    if (authLoading) return;
+
+    if (!isDemoMode && !user) {
+      clearScopedDatasets();
+      setManagedOrgIds([]);
+      setActiveOrgId(null);
+      setLoading(false);
+      return;
+    }
+
     void fetchDataStaged();
-  }, [user?.id, role]);
+  }, [authLoading, isDemoMode, user?.id, role]);
 
   useEffect(() => {
     if (isDemoMode || !supabase || !user || !activeOrgId || operatorLogsUnavailableRef.current) return;
@@ -1551,7 +1541,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    if (!supabase) return;
+    if (!supabase) throw new Error('Supabase project connectivity is not configured in environment variables.');
     const scopedOrgId = requireOrgScope();
     const { error } = await supabase.from('units').delete().eq('id', id).eq('org_id', scopedOrgId);
     if (error) throw normalizeSupabaseWriteError(error);
@@ -2103,7 +2093,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    if (!supabase) return;
+    if (!supabase) throw new Error('Supabase project connectivity is not configured in environment variables.');
     const scopedOrgId = requireOrgScope();
     const { error } = await supabase.from('members').delete().eq('id', id).eq('org_id', scopedOrgId);
     if (error) throw normalizeSupabaseWriteError(error);
@@ -2278,7 +2268,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
-    if (!supabase) return;
+    if (!supabase) throw new Error('Supabase project connectivity is not configured in environment variables.');
     const scopedOrgId = requireOrgScope();
     const { error } = await supabase.from('adjustments').delete().eq('id', id).eq('org_id', scopedOrgId);
     if (error) throw normalizeSupabaseWriteError(error);
@@ -2907,7 +2897,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchAvailableOrgs = async () => {
     if (role !== 'admin' || isDemoMode || !supabase) return;
     try {
-      const accessToken = await getFreshAccessToken();
+      const accessToken = await getSupabaseAccessToken();
       if (!accessToken) return;
 
       const { data, error } = await supabase.functions.invoke('manage-meta-org-admins', {
@@ -2940,7 +2930,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (!supabase) return;
     
-    const accessToken = await getFreshAccessToken();
+    const accessToken = await getSupabaseAccessToken();
     if (!accessToken) throw new Error('Authentication session expired.');
 
     const { data, error: functionError } = await supabase.functions.invoke('manage-meta-org-admins', {
@@ -2986,9 +2976,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
-    if (!supabase) return;
+    if (!supabase) throw new Error('Supabase project connectivity is not configured in environment variables.');
 
-    const accessToken = await getFreshAccessToken();
+    const accessToken = await getSupabaseAccessToken();
     if (!accessToken) throw new Error('Authentication session expired.');
 
     const { data, error: functionError } = await supabase.functions.invoke('manage-meta-org-admins', {
