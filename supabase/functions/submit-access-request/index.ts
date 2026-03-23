@@ -1,5 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { checkRateLimit, resolveClientIp, rateLimitResponse } from '../_shared/rate-limiter.ts';
+import { getCorsHeaders } from '../_shared/cors.ts';
 
 const RATE_LIMIT = { maxRequests: 10, windowMs: 60_000 };
 
@@ -23,28 +24,10 @@ type RequestPayload = {
 
 type RequestableRole = Exclude<StorageRole, 'admin'>;
 
-const DEFAULT_ALLOWED_ORIGINS = ['http://localhost:3000', 'http://127.0.0.1:3000'];
-
-const resolveCorsHeaders = (origin: string | null) => {
-  const configuredOrigins = (Deno.env.get('ALLOWED_ORIGINS') ?? '')
-    .split(',')
-    .map((value) => value.trim())
-    .filter(Boolean);
-  const allowedOrigins = configuredOrigins.length > 0 ? configuredOrigins : DEFAULT_ALLOWED_ORIGINS;
-  const allowedOrigin = origin && allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
-
-  return {
-    'Access-Control-Allow-Origin': allowedOrigin,
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    Vary: 'Origin',
-  };
-};
-
 const json = (status: number, body: Record<string, unknown>, origin: string | null) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: { ...resolveCorsHeaders(origin), 'Content-Type': 'application/json' },
+    headers: { ...getCorsHeaders(origin), 'Content-Type': 'application/json' },
   });
 
 const ROLE_DOMAIN_MAP: Record<StorageRole, string> = {
@@ -70,14 +53,14 @@ const sha256Hex = async (input: string) => {
 
 Deno.serve(async (request) => {
   const origin = request.headers.get('Origin');
-  if (request.method === 'OPTIONS') return new Response('ok', { headers: resolveCorsHeaders(origin) });
+  if (request.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(origin) });
   if (request.method !== 'POST') return json(405, { error: 'Method not allowed' }, origin);
 
   // --- Rate Limiting ---
   const clientIp = resolveClientIp(request);
   const rl = checkRateLimit(clientIp, RATE_LIMIT);
   if (!rl.allowed) {
-    return rateLimitResponse(rl.retryAfterMs ?? 1000, origin, resolveCorsHeaders(origin));
+    return rateLimitResponse(rl.retryAfterMs ?? 1000, origin, getCorsHeaders(origin));
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
