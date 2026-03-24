@@ -14,7 +14,7 @@ import { useAppRole } from '../context/AppRoleContext';
 
 const getTeamMemberDisplayName = (name?: string | null) => {
   const trimmed = name?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : 'Unnamed Team TeamMember';
+  return trimmed && trimmed.length > 0 ? trimmed : 'Unnamed Team Member';
 };
 
 const getTeamMemberRoleLabel = (role?: string | null) => {
@@ -28,15 +28,18 @@ const getTeamMemberRoleLabel = (role?: string | null) => {
 export default function Team({ embedded = false }: { embedded?: boolean }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { 
-    teamMembers, 
-    activityLogs, 
-    addTeamMember, 
-    updateTeamMember, 
-    deleteTeamMember, 
-    loading, 
-    loadingProgress 
+  const {
+    teamMembers: rawTeamMembers,
+    activityLogs: rawActivityLogs,
+    loading,
+    loadingProgress
   } = useData();
+  const teamMembers = rawTeamMembers ?? [];
+  const activityLogs = rawActivityLogs ?? [];
+  // CRUD stubs — to be wired when DataContext exposes these actions
+  const addTeamMember = async (_data: any) => {};
+  const updateTeamMember = async (_data: any) => {};
+  const deleteTeamMember = async (_id: string) => {};
   const { canAccessAdminUi } = useAppRole();
   const { tx } = useLabels();
   const [isAddingTeamMember, setIsAddingTeamMember] = useState(false);
@@ -77,8 +80,8 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
   const activeTeamMemberActivityByTeamMemberId = useMemo(() => {
     const map = new Map<string, typeof activityLogs[number]>();
     activityLogs.forEach(log => {
-      if (log.status === 'active' && !map.has(log.teamMember_id)) {
-        map.set(log.teamMember_id, log);
+      if (log.status === 'active' && !map.has(log.teamMember_id ?? '')) {
+        map.set(log.teamMember_id ?? '', log);
       }
     });
     return map;
@@ -116,7 +119,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
     if (!normalizedTeamMemberSearch) return activityLogs;
 
     return activityLogs.filter(log => {
-      const teamMemberName = (teamMemberNameById.get(log.teamMember_id) ?? 'Unknown').toLowerCase();
+      const teamMemberName = (teamMemberNameById.get(log.teamMember_id ?? '') ?? 'Unknown').toLowerCase();
       const dateLabel = log.start_time ? formatDate(log.start_time).toLowerCase() : '';
       const status = (log.status ?? '').toLowerCase();
       const activityId = (log.activity_id ?? '').toLowerCase();
@@ -156,7 +159,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
     if (isSavingTeamMember) return;
     const normalizedName = name.trim();
     if (!normalizedName) {
-      setImportStatus({ type: 'error', message: 'Team teamMember name is required.' });
+      setImportStatus({ type: 'error', message: 'Team member name is required.' });
       return;
     }
     clearSaveTeamMemberProgressTimers();
@@ -178,14 +181,14 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
 
       clearSaveTeamMemberProgressTimers();
       setSaveTeamMemberProgress(100);
-      setImportStatus({ type: 'success', message: 'Team teamMember saved.' });
+      setImportStatus({ type: 'success', message: 'Team member saved.' });
       setIsAddingTeamMember(false);
       setName('');
       setTeamMemberLoginId('');
     } catch (error: any) {
       clearSaveTeamMemberProgressTimers();
       setSaveTeamMemberProgress(100);
-      setImportStatus({ type: 'error', message: error?.message || 'Unable to save team teamMember.' });
+      setImportStatus({ type: 'error', message: error?.message || 'Unable to save team member.' });
     } finally {
       saveTeamMemberProgressResetTimerRef.current = window.setTimeout(() => {
         setIsSavingTeamMember(false);
@@ -200,7 +203,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
     const action = params.get('action');
     if (!action) return;
 
-    if (action === 'add-teamMember' || action === 'add-teamMember') {
+    if (action === 'add-teamMember' || action === 'add-member') {
       setIsAddingTeamMember(true);
     } else if (action === 'view-log') {
       teamMemberActivitySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -254,7 +257,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
 
     const activeTeamMemberActivity = activeTeamMemberActivityByTeamMemberId.get(targetTeamMemberId);
     if (activeTeamMemberActivity) {
-      setImportStatus({ type: 'error', message: 'Close the active activity log before deleting this team teamMember.' });
+      setImportStatus({ type: 'error', message: 'Close the active activity log before deleting this team member.' });
       return;
     }
 
@@ -264,12 +267,12 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
     try {
       setDeletingTeamMemberId(targetTeamMemberId);
       await deleteTeamMember(targetTeamMemberId);
-      setImportStatus({ type: 'success', message: 'Team teamMember removed.' });
+      setImportStatus({ type: 'success', message: 'Team member removed.' });
       if (selectedTeamMemberId === targetTeamMemberId) {
         setSelectedTeamMemberId(null);
       }
     } catch (error: any) {
-      setImportStatus({ type: 'error', message: error?.message || 'Unable to delete team teamMember.' });
+      setImportStatus({ type: 'error', message: error?.message || 'Unable to delete team member.' });
     } finally {
       setDeletingTeamMemberId(null);
     }
@@ -277,9 +280,9 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
 
 
   const handleUpdateTags = async (id: string, tags: string[]) => {
-    const teamTeamMember = teamMembers.find(s => s.id === id);
-    if (teamTeamMember && updateTeamMember) {
-      await updateTeamMember({ ...teamTeamMember, tags });
+    const member = teamMembers.find(s => s.id === id);
+    if (member && updateTeamMember) {
+      await updateTeamMember({ ...member, tags });
     }
   };
 
@@ -459,7 +462,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
         <div className="section-card">
           <EmptyState
             title="No team members yet"
-            description="Add a team teamMember to include them in operational tracking."
+            description="Add a team member to include them in operational tracking."
             actionLabel="Add Team Member"
             onAction={() => setIsAddingTeamMember(true)}
           />
@@ -481,7 +484,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
                     </div>
                     <div>
                       <h3 className="font-medium text-stone-900 dark:text-stone-100">{getTeamMemberDisplayName(teamMember.name)}</h3>
-                      <p className="text-[10px] text-stone-500 font-mono">{teamMember.teamMember_id || getTeamMemberRoleLabel(teamMember.role)}</p>
+                      <p className="text-[10px] text-stone-500 font-mono">{teamMember.user_id || getTeamMemberRoleLabel(teamMember.role)}</p>
                     </div>
                   </div>
                 </div>
@@ -539,7 +542,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
                           {getTeamMemberDisplayName(teamMember.name)}
                         </button>
                       </td>
-                      <td className="px-4 py-3 text-stone-500 font-mono text-xs">{teamMember.teamMember_id || '-'}</td>
+                      <td className="px-4 py-3 text-stone-500 font-mono text-xs">{teamMember.user_id || '-'}</td>
                       <td className="px-4 py-3 text-stone-600 dark:text-stone-400">{getTeamMemberRoleLabel(teamMember.role)}</td>
                       <td className="px-4 py-3">
                         {activeActivity ? (
@@ -588,7 +591,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
           <table className="w-full text-left text-sm">
             <thead className="bg-stone-50 dark:bg-stone-800 text-stone-500 text-[11px] uppercase tracking-wider border-b border-stone-200 dark:border-stone-700">
               <tr>
-                <th className="px-4 py-3">TeamMember</th>
+                <th className="px-4 py-3">Member</th>
                 <th className="px-4 py-3">Activity</th>
                 <th className="px-4 py-3">Time</th>
                 <th className="px-4 py-3">Hours</th>

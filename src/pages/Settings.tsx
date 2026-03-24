@@ -613,8 +613,11 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   );
 
   const filteredInvites = accessInvites.filter(invite =>
-    (invite.label ?? '').toLowerCase().includes(inviteSearch.toLowerCase()) ||
-    invite.id.toLowerCase().includes(inviteSearch.toLowerCase())
+    !invite.revoked_at &&
+    (
+      (invite.label ?? '').toLowerCase().includes(inviteSearch.toLowerCase()) ||
+      invite.id.toLowerCase().includes(inviteSearch.toLowerCase())
+    )
   );
 
   return (
