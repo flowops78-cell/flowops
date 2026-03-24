@@ -11,7 +11,7 @@ set search_path = public, extensions;
 -- ---------------------------------------------------------------------------
 
 create table if not exists public.org_clusters (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   name text,
   created_at timestamptz not null default now()
 );
@@ -26,7 +26,7 @@ create table if not exists public.orgs (
 create index if not exists idx_orgs_cluster_id on public.orgs(cluster_id);
 
 create table if not exists public.org_memberships (
-  id uuid primary key default uuid_generate_v4(),
+  id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
   org_id uuid not null references public.orgs(id) on delete cascade,
   role app_role not null,

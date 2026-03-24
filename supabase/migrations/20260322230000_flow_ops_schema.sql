@@ -54,7 +54,7 @@ create extension if not exists "uuid-ossp";
 create type app_role as enum ('admin', 'operator', 'viewer');
 
 create table if not exists platform_roles (
-  id           uuid primary key default uuid_generate_v4(),
+  id           uuid primary key default gen_random_uuid(),
   user_id      uuid not null references auth.users(id) on delete cascade,
   role         text not null default 'platform_admin',
   created_at   timestamptz not null default now(),
@@ -62,7 +62,7 @@ create table if not exists platform_roles (
 );
 
 create table if not exists user_roles (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   user_id     uuid not null references auth.users(id) on delete cascade,
   role        app_role not null default 'viewer',
   created_at  timestamptz not null default now(),
@@ -73,14 +73,14 @@ create table if not exists user_roles (
 -- ORGANIZATIONAL GRAPH
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists org_clusters (
-  id           uuid primary key default uuid_generate_v4(),
+  id           uuid primary key default gen_random_uuid(),
   name         text not null,
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now()
 );
 
 create table if not exists orgs (
-  id           uuid primary key default uuid_generate_v4(),
+  id           uuid primary key default gen_random_uuid(),
   cluster_id   uuid references org_clusters(id) on delete set null,
   name         text not null,
   created_at   timestamptz not null default now(),
@@ -94,7 +94,7 @@ create table if not exists org_meta_mapping (
 );
 
 create table if not exists org_memberships (
-  id              uuid primary key default uuid_generate_v4(),
+  id              uuid primary key default gen_random_uuid(),
   user_id         uuid not null references auth.users(id) on delete cascade,
   org_id          uuid not null references orgs(id) on delete cascade,
   role            app_role not null default 'viewer',
@@ -121,7 +121,7 @@ create table if not exists profiles (
 -- OPERATIONAL WORKSPACES
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists workspaces (
-  id                   uuid primary key default uuid_generate_v4(),
+  id                   uuid primary key default gen_random_uuid(),
   org_id               uuid not null references orgs(id) on delete cascade,
   name                 text,
   channel              text,
@@ -145,7 +145,7 @@ create table if not exists workspaces (
 -- UNITS
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists units (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   org_id      uuid not null references orgs(id) on delete cascade,
   name                    text not null,
   tags                    text[],
@@ -159,7 +159,7 @@ create table if not exists units (
 -- ENTRIES
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists entries (
-  id              uuid primary key default uuid_generate_v4(),
+  id              uuid primary key default gen_random_uuid(),
   org_id          uuid not null references orgs(id) on delete cascade,
   workspace_id    uuid not null references workspaces(id) on delete cascade,
   unit_id         uuid references units(id) on delete set null,
@@ -180,7 +180,7 @@ create table if not exists entries (
 -- MEMBERS
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists members (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   org_id      uuid not null references orgs(id) on delete cascade,
   user_id     uuid references auth.users(id) on delete set null,
   member_id   text,
@@ -201,7 +201,7 @@ create table if not exists members (
 -- ACTIVITY_LOGS
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists activity_logs (
-  id              uuid primary key default uuid_generate_v4(),
+  id              uuid primary key default gen_random_uuid(),
   org_id          uuid not null references orgs(id) on delete cascade,
   member_id       uuid references members(id) on delete set null,
   workspace_id    uuid references workspaces(id) on delete set null,
@@ -220,7 +220,7 @@ create table if not exists activity_logs (
 -- CHANNEL ENTRIES
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists channel_entries (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   org_id      uuid not null references orgs(id) on delete cascade,
   type        text not null check (type in ('increment', 'adjustment', 'decrement')),
   amount      numeric(12, 2) not null,
@@ -237,7 +237,7 @@ create table if not exists channel_entries (
 -- ASSOCIATES (formerly Partners)
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists associates (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   org_id      uuid not null references orgs(id) on delete cascade,
   name        text not null,
   role        text not null default 'channel' check (role in ('associate', 'partner', 'channel', 'hybrid')),
@@ -258,7 +258,7 @@ create table if not exists associates (
 -- ASSOCIATE ALLOCATIONS (formerly Partner Entries)
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists associate_allocations (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   org_id        uuid not null references orgs(id) on delete cascade,
   attributed_associate_id uuid references associates(id) on delete cascade,
   associate_id  uuid references associates(id) on delete cascade, -- legacy alias
@@ -274,7 +274,7 @@ create table if not exists associate_allocations (
 -- DEFERRED UNIT RECORDS
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists allocations (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   org_id      uuid not null,
   unit_id     uuid not null references units(id) on delete cascade,
   amount      numeric(12, 2) not null,
@@ -288,7 +288,7 @@ create table if not exists allocations (
 -- LIVE DEFERRED ADJUSTMENTS
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists adjustments (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   org_id      uuid not null,
   unit_id     uuid not null references units(id) on delete cascade,
   amount      numeric(12, 2) not null,
@@ -302,7 +302,7 @@ create table if not exists adjustments (
 -- UNIT ACCOUNT ENTRIES
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists unit_account_entries (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   org_id      uuid not null,
   unit_id     uuid not null references units(id) on delete cascade,
   type        text not null check (type in ('increment', 'adjustment', 'decrement')),
@@ -318,7 +318,7 @@ create table if not exists unit_account_entries (
 -- DEFERRED ENTRY APPROVAL QUEUE
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists adjustment_requests (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   org_id        uuid not null,
   unit_id       uuid not null references units(id) on delete cascade,
   amount        numeric(12, 2) not null,
@@ -335,7 +335,7 @@ create table if not exists adjustment_requests (
 -- APPROVED OUTPUT QUEUE
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists output_requests (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   org_id        uuid not null,
   unit_id       uuid not null references units(id) on delete cascade,
   amount        numeric(12, 2) not null,
@@ -351,7 +351,7 @@ create table if not exists output_requests (
 -- SESSION MANAGEMENT (presence tracking)
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists operator_activities (
-  id                uuid primary key default uuid_generate_v4(),
+  id                uuid primary key default gen_random_uuid(),
   org_id            uuid not null,
   actor_user_id     uuid not null references auth.users(id) on delete cascade,
   actor_role        app_role not null default 'viewer',
@@ -370,7 +370,7 @@ create table if not exists operator_activities (
 -- EXPENSES
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists expenses (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   org_id        uuid not null,
   workspace_id  uuid references workspaces(id) on delete set null,
   amount        numeric(12, 2) not null,
@@ -385,7 +385,7 @@ create table if not exists expenses (
 -- TRANSFER ACCOUNTS
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists transfer_accounts (
-  id          uuid primary key default uuid_generate_v4(),
+  id          uuid primary key default gen_random_uuid(),
   org_id      uuid not null,
   name        text not null,
   category    text not null,
@@ -399,7 +399,7 @@ create table if not exists transfer_accounts (
 -- AUDIT EVENTS
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists audit_events (
-  id            uuid primary key default uuid_generate_v4(),
+  id            uuid primary key default gen_random_uuid(),
   org_id        uuid not null,
   created_at    timestamptz not null default now(),
   actor_user_id uuid,
@@ -417,7 +417,7 @@ create table if not exists audit_events (
 -- ACCESS REQUESTS
 -- ─────────────────────────────────────────────────────────────────────────────
 create table if not exists access_requests (
-  id                 uuid primary key default uuid_generate_v4(),
+  id                 uuid primary key default gen_random_uuid(),
   org_id             uuid not null,
   login_id           text not null,
   requested_role     app_role not null default 'viewer',
@@ -429,7 +429,7 @@ create table if not exists access_requests (
 );
 
 create table if not exists access_invites (
-  id                 uuid primary key default uuid_generate_v4(),
+  id                 uuid primary key default gen_random_uuid(),
   org_id             uuid not null,
   token_hash         text not null unique,
   label              text,
@@ -787,7 +787,7 @@ create or replace function channel_base_transfer(
   p_to_method text,
   p_amount numeric,
   p_date timestamptz,
-  p_transfer_id uuid default uuid_generate_v4()
+  p_transfer_id uuid default gen_random_uuid()
 )
 returns uuid
 language plpgsql
@@ -817,7 +817,7 @@ begin
 
   v_from_method := nullif(trim(p_from_method), '');
   v_to_method := nullif(trim(p_to_method), '');
-  v_transfer_id := coalesce(p_transfer_id, uuid_generate_v4());
+  v_transfer_id := coalesce(p_transfer_id, gen_random_uuid());
   v_amount := round(p_amount::numeric, 2);
 
   if v_from_method is null then

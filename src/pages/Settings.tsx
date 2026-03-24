@@ -227,46 +227,58 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     setRequestsNotice(null);
     setRequestsNoticeLoginValue(null);
     setRequestsNoticeCopied(null);
-    const { data, error } = await supabase
-      .from('access_requests')
-      .select('id, created_at, login_id, requested_role, status, reviewed_at')
-      .eq('status', 'pending')
-      .order('created_at', { ascending: false })
-      .limit(120);
-    if (error) {
+    try {
+      const { data, error } = await supabase
+        .from('access_requests')
+        .select('id, created_at, login_id, requested_role, status, reviewed_at')
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(120);
+      if (error) {
+        setAccessRequests([]);
+        const normalizedErrorMessage = (error.message ?? '').toLowerCase();
+        setRequestsNotice(normalizedErrorMessage.includes('access_requests')
+          ? 'access_requests workspace not found yet. Run supabase/migrations/20260322230000_flow_ops_schema.sql.'
+          : `Unable to load access requests: ${error.message}`);
+        return;
+      }
+      setAccessRequests((data ?? []) as AccessRequestRow[]);
+    } catch (error) {
+      const detailedError = error instanceof Error ? error.message : 'Transport request failed.';
       setAccessRequests([]);
-      const normalizedErrorMessage = (error.message ?? '').toLowerCase();
-      setRequestsNotice(normalizedErrorMessage.includes('access_requests')
-        ? 'access_requests workspace not found yet. Run supabase/migrations/20260322230000_flow_ops_schema.sql.'
-        : `Unable to load access requests: ${error.message}`);
+      setRequestsNotice(`Unable to load access requests: ${detailedError}`);
+    } finally {
       setRequestsLoading(false);
-      return;
     }
-    setAccessRequests((data ?? []) as AccessRequestRow[]);
-    setRequestsLoading(false);
   }, [canViewOperatorLogs]);
 
   const fetchAccessInvites = React.useCallback(async () => {
     if (!isSupabaseConfigured || !supabase || !canViewOperatorLogs) return;
     setInviteLoading(true);
-    const { data, error } = await supabase
-      .from('access_invites')
-      .select('id, label, created_at, expires_at, revoked_at, last_used_at, use_count, max_uses')
-      .order('created_at', { ascending: false })
-      .limit(120);
+    try {
+      const { data, error } = await supabase
+        .from('access_invites')
+        .select('id, label, created_at, expires_at, revoked_at, last_used_at, use_count, max_uses')
+        .order('created_at', { ascending: false })
+        .limit(120);
 
-    if (error) {
+      if (error) {
+        setAccessInvites([]);
+        const normalizedErrorMessage = (error.message ?? '').toLowerCase();
+        setInviteNotice(normalizedErrorMessage.includes('access_invites')
+          ? 'access_invites workspace not found yet. Run supabase/migrations/20260322230000_flow_ops_schema.sql.'
+          : `Unable to load invite tokens: ${error.message}`);
+        return;
+      }
+
+      setAccessInvites((data ?? []) as AccessInviteRow[]);
+    } catch (error) {
+      const detailedError = error instanceof Error ? error.message : 'Transport request failed.';
       setAccessInvites([]);
-      const normalizedErrorMessage = (error.message ?? '').toLowerCase();
-      setInviteNotice(normalizedErrorMessage.includes('access_invites')
-        ? 'access_invites workspace not found yet. Run supabase/migrations/20260322230000_flow_ops_schema.sql.'
-        : `Unable to load invite tokens: ${error.message}`);
+      setInviteNotice(`Unable to load invite tokens: ${detailedError}`);
+    } finally {
       setInviteLoading(false);
-      return;
     }
-
-    setAccessInvites((data ?? []) as AccessInviteRow[]);
-    setInviteLoading(false);
   }, [canViewOperatorLogs]);
 
   const fetchMetaOrgAdmins = React.useCallback(async (
@@ -279,46 +291,53 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     setMetaOrgAdminsLoading(true);
     setMetaOrgAdminsNotice(null);
 
-    const accessToken = await getSupabaseAccessToken();
-    if (!accessToken) {
-      setMetaOrgAdminsNotice('Meta-org admin loading requires an active auth session. Sign in again and retry.');
-      setMetaOrgAdminsLoading(false);
-      return;
-    }
+    try {
+      const accessToken = await getSupabaseAccessToken();
+      if (!accessToken) {
+        setMetaOrgAdminsNotice('Meta-org admin loading requires an active auth session. Sign in again and retry.');
+        return;
+      }
 
-    const { data, error } = await supabase.functions.invoke<ManageMetaOrgAdminsResult>('manage-meta-org-admins', {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        apikey: SUPABASE_ANON_KEY,
-      },
-      body: {
-        action: 'list',
-        org_id: orgId,
-      },
-    });
+      const { data, error } = await supabase.functions.invoke<ManageMetaOrgAdminsResult>('manage-meta-org-admins', {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          apikey: SUPABASE_ANON_KEY,
+        },
+        body: {
+          action: 'list',
+          org_id: orgId,
+        },
+      });
 
-    if (error) {
-      const detailedError = (error as any)?.message ?? String(error);
+      if (error) {
+        const detailedError = (error as any)?.message ?? String(error);
+        setMetaOrgAccounts([]);
+        setManagedMetaOrgId(null);
+        setMetaManagedOrgIds([]);
+        setMetaOrgAdminsNotice(`Unable to load meta-org admins: ${detailedError}`);
+        return;
+      }
+
+      setMetaOrgAccounts(data?.accounts ?? []);
+      setManagedMetaOrgId((current) => data?.meta_org_id ?? fallbackState?.meta_org_id ?? current);
+      setMetaManagedOrgIds((current) => {
+        if (data?.managed_org_ids && data.managed_org_ids.length > 0) {
+          return data.managed_org_ids;
+        }
+        if (fallbackState?.managed_org_ids && fallbackState.managed_org_ids.length > 0) {
+          return fallbackState.managed_org_ids;
+        }
+        return current;
+      });
+    } catch (error) {
+      const detailedError = error instanceof Error ? error.message : 'Transport request failed.';
       setMetaOrgAccounts([]);
       setManagedMetaOrgId(null);
       setMetaManagedOrgIds([]);
       setMetaOrgAdminsNotice(`Unable to load meta-org admins: ${detailedError}`);
+    } finally {
       setMetaOrgAdminsLoading(false);
-      return;
     }
-
-    setMetaOrgAccounts(data?.accounts ?? []);
-    setManagedMetaOrgId((current) => data?.meta_org_id ?? fallbackState?.meta_org_id ?? current);
-    setMetaManagedOrgIds((current) => {
-      if (data?.managed_org_ids && data.managed_org_ids.length > 0) {
-        return data.managed_org_ids;
-      }
-      if (fallbackState?.managed_org_ids && fallbackState.managed_org_ids.length > 0) {
-        return fallbackState.managed_org_ids;
-      }
-      return current;
-    });
-    setMetaOrgAdminsLoading(false);
   }, [activeOrgId, canManageMetaOrgAdmins]);
 
   React.useEffect(() => {

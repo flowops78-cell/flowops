@@ -1,5 +1,6 @@
 const STATIC_ORIGINS = [
   'https://flow-ops78.netlify.app',
+  'https://cloudflare-workers-autoconfig-flowops.flowops78.workers.dev',
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'http://localhost:4173',

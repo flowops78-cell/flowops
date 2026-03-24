@@ -67,7 +67,7 @@ create or replace function channel_base_transfer(
   p_to_method text,
   p_amount numeric,
   p_date timestamptz,
-  p_transfer_id uuid default uuid_generate_v4()
+  p_transfer_id uuid default gen_random_uuid()
 )
 returns uuid
 language plpgsql
@@ -97,7 +97,7 @@ begin
 
   v_from_method := nullif(trim(p_from_method), '');
   v_to_method := nullif(trim(p_to_method), '');
-  v_transfer_id := coalesce(p_transfer_id, uuid_generate_v4());
+  v_transfer_id := coalesce(p_transfer_id, gen_random_uuid());
   v_amount := round(p_amount::numeric, 2);
 
   if v_from_method is null then
