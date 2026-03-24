@@ -26,15 +26,35 @@ end;
 $$;
 
 -- 5. Update RLS Policies (Rename them for clarity)
-alter policy if exists "units_select" on entities rename to "entities_select";
-alter policy if exists "units_all" on entities rename to "entities_all";
-alter policy if exists "units_read" on entities rename to "entities_read";
-alter policy if exists "units_write" on entities rename to "entities_write";
+do $$
+begin
+  if exists (select 1 from pg_policies where tablename = 'entities' and policyname = 'units_select') then
+    alter policy "units_select" on entities rename to "entities_select";
+  end if;
+  if exists (select 1 from pg_policies where tablename = 'entities' and policyname = 'units_all') then
+    alter policy "units_all" on entities rename to "entities_all";
+  end if;
+  if exists (select 1 from pg_policies where tablename = 'entities' and policyname = 'units_read') then
+    alter policy "units_read" on entities rename to "entities_read";
+  end if;
+  if exists (select 1 from pg_policies where tablename = 'entities' and policyname = 'units_write') then
+    alter policy "units_write" on entities rename to "entities_write";
+  end if;
 
-alter policy if exists "unit_account_entries_select" on entity_account_entries rename to "entity_account_entries_select";
-alter policy if exists "unit_account_entries_all" on entity_account_entries rename to "entity_account_entries_all";
-alter policy if exists "unit_account_entries_read" on entity_account_entries rename to "entity_account_entries_read";
-alter policy if exists "unit_account_entries_write" on entity_account_entries rename to "entity_account_entries_write";
+  if exists (select 1 from pg_policies where tablename = 'entity_account_entries' and policyname = 'unit_account_entries_select') then
+    alter policy "unit_account_entries_select" on entity_account_entries rename to "entity_account_entries_select";
+  end if;
+  if exists (select 1 from pg_policies where tablename = 'entity_account_entries' and policyname = 'unit_account_entries_all') then
+    alter policy "unit_account_entries_all" on entity_account_entries rename to "entity_account_entries_all";
+  end if;
+  if exists (select 1 from pg_policies where tablename = 'entity_account_entries' and policyname = 'unit_account_entries_read') then
+    alter policy "unit_account_entries_read" on entity_account_entries rename to "entity_account_entries_read";
+  end if;
+  if exists (select 1 from pg_policies where tablename = 'entity_account_entries' and policyname = 'unit_account_entries_write') then
+    alter policy "unit_account_entries_write" on entity_account_entries rename to "entity_account_entries_write";
+  end if;
+end;
+$$;
 
 -- 6. Update Triggers (if any specific to naming)
 -- The 'set_updated_at' trigger on 'entities' (formerly units) works automatically.
