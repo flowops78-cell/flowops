@@ -9,26 +9,17 @@ type MembershipAuthorityRow = {
   role: DbRole;
   status: 'active' | 'invited' | 'disabled';
   is_default_org: boolean;
-  orgs?: { cluster_id?: string | null } | null;
-};
-
-type LegacyProfileRow = {
-  org_id: string | null;
-  meta_org_id: string | null;
-};
-
-type LegacyUserRoleRow = {
-  role: DbRole;
+  organizations?: { cluster_id?: string | null } | null;
 };
 
 export type CallerAuthorityContext = {
   role: DbRole | null;
   currentOrgId: string | null;
-  metaOrgId: string | null;
+  clusterId: string | null;
   managedOrgIds: string[];
   isPlatformAdmin: boolean;
   isAdmin: boolean;
-  source: 'memberships' | 'legacy' | 'none';
+  source: 'memberships' | 'none';
 };
 
 const roleRank: Record<DbRole, number> = {
@@ -70,27 +61,31 @@ export const getCallerAuthorityContext = async (
   userId: string,
   options?: { requestedOrgId?: string | null },
 ): Promise<CallerAuthorityContext> => {
-  const [{ data: platformRoleRow, error: platformRoleError }, { data: membershipRows, error: membershipError }, { data: profileRow, error: profileError }, { data: userRoleRow, error: userRoleError }] = await Promise.all([
+  const [
+    { data: platformRoleRow, error: platformRoleError },
+    { data: membershipRows, error: membershipError },
+    { data: profileRow, error: profileError },
+    { data: clusterMembershipRows, error: clusterMembershipError }
+  ] = await Promise.all([
     adminClient
       .from('platform_roles')
       .select('role')
       .eq('user_id', userId)
       .maybeSingle(),
     adminClient
-      .from('org_memberships')
-      .select('org_id, role, status, is_default_org, orgs(cluster_id)')
+      .from('organization_memberships')
+      .select('org_id, role, status, is_default_org, organizations(cluster_id)')
       .eq('user_id', userId)
       .in('status', ['active', 'invited']),
     adminClient
       .from('profiles')
-      .select('org_id, meta_org_id')
+      .select('id, active_org_id, active_cluster_id')
       .eq('id', userId)
       .maybeSingle(),
     adminClient
-      .from('user_roles')
-      .select('role')
-      .eq('user_id', userId)
-      .maybeSingle(),
+      .from('cluster_memberships')
+      .select('cluster_id, role')
+      .eq('user_id', userId),
   ]);
 
   if (platformRoleError) {
@@ -102,25 +97,31 @@ export const getCallerAuthorityContext = async (
   if (profileError) {
     throw new Error(`Unable to resolve caller profile: ${profileError.message}`);
   }
-  if (userRoleError) {
-    throw new Error(`Unable to resolve legacy role: ${userRoleError.message}`);
+  if (clusterMembershipError) {
+    throw new Error(`Unable to resolve cluster memberships: ${clusterMembershipError.message}`);
   }
 
   const typedMembershipRows = (membershipRows ?? []) as MembershipAuthorityRow[];
+  const typedClusterMembershipRows = (clusterMembershipRows ?? []) as Array<{ cluster_id: string; role: string }>;
+  const profile = profileRow as { active_org_id: string | null; active_cluster_id: string | null } | null;
+  
   const requestedOrgId = options?.requestedOrgId ?? null;
   const requestedMembership = requestedOrgId
     ? typedMembershipRows.find((row) => row.org_id === requestedOrgId) ?? null
     : null;
+  
   const defaultMembership = requestedMembership
     ?? typedMembershipRows.find((row) => row.is_default_org)
     ?? typedMembershipRows[0]
     ?? null;
+
   const platformRole = typeof platformRoleRow?.role === 'string' ? platformRoleRow.role : null;
   const isPlatformAdmin = platformRole === 'platform_admin';
 
+  // --- Platform Admin Logic ---
   if (isPlatformAdmin) {
     const { data: allOrgRows, error: allOrgRowsError } = await adminClient
-      .from('orgs')
+      .from('organizations')
       .select('id, cluster_id');
 
     if (allOrgRowsError) {
@@ -128,121 +129,84 @@ export const getCallerAuthorityContext = async (
     }
 
     const typedAllOrgRows = (allOrgRows ?? []) as Array<{ id: string; cluster_id: string | null }>;
-    const fallbackMembership = typedMembershipRows.find((row) => row.is_default_org) ?? typedMembershipRows[0] ?? null;
+    
     return {
       role: 'admin',
-      currentOrgId: requestedOrgId ?? fallbackMembership?.org_id ?? (profileRow as LegacyProfileRow | null)?.org_id ?? typedAllOrgRows[0]?.id ?? null,
-      metaOrgId: requestedOrgId
-        ? (typedAllOrgRows.find((row) => row.id === requestedOrgId)?.cluster_id ?? null)
-        : (fallbackMembership?.orgs?.cluster_id ?? (profileRow as LegacyProfileRow | null)?.meta_org_id ?? typedAllOrgRows[0]?.cluster_id ?? null),
+      currentOrgId: requestedOrgId ?? profile?.active_org_id ?? typedAllOrgRows[0]?.id ?? null,
+      clusterId: profile?.active_cluster_id ?? typedAllOrgRows[0]?.cluster_id ?? null,
       managedOrgIds: dedupeStrings(typedAllOrgRows.map((row) => row.id)),
       isPlatformAdmin: true,
       isAdmin: true,
-      source: typedMembershipRows.length > 0 ? 'memberships' : 'legacy',
-    };
-  }
-
-  if (typedMembershipRows.length > 0) {
-    const clusterIds = dedupeStrings(typedMembershipRows
-      .filter((row) => row.role === 'admin')
-      .map((row) => {
-        const orgInfo = Array.isArray(row.orgs) ? row.orgs[0] : row.orgs;
-        return orgInfo?.cluster_id ?? null;
-      }));
-
-    let managedOrgIds = dedupeStrings(typedMembershipRows.map((row) => row.org_id));
-    if (clusterIds.length > 0) {
-      const { data: clusterOrgRows, error: clusterOrgError } = await adminClient
-        .from('orgs')
-        .select('id, cluster_id')
-        .in('cluster_id', clusterIds);
-
-      if (clusterOrgError) {
-        console.error(`[auth-model] Failed to resolve cluster orgs for clusterIds: ${clusterIds.join(',')}`, clusterOrgError);
-        throw new Error(`Unable to resolve cluster orgs: ${clusterOrgError.message}`);
-      }
-
-      managedOrgIds = dedupeStrings([
-        ...managedOrgIds,
-        ...((clusterOrgRows ?? []) as Array<{ id: string; cluster_id: string | null }>).map((row) => row.id),
-      ]);
-    }
-
-    const defaultOrgInfo = Array.isArray(defaultMembership?.orgs) ? defaultMembership.orgs[0] : defaultMembership?.orgs;
-
-    const resolvedMetaOrgId = (profileRow as LegacyProfileRow | null)?.meta_org_id ?? defaultOrgInfo?.cluster_id ?? null;
-    
-    console.log(`[auth-model] Membership Check: userId=${userId}, profileMeta=${(profileRow as LegacyProfileRow | null)?.meta_org_id}, clusterMeta=${defaultOrgInfo?.cluster_id}, resolved=${resolvedMetaOrgId}`);
-
-    return {
-      role: pickStrongestRole(typedMembershipRows.map((row) => row.role)),
-      currentOrgId: requestedOrgId ?? defaultMembership?.org_id ?? (profileRow as LegacyProfileRow | null)?.org_id ?? null,
-      metaOrgId: resolvedMetaOrgId,
-      managedOrgIds,
-      isPlatformAdmin: isPlatformAdmin || !!resolvedMetaOrgId, // Meta-org owners are effectively platform-esque
-      isAdmin: isPlatformAdmin || !!resolvedMetaOrgId || typedMembershipRows.some((row) => row.role === 'admin'),
       source: 'memberships',
     };
   }
 
-  const legacyProfile = (profileRow ?? null) as LegacyProfileRow | null;
-  const legacyRole = normalizeRole((userRoleRow as LegacyUserRoleRow | null)?.role);
-  const legacyIsGlobalAdmin = legacyRole === 'admin' && !legacyProfile?.meta_org_id;
+  // --- Cluster & Org Membership Logic ---
+  const administeredClusterIds = dedupeStrings(typedClusterMembershipRows
+    .filter((row) => row.role === 'cluster_admin')
+    .map((row) => row.cluster_id));
 
-  console.log(`[auth-model] Legacy check: userId=${userId}, role=${legacyRole}, profileMetaOrg=${legacyProfile?.meta_org_id}, isGlobal=${legacyIsGlobalAdmin}`);
+  // Determine if user has any administrative or operational role
+  if (administeredClusterIds.length > 0 || typedMembershipRows.length > 0) {
+    let managedOrgIds = dedupeStrings(typedMembershipRows.map((row) => row.org_id));
+    
+    // Resolve all orgs in clusters where the user is an admin
+    if (administeredClusterIds.length > 0) {
+      const { data: clusterOrgRows, error: clusterOrgError } = await adminClient
+        .from('organizations')
+        .select('id')
+        .in('cluster_id', administeredClusterIds);
 
-  if (legacyRole || legacyProfile?.org_id || legacyProfile?.meta_org_id || isPlatformAdmin) {
-    let managedOrgIds = legacyProfile?.org_id ? [legacyProfile.org_id] : [];
-
-    if (legacyIsGlobalAdmin || isPlatformAdmin) {
-      const { data: allOrgRows, error: allOrgError } = await adminClient
-        .from('orgs')
-        .select('id');
-      
-      if (!allOrgError && allOrgRows) {
-        managedOrgIds = dedupeStrings([
-          ...managedOrgIds,
-          ...allOrgRows.map(row => row.id),
-        ]);
-      }
-    } else if (legacyProfile?.meta_org_id) {
-      const { data: mappingRows, error: mappingError } = await adminClient
-        .from('org_meta_mapping')
-        .select('org_id')
-        .eq('meta_org_id', legacyProfile.meta_org_id);
-
-      if (mappingError) {
-        throw new Error(`Unable to resolve legacy managed orgs: ${mappingError.message}`);
+      if (clusterOrgError) {
+        throw new Error(`Unable to resolve cluster organizations: ${clusterOrgError.message}`);
       }
 
       managedOrgIds = dedupeStrings([
         ...managedOrgIds,
-        ...((mappingRows ?? []) as Array<{ org_id: string | null }>).map((row) => row.org_id),
+        ...((clusterOrgRows ?? []) as Array<{ id: string }>).map((row) => row.id),
       ]);
     }
 
-    console.log(`[auth-model] Resolved via legacy: userId=${userId}, isPlatform=${isPlatformAdmin}, metaOrgId=${legacyProfile?.meta_org_id}, managedOrgs=${managedOrgIds.length}`);
+    // Determine currently scoped Org and Cluster
+    const currentOrgId = requestedOrgId ?? profile?.active_org_id ?? defaultMembership?.org_id ?? null;
+    let currentClusterId = profile?.active_cluster_id;
+
+    if (!currentClusterId && currentOrgId) {
+      const orgInfo = typedMembershipRows.find(m => m.org_id === currentOrgId);
+      currentClusterId = (Array.isArray(orgInfo?.organizations) ? (orgInfo.organizations as any)[0]?.cluster_id : (orgInfo?.organizations as any)?.cluster_id) ?? null;
+    }
+
+    const directMembership = typedMembershipRows.find(m => m.org_id === currentOrgId);
+    let currentRole: DbRole | null = directMembership?.role ?? null;
+
+    if (!currentRole && currentClusterId) {
+      const clusterMember = typedClusterMembershipRows.find(cm => cm.cluster_id === currentClusterId);
+      if (clusterMember) {
+        if (clusterMember.role === 'cluster_admin') currentRole = 'admin';
+        else if (clusterMember.role === 'cluster_operator') currentRole = 'operator';
+        else currentRole = 'viewer';
+      }
+    }
 
     return {
-      role: legacyRole,
-      currentOrgId: requestedOrgId ?? legacyProfile?.org_id ?? null,
-      metaOrgId: legacyProfile?.meta_org_id ?? null,
+      role: currentRole,
+      currentOrgId,
+      clusterId: currentClusterId ?? null,
       managedOrgIds,
-      isPlatformAdmin: isPlatformAdmin || legacyIsGlobalAdmin,
-      isAdmin: isPlatformAdmin || legacyIsGlobalAdmin || legacyRole === 'admin',
-      source: 'legacy',
+      isPlatformAdmin: false,
+      isAdmin: administeredClusterIds.length > 0 || typedMembershipRows.some((row) => row.role === 'admin'),
+      source: 'memberships',
     };
   }
 
-  console.log(`[auth-model] No authority found for userId=${userId}`);
-
+  // --- Fallback (No Access) ---
   return {
     role: null,
     currentOrgId: null,
-    metaOrgId: null,
+    clusterId: null,
     managedOrgIds: [],
-    isPlatformAdmin,
-    isAdmin: isPlatformAdmin,
+    isPlatformAdmin: false,
+    isAdmin: false,
     source: 'none',
   };
 };
@@ -250,33 +214,33 @@ export const getCallerAuthorityContext = async (
 export const syncOrgGraph = async (
   adminClient: AdminClient,
   orgId: string,
-  metaOrgId: string | null,
+  clusterId: string | null,
 ) => {
-  if (!metaOrgId) {
+  if (!clusterId) {
     return;
   }
 
   const { error: clusterError } = await adminClient
-    .from('org_clusters')
+    .from('clusters')
     .upsert({
-      id: metaOrgId,
-      name: `cluster_${metaOrgId.slice(0, 8)}`,
+      id: clusterId,
+      name: `cluster_${clusterId.slice(0, 8)}`,
     });
 
   if (clusterError) {
-    throw new Error(`Unable to sync org cluster: ${clusterError.message}`);
+    throw new Error(`Unable to sync cluster: ${clusterError.message}`);
   }
 
   const { error: orgError } = await adminClient
-    .from('orgs')
+    .from('organizations')
     .upsert({
       id: orgId,
-      cluster_id: metaOrgId,
+      cluster_id: clusterId,
       name: `org_${orgId.slice(0, 8)}`,
     });
 
   if (orgError) {
-    throw new Error(`Unable to sync org row: ${orgError.message}`);
+    throw new Error(`Unable to sync organization: ${orgError.message}`);
   }
 };
 
@@ -291,7 +255,7 @@ export const ensureOrgMembership = async (
   const desiredDefault = options?.isDefaultOrg ?? false;
 
   const { data: existingMembership, error: lookupError } = await adminClient
-    .from('org_memberships')
+    .from('organization_memberships')
     .select('id, role, is_default_org')
     .eq('user_id', userId)
     .eq('org_id', orgId)
@@ -304,7 +268,7 @@ export const ensureOrgMembership = async (
   const nextRole = strongestRole(existingMembership?.role, role);
 
   const { error: upsertError } = await adminClient
-    .from('org_memberships')
+    .from('organization_memberships')
     .upsert({
       user_id: userId,
       org_id: orgId,
@@ -314,28 +278,20 @@ export const ensureOrgMembership = async (
     }, { onConflict: 'user_id,org_id' });
 
   if (upsertError) {
-    throw new Error(`Unable to sync org membership: ${upsertError.message}`);
+    throw new Error(`Unable to sync organization membership: ${upsertError.message}`);
   }
 
   if (desiredDefault) {
-    const { error: resetDefaultError } = await adminClient
-      .from('org_memberships')
+    await adminClient
+      .from('organization_memberships')
       .update({ is_default_org: false })
       .eq('user_id', userId)
       .neq('org_id', orgId);
 
-    if (resetDefaultError) {
-      throw new Error(`Unable to reset default memberships: ${resetDefaultError.message}`);
-    }
-
-    const { error: defaultError } = await adminClient
-      .from('org_memberships')
+    await adminClient
+      .from('organization_memberships')
       .update({ is_default_org: true, status: desiredStatus })
       .eq('user_id', userId)
       .eq('org_id', orgId);
-
-    if (defaultError) {
-      throw new Error(`Unable to mark default membership: ${defaultError.message}`);
-    }
   }
 };

@@ -12,9 +12,9 @@ type NewWorkspaceInput = Omit<Workspace, 'id' | 'created_at' | 'org_id'> & {
   org_id?: string;
 };
 
-type ProvisionOrgContextResult = {
+type ClusterBootstrapResult = {
   org_id: string;
-  meta_org_id: string | null;
+  cluster_id: string | null;
   managed_org_ids: string[];
 };
 
@@ -102,9 +102,9 @@ interface DataContextType {
   deleteAssociateAllocation: (id: string) => Promise<void>;
 
   updateProfileOrgId: (orgId: string | null) => Promise<void>;
-  provisionProfileOrgContext: () => Promise<ProvisionOrgContextResult>;
+  bootstrapClusterAdmin: () => Promise<ClusterBootstrapResult>;
   managedOrgIds: string[];
-  metaOrgId: string | null;
+  clusterId: string | null;
   recordSystemEvent: (event: Omit<SystemEvent, 'id' | 'timestamp' | 'actor_role'>) => Promise<void>;
 
   refreshData: () => Promise<void>;
@@ -139,7 +139,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   const [activeMetaOrgId, setActiveMetaOrgId] = useState<string | null>(() => {
     if (typeof window === 'undefined') return null;
-    return localStorage.getItem('flow_ops_last_meta_org_id');
+    return localStorage.getItem('flow_ops_last_cluster_id');
   });
   const [authorityResolved, setAuthorityResolved] = useState(false);
 
@@ -154,8 +154,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const updateActiveMetaOrgId = (id: string | null) => {
     setActiveMetaOrgId(id);
     if (typeof window !== 'undefined') {
-      if (id) localStorage.setItem('flow_ops_last_meta_org_id', id);
-      else localStorage.removeItem('flow_ops_last_meta_org_id');
+      if (id) localStorage.setItem('flow_ops_last_cluster_id', id);
+      else localStorage.removeItem('flow_ops_last_cluster_id');
     }
   };
   const loadingProgressTimerRef = useRef<number | null>(null);
@@ -939,8 +939,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (authority.managedOrgIds) {
           setManagedOrgIds(authority.managedOrgIds);
         }
-        if (authority.metaOrgId) {
-          setActiveMetaOrgId(authority.metaOrgId);
+        if (authority.clusterId) {
+          setActiveMetaOrgId(authority.clusterId);
         }
         setAuthorityResolved(true);
         return authority.activeOrgId;
@@ -951,46 +951,28 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    // Fallback to profiles table if authority context not resolved or user is null
+    // Fallback to profiles table
     if (user && !profilesUnavailableRef.current && !hasMissingWorkspace('profiles')) {
       const { data: profileRelData, error: profileRelError } = await supabase
         .from('profiles')
-        .select('org_id, meta_org_id')
+        .select('active_org_id, active_cluster_id')
         .eq('id', (user as any).id)
         .single();
 
       if (profileRelError) {
-        const errorCode = profileRelError.code ?? '';
-        const errorMessage = profileRelError.message?.toLowerCase() ?? '';
-        const missingProfilesRelation = errorCode === 'PGRST205' || errorMessage.includes('profiles');
-        const missingProfileRow = errorCode === 'PGRST116';
-
-        if (missingProfilesRelation) {
-          markMissingWorkspace('profiles');
-          warnOnce('missing-profiles', 'Supabase profiles workspace is missing. Run supabase/migrations/20260322230000_flow_ops_schema.sql to enable full auth + organization scoping. Continuing with default fetch mode.', profileRelError.message);
-          resolvedOrgId = null;
-          setActiveOrgId(null);
-        } else if (missingProfileRow) {
-          warnOnce('missing-profile-row', 'No profile row found for authenticated user. Set up profile/organization assignment to enable scoped access.', profileRelError.message);
-          resolvedOrgId = null;
-          setActiveOrgId(null);
-        } else {
-          warnOnce(`profile-fetch-${profileRelError.code ?? 'unknown'}`, 'Unable to load profile context. Continuing with default fetch mode.', profileRelError.message);
-          resolvedOrgId = null;
-          setActiveOrgId(null);
-        }
+        warnOnce(`profile-fetch-${profileRelError.code ?? 'unknown'}`, 'Unable to load profile context. Continuing with default fetch mode.', profileRelError.message);
+        resolvedOrgId = null;
+        setActiveOrgId(null);
       } else {
-        resolvedOrgId = profileRelData?.org_id ?? null;
+        resolvedOrgId = profileRelData?.active_org_id ?? null;
         setActiveOrgId(resolvedOrgId);
-        setActiveMetaOrgId(profileRelData?.meta_org_id ?? null);
+        const clusterId = profileRelData?.active_cluster_id ?? null;
+        setActiveMetaOrgId(clusterId);
         setManagedOrgIds(resolvedOrgId ? [resolvedOrgId] : []);
         
-        // Cache for faster next load
         if (typeof window !== 'undefined') {
-          if (resolvedOrgId) localStorage.setItem('flow_ops_last_org_id', resolvedOrgId);
-          else localStorage.removeItem('flow_ops_last_org_id');
-          if (profileRelData?.meta_org_id) localStorage.setItem('flow_ops_last_meta_org_id', profileRelData.meta_org_id);
-          else localStorage.removeItem('flow_ops_last_meta_org_id');
+          if (resolvedOrgId) localStorage.setItem('flow_ops_last_id', resolvedOrgId);
+          if (clusterId) localStorage.setItem('flow_ops_last_cluster_id', clusterId);
         }
       }
     } else {
@@ -1149,10 +1131,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
+      const fetchVersion = ++fetchVersionRef.current;
+      clearScopedDatasets();
+      setLoading(true);
       const scopedOrgId = await loadProfileContext();
-
-      // Multi-tenant safety: only platform admins can operate without an org scope.
-      // Non-admin roles must remain scoped to their own tenant.
       const requiresOrgScope = role !== 'admin';
       if (requiresOrgScope && !scopedOrgId) {
         clearScopedDatasets();
@@ -1213,7 +1195,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!client) return;
 
       const fetchVersion = ++fetchVersionRef.current;
-
+      clearScopedDatasets();
+      setLoading(true);
       const scopedOrgId = await loadProfileContext();
 
       // Multi-tenant safety: only platform admins can operate without an org scope.
@@ -1321,7 +1304,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setActiveOrgId(null);
       setLoading(false);
       localStorage.removeItem('flow_ops_last_org_id');
-      localStorage.removeItem('flow_ops_last_meta_org_id');
+      localStorage.removeItem('flow_ops_last_cluster_id');
       setAuthorityResolved(true); // Ensure authorityResolved is set even if no user
       return;
     }
@@ -3158,11 +3141,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateProfileOrgId = async (orgId: string | null) => {
-    if (!canAccessAdminUi) throw new Error('Only admin accounts can switch organization clusters.');
+    if (!canAccessAdminUi) throw new Error('Administrative privileges required to switch organization context.');
     if (!user) throw new Error('You must be signed in to switch organization context.');
 
     if (isDemoMode) {
-      setActiveOrgId(orgId);
+      updateActiveOrgId(orgId);
       return;
     }
 
@@ -3171,9 +3154,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const accessToken = await getSupabaseAccessToken();
     if (!accessToken) throw new Error('Authentication session expired.');
 
-    const { data, error: functionError } = await supabase.functions.invoke('manage-meta-org-admins', {
+    const { data, error: functionError } = await supabase.functions.invoke('manage-organizations', {
       body: {
-        action: 'switch-org-context',
+        action: 'switch-active-org',
         org_id: orgId,
       },
       headers: {
@@ -3182,72 +3165,46 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     });
 
-    if (functionError) throw new Error(functionError.message || 'Failed to switch organization cluster.');
+    if (functionError) throw new Error(functionError.message || 'Failed to switch organization context.');
 
-    if (Object.prototype.hasOwnProperty.call(data ?? {}, 'org_id')) {
-      updateActiveOrgId(data?.org_id ?? null);
-    } else {
-      updateActiveOrgId(orgId);
+    if (data?.org_id) {
+      updateActiveOrgId(data.org_id);
     }
-
-    if (Object.prototype.hasOwnProperty.call(data ?? {}, 'meta_org_id')) {
-      updateActiveMetaOrgId(data?.meta_org_id ?? null);
-    }
-
-    if (user?.id && orgId) {
-      const { data: membershipRow } = await supabase
-        .from('org_memberships')
-        .select('id')
-        .eq('user_id', user.id)
-        .eq('org_id', orgId)
-        .maybeSingle();
-
-      if (membershipRow?.id) {
-        await supabase
-          .from('org_memberships')
-          .update({ is_default_org: false })
-          .eq('user_id', user.id)
-          .neq('org_id', orgId);
-
-        await supabase
-          .from('org_memberships')
-          .update({ is_default_org: true, status: 'active' })
-          .eq('user_id', user.id)
-          .eq('org_id', orgId);
-      }
+    if (data?.cluster_id) {
+      updateActiveMetaOrgId(data.cluster_id);
     }
 
     if (data?.managed_org_ids) {
       setManagedOrgIds(data.managed_org_ids);
     }
     
-    // Clear the profiles cache to trigger reload
     profilesUnavailableRef.current = false;
     await fetchData();
   };
 
-  const provisionProfileOrgContext = async (): Promise<ProvisionOrgContextResult> => {
-    if (!canAccessAdminUi) throw new Error('Only admin accounts can provision workspace clusters.');
-    if (!user) throw new Error('You must be signed in to provision organization context.');
+  const bootstrapClusterAdmin = async (): Promise<ClusterBootstrapResult> => {
+    if (!user) throw new Error('You must be signed in to bootstrap a cluster.');
 
     if (isDemoMode) {
       const orgId = crypto.randomUUID();
-      setActiveOrgId(orgId);
+      const clusterId = crypto.randomUUID();
+      updateActiveOrgId(orgId);
+      updateActiveMetaOrgId(clusterId);
       return {
         org_id: orgId,
-        meta_org_id: null,
+        cluster_id: clusterId,
         managed_org_ids: [orgId],
       };
     }
 
-    if (!supabase) throw new Error('Supabase project connectivity is not configured in environment variables.');
+    if (!supabase) throw new Error('Supabase project connectivity is not configured.');
 
     const accessToken = await getSupabaseAccessToken();
     if (!accessToken) throw new Error('Authentication session expired.');
 
-    const { data, error: functionError } = await supabase.functions.invoke('manage-meta-org-admins', {
+    const { data, error: functionError } = await supabase.functions.invoke('manage-organizations', {
       body: {
-        action: 'provision-org-context',
+        action: 'bootstrap-cluster-admin',
       },
       headers: {
         Authorization: `Bearer ${accessToken}`,
@@ -3255,26 +3212,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     });
 
-    if (functionError) throw new Error(functionError.message || 'Failed to provision fresh workspace cluster.');
+    if (functionError) throw new Error(functionError.message || 'Failed to bootstrap cluster.');
 
     updateActiveOrgId(data.org_id);
-    
-    if (data?.meta_org_id) {
-      updateActiveMetaOrgId(data.meta_org_id);
+    if (data?.cluster_id) {
+      updateActiveMetaOrgId(data.cluster_id);
     }
-
-    if (data?.managed_org_ids) {
-      setManagedOrgIds(data.managed_org_ids);
-    } else {
-      setManagedOrgIds((current) => current.includes(data.org_id) ? current : [...current, data.org_id]);
-    }
+    setManagedOrgIds(data.managed_org_ids || [data.org_id]);
 
     profilesUnavailableRef.current = false;
     await fetchData();
 
     return {
       org_id: data.org_id,
-      meta_org_id: data.meta_org_id ?? null,
+      cluster_id: data.cluster_id ?? null,
       managed_org_ids: data.managed_org_ids ?? [data.org_id],
     };
   };
@@ -3342,9 +3293,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     addAssociateAllocation,
     deleteAssociateAllocation,
     updateProfileOrgId,
-    provisionProfileOrgContext,
+    bootstrapClusterAdmin,
     managedOrgIds,
-    metaOrgId: activeMetaOrgId,
+    clusterId: activeMetaOrgId,
     recordSystemEvent: recordSystemEvent,
     refreshData: fetchData,
   };

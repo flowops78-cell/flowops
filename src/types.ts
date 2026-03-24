@@ -1,7 +1,7 @@
 export interface Entity {
   id: string;
   org_id?: string;
-  meta_org_id?: string | null;
+  cluster_id?: string | null;
   name: string;
   tags?: string[];
   total?: number;
@@ -16,7 +16,7 @@ export interface Entity {
 export interface Member {
   id: string;
   org_id?: string;
-  meta_org_id?: string | null;
+  cluster_id?: string | null;
   name: string;
   member_id?: string;
   user_id?: string;
@@ -33,7 +33,7 @@ export interface Member {
 export interface ActivityLog {
   id: string;
   org_id?: string;
-  meta_org_id?: string | null;
+  cluster_id?: string | null;
   member_id: string;
   workspace_id?: string;
   user_id?: string;
@@ -49,7 +49,7 @@ export interface ActivityLog {
 export interface Expense {
   id: string;
   org_id?: string;
-  meta_org_id?: string | null;
+  cluster_id?: string | null;
   category: 'structural' | 'software' | 'distribution' | 'operations' | 'other';
   amount: number;
   date: string;
@@ -145,7 +145,7 @@ export interface ChannelEntry {
 export interface UnitAccountEntry {
   id: string;
   org_id?: string;
-  meta_org_id?: string | null;
+  cluster_id?: string | null;
   unit_id: string;
   type: 'increment' | 'adjustment' | 'decrement';
   amount: number;

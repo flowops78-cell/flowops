@@ -25,69 +25,46 @@ type ProvisionPayload = {
   access_token?: string;
 };
 
-type AuthUserSummary = {
-  id: string;
-  email?: string | null;
-  user_metadata?: Record<string, unknown> | null;
-};
-
 const json = (status: number, body: Record<string, unknown>, origin: string | null) =>
   new Response(JSON.stringify(body), {
     status,
     headers: { ...getCorsHeaders(origin), 'Content-Type': 'application/json' },
   });
 
-const resolveTargetMetaOrgId = async (
-  adminClient: ReturnType<typeof createClient>,
+const resolveTargetClusterId = async (
+  adminClient: any,
   targetOrgId: string,
-  callerMetaOrgId: string | null,
+  callerClusterId: string | null,
   isGlobalAdmin: boolean,
   resolvedRole: DbRole,
 ) => {
   const { data: existingOrgRow, error: orgError } = await adminClient
-    .from('orgs')
+    .from('organizations')
     .select('cluster_id')
     .eq('id', targetOrgId)
     .maybeSingle();
 
   if (orgError) {
-    throw new Error(`Unable to resolve org cluster: ${orgError.message}`);
+    throw new Error(`Unable to resolve organization cluster: ${orgError.message}`);
   }
 
   if (existingOrgRow?.cluster_id) {
     return existingOrgRow.cluster_id;
   }
 
-  if (callerMetaOrgId) return callerMetaOrgId;
+  if (callerClusterId) return callerClusterId;
 
-  const { data: existingOrgMapping, error: mappingError } = await adminClient
-    .from('org_meta_mapping')
-    .select('meta_org_id')
-    .eq('org_id', targetOrgId)
-    .maybeSingle();
-
-  if (mappingError) {
-    throw new Error(`Unable to resolve org mapping: ${mappingError.message}`);
-  }
-
-  if (existingOrgMapping?.meta_org_id) {
-    return existingOrgMapping.meta_org_id;
-  }
-
+  // Final fallback: check profiles who are already in this org
   const { data: existingProfileInOrg, error: profileError } = await adminClient
     .from('profiles')
-    .select('meta_org_id')
-    .eq('org_id', targetOrgId)
-    .not('meta_org_id', 'is', null)
+    .select('active_cluster_id')
+    .eq('active_org_id', targetOrgId)
+    .not('active_cluster_id', 'is', null)
     .limit(1)
     .maybeSingle();
 
-  if (profileError) {
-    throw new Error(`Unable to resolve profile cluster: ${profileError.message}`);
-  }
-
-  if (existingProfileInOrg?.meta_org_id) {
-    return existingProfileInOrg.meta_org_id;
+  if (!profileError && existingProfileInOrg?.active_cluster_id) {
+    return existingProfileInOrg.active_cluster_id;
   }
 
   if (isGlobalAdmin && resolvedRole === 'admin') {
@@ -108,15 +85,8 @@ const normalizeRole = (value: unknown): DbRole => {
   if (typeof value !== 'string') return 'viewer';
   const normalized = value.trim().toLowerCase();
   if (normalized === 'admin' || normalized === 'operator' || normalized === 'viewer') {
-    return normalized;
+    return normalized as DbRole;
   }
-  if (normalized === 'vwr') return 'viewer';
-  return 'viewer';
-};
-
-const toMemberRole = (role: DbRole): 'admin' | 'operator' | 'viewer' => {
-  if (role === 'admin') return 'admin';
-  if (role === 'operator') return 'operator';
   return 'viewer';
 };
 
@@ -125,19 +95,14 @@ Deno.serve(async (request: Request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(origin) });
   if (request.method !== 'POST') return json(405, { error: 'Method not allowed' }, origin);
 
-  // --- Rate Limiting ---
   const clientIp = resolveClientIp(request);
   const rl = checkRateLimit(clientIp, RATE_LIMIT);
-  if (!rl.allowed) {
-    return rateLimitResponse(rl.retryAfterMs ?? 1000, origin, getCorsHeaders(origin));
-  }
+  if (!rl.allowed) return rateLimitResponse(rl.retryAfterMs ?? 1000, origin, getCorsHeaders(origin));
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
-  if (!supabaseUrl || !serviceRoleKey) {
-    return json(500, { error: 'Missing Supabase function environment variables.' }, origin);
-  }
+  if (!supabaseUrl || !serviceRoleKey) return json(500, { error: 'Missing environment variables.' }, origin);
 
   const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
@@ -148,41 +113,23 @@ Deno.serve(async (request: Request) => {
     return json(400, { error: 'Invalid JSON payload.' }, origin);
   }
 
-  if (!payload.access_request_id) {
-    return json(400, { error: 'access_request_id is required.' }, origin);
-  }
+  if (!payload.access_request_id) return json(400, { error: 'access_request_id is required.' }, origin);
 
-  const headerBearerToken = parseBearerToken(request.headers.get('Authorization'));
-  const payloadBearerToken = (payload.access_token ?? '').trim() || null;
-  const bearerToken = headerBearerToken || payloadBearerToken;
-  if (!bearerToken) {
-    return json(401, { error: 'Missing bearer token.' }, origin);
-  }
+  const bearerToken = parseBearerToken(request.headers.get('Authorization')) || (payload.access_token ?? '').trim();
+  if (!bearerToken) return json(401, { error: 'Missing bearer token.' }, origin);
 
   const { data: authUserData, error: authUserError } = await adminClient.auth.getUser(bearerToken);
-  if (authUserError || !authUserData.user) {
-    return json(401, { error: 'Unable to resolve authenticated user.' }, origin);
-  }
+  if (authUserError || !authUserData.user) return json(401, { error: 'Unauthorized.' }, origin);
 
   const callerUserId = authUserData.user.id;
   let callerAuthority;
   try {
     callerAuthority = await getCallerAuthorityContext(adminClient, callerUserId);
   } catch (error) {
-    return json(400, { error: error instanceof Error ? error.message : 'Unable to resolve caller authority.' }, origin);
+    return json(400, { error: error instanceof Error ? error.message : 'Authority resolution failed.' }, origin);
   }
 
-  if (!callerAuthority.isAdmin) {
-    return json(403, { error: 'Only admin accounts can provision users.' }, origin);
-  }
-
-  const callerOrgId = callerAuthority.currentOrgId;
-  const callerMetaId = callerAuthority.metaOrgId;
-  const isGlobalAdmin = callerAuthority.isPlatformAdmin || (callerAuthority.source === 'legacy' && callerAuthority.role === 'admin' && !callerMetaId);
-
-  if (!isGlobalAdmin && !callerOrgId && callerAuthority.managedOrgIds.length === 0) {
-    return json(400, { error: 'Caller has no organization authority.' }, origin);
-  }
+  if (!callerAuthority.isAdmin) return json(403, { error: 'Admin only.' }, origin);
 
   const { data: requestRowData, error: requestRowError } = await adminClient
     .from('access_requests')
@@ -190,191 +137,77 @@ Deno.serve(async (request: Request) => {
     .eq('id', payload.access_request_id)
     .single();
 
-  const requestRow = requestRowData as AccessRequestRow | null;
+  if (requestRowError || !requestRowData) return json(404, { error: 'Request not found.' }, origin);
+  const requestRow = requestRowData as AccessRequestRow;
 
-  if (requestRowError || !requestRow) {
-    return json(404, { error: 'Access request not found.' }, origin);
-  }
-
-  if (requestRow.status === 'rejected') {
-    return json(409, { error: 'Cannot provision a rejected access request.' }, origin);
-  }
-
-  if (!isGlobalAdmin && !callerAuthority.managedOrgIds.includes(requestRow.org_id) && requestRow.org_id !== callerOrgId) {
-    return json(403, { error: 'Access request is outside the caller org scope.' }, origin);
+  if (requestRow.status === 'rejected') return json(409, { error: 'Request rejected.' }, origin);
+  if (!callerAuthority.managedOrgIds.includes(requestRow.org_id) && !callerAuthority.isPlatformAdmin) {
+    return json(403, { error: 'Out of scope.' }, origin);
   }
 
   const resolvedLoginId = requestRow.login_id.toLowerCase().trim();
   const resolvedRole = normalizeRole(payload.approved_role ?? requestRow.requested_role);
   const targetOrgId = requestRow.org_id;
 
-  let targetMetaOrgId: string | null;
-  try {
-    targetMetaOrgId = await resolveTargetMetaOrgId(adminClient, targetOrgId, callerMetaId, isGlobalAdmin, resolvedRole);
-  } catch (error) {
-    return json(400, { error: error instanceof Error ? error.message : 'Unable to resolve target meta-org.' }, origin);
-  }
+  const targetClusterId = await resolveTargetClusterId(adminClient, targetOrgId, callerAuthority.clusterId, callerAuthority.isPlatformAdmin, resolvedRole);
 
-  const payloadPassword = (payload.password ?? '').trim();
-  const resolvedPassword = payloadPassword;
+  const resolvedPassword = (payload.password ?? '').trim();
+  if (resolvedPassword.length < 8) return json(400, { error: 'Password too short.' }, origin);
 
-  if (resolvedPassword.length < 8) {
-    return json(400, { error: 'Initial password is required and must be at least 8 characters.' }, origin);
-  }
-
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(resolvedLoginId)) {
-    return json(400, { error: `Login ID "${resolvedLoginId}" is invalid` }, origin);
-  }
-
-  const roleData = {
-    app_role: resolvedRole,
-  };
-
-  const resolvedMemberId = payload.member_id?.trim() || undefined;
-  const loginAlias = resolvedLoginId.split('@')[0]?.trim() || 'member';
-  const memberLabel = resolvedMemberId || loginAlias;
-
+  // 1. Auth Creation / Update
   const createResult = await adminClient.auth.admin.createUser({
     email: resolvedLoginId,
     password: resolvedPassword,
     email_confirm: true,
-    user_metadata: roleData,
+    user_metadata: { app_role: resolvedRole },
   });
 
   let provisionedUserId: string | null = createResult.data.user?.id ?? null;
 
   if (createResult.error) {
-    const message = createResult.error.message.toLowerCase();
-    const alreadyExists = message.includes('already') || message.includes('registered') || message.includes('exists');
-
-    if (!alreadyExists) {
-      return json(400, { error: createResult.error.message }, origin);
-    }
-
-    const users = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    const existing = users?.data?.users?.find((u: AuthUserSummary) => (u.email ?? '').toLowerCase() === resolvedLoginId);
-    if (!existing) {
-      return json(400, { error: 'User exists but could not be resolved from auth.users.' }, origin);
-    }
-
+    const users = await adminClient.auth.admin.listUsers();
+    const existing = (users.data.users as any[]).find(u => u.email?.toLowerCase() === resolvedLoginId);
+    if (!existing) return json(400, { error: createResult.error.message }, origin);
     provisionedUserId = existing.id;
-
     await adminClient.auth.admin.updateUserById(existing.id, {
       password: resolvedPassword,
       user_metadata: { ...existing.user_metadata, app_role: resolvedRole },
     });
   }
 
-  if (!provisionedUserId) {
-    return json(500, { error: 'Provisioning succeeded but no user id was returned.' }, origin);
-  }
+  if (!provisionedUserId) return json(500, { error: 'User resolution failed.' }, origin);
 
-  // Insert into flow_ops_migration expected tables
-  const { error: roleUpsertError } = await adminClient
-    .from('user_roles')
-    .upsert({ user_id: provisionedUserId, role: resolvedRole }); // we removed ON CONFLICT constraint parameter to be cleaner
+  // 2. Database Sync
+  await adminClient.from('profiles').upsert({ 
+    id: provisionedUserId, 
+    active_org_id: targetOrgId,
+    active_cluster_id: targetClusterId 
+  });
 
-  if (roleUpsertError) {
-    return json(400, { error: `user_roles upsert error: ${roleUpsertError.message}` }, origin);
-  }
+  await syncOrgGraph(adminClient, targetOrgId, targetClusterId);
+  await ensureOrgMembership(adminClient, provisionedUserId, targetOrgId, resolvedRole, {
+    isDefaultOrg: true,
+    status: 'active',
+  });
 
-  const { error: profileUpsertError } = await adminClient
-    .from('profiles')
-    .upsert({ 
-      id: provisionedUserId, 
-      org_id: targetOrgId,
-      meta_org_id: targetMetaOrgId 
-    });
-
-  if (profileUpsertError) {
-    return json(400, { error: `profiles upsert error: ${profileUpsertError.message}` }, origin);
-  }
-
-  try {
-    await syncOrgGraph(adminClient, targetOrgId, targetMetaOrgId);
-    await ensureOrgMembership(adminClient, provisionedUserId, targetOrgId, resolvedRole, {
-      isDefaultOrg: true,
-      status: 'active',
-    });
-  } catch (error) {
-    return json(400, { error: error instanceof Error ? error.message : 'Unable to sync membership auth model.' }, origin);
-  }
-
-  // Ensure org -> meta mapping exists if we have a cluster context
-  if (targetOrgId && targetMetaOrgId) {
-    const { error: mappingError } = await adminClient
-      .from('org_meta_mapping')
-      .upsert({ 
-        org_id: targetOrgId, 
-        meta_org_id: targetMetaOrgId 
-      });
-    
-    if (mappingError) {
-       console.error('Mapping error (non-fatal):', mappingError.message);
-    }
-  }
-  
-  if (resolvedMemberId) {
-    const memberPayload = {
+  // 3. Member Record
+  if (payload.member_id) {
+    await adminClient.from('members').upsert({
       org_id: targetOrgId,
       user_id: provisionedUserId,
-      member_id: resolvedMemberId,
-      name: memberLabel,
-      role: toMemberRole(resolvedRole),
+      member_id: payload.member_id,
+      name: resolvedLoginId.split('@')[0],
+      role: resolvedRole,
       status: 'active',
-    };
-
-    const { data: existingMemberRow, error: existingMemberError } = await adminClient
-      .from('members')
-      .select('id')
-      .eq('org_id', targetOrgId)
-      .eq('user_id', provisionedUserId)
-      .maybeSingle();
-
-    if (existingMemberError) {
-      return json(400, { error: `member lookup error: ${existingMemberError.message}` }, origin);
-    }
-
-    if (existingMemberRow?.id) {
-      const { error: memberUpdateError } = await adminClient
-        .from('members')
-        .update(memberPayload)
-        .eq('id', existingMemberRow.id);
-
-      if (memberUpdateError) {
-        return json(400, { error: `member update error: ${memberUpdateError.message}` }, origin);
-      }
-    } else {
-      const { error: memberInsertError } = await adminClient
-        .from('members')
-        .insert(memberPayload);
-
-      if (memberInsertError) {
-        return json(400, { error: `member insert error: ${memberInsertError.message}` }, origin);
-      }
-    }
+    });
   }
 
-  const { error: requestUpdateError } = await adminClient
-    .from('access_requests')
-    .update({
-      requested_role: resolvedRole,
-      status: 'approved',
-      reviewed_by: callerUserId,
-      reviewed_at: new Date().toISOString(),
-    })
-    .eq('id', requestRow.id);
+  // 4. Resolve Request
+  await adminClient.from('access_requests').update({
+    status: 'approved',
+    reviewed_by: callerUserId,
+    reviewed_at: new Date().toISOString(),
+  }).eq('id', requestRow.id);
 
-  if (requestUpdateError) {
-    return json(400, { error: requestUpdateError.message }, origin);
-  }
-
-  return json(200, {
-    ok: true,
-    provisioned_user_id: provisionedUserId,
-    login_id: resolvedLoginId,
-    app_role: resolvedRole,
-    password_applied: true,
-    user_already_exists: Boolean(createResult.error),
-  }, origin);
+  return json(200, { ok: true, provisioned_user_id: provisionedUserId }, origin);
 });

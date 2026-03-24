@@ -38,22 +38,19 @@ type ProvisionResult = {
   user_already_exists?: boolean;
 };
 
-type ManagedMetaOrgAccount = {
+type ManagedClusterAccount = {
   user_id: string;
-  login_id: string | null;
-  org_id: string | null;
-  meta_org_id: string | null;
-  role: DbRole;
-  member_id: string | null;
-  member_name: string | null;
+  email: string | null;
+  role: 'cluster_admin' | 'cluster_operator' | 'viewer';
+  active_org_id: string | null;
   created_at: string | null;
 };
 
-type ManageMetaOrgAdminsResult = {
+type ManageClusterAdminsResult = {
   ok?: boolean;
-  meta_org_id?: string | null;
+  cluster_id?: string | null;
   managed_org_ids?: string[];
-  accounts?: ManagedMetaOrgAccount[];
+  admins?: ManagedClusterAccount[];
 };
 
 const buildInviteShareMessage = (token: string) => {
@@ -100,9 +97,9 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     recordSystemEvent,
     refreshData,
     updateProfileOrgId,
-    provisionProfileOrgContext,
+    bootstrapClusterAdmin,
     managedOrgIds,
-    metaOrgId,
+    clusterId,
   } = useData();
   const { role, canAccessAdminUi } = useAppRole();
   const { notify } = useNotification();
@@ -130,14 +127,14 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [pendingMemberIds, setPendingMemberIds] = React.useState<Record<string, string>>({});
   const [pendingPasswords, setPendingPasswords] = React.useState<Record<string, string>>({});
   const [pendingApprovedRoles, setPendingApprovedRoles] = React.useState<Record<string, DbRole>>({});
-  const [metaOrgAccounts, setMetaOrgAccounts] = React.useState<ManagedMetaOrgAccount[]>([]);
-  const [managedMetaOrgId, setManagedMetaOrgId] = React.useState<string | null>(null);
-  const [metaManagedOrgIds, setMetaManagedOrgIds] = React.useState<string[]>([]);
-  const [metaOrgAdminsLoading, setMetaOrgAdminsLoading] = React.useState(false);
-  const [metaOrgAdminsNotice, setMetaOrgAdminsNotice] = React.useState<string | null>(null);
-  const [pendingMetaOrgRoles, setPendingMetaOrgRoles] = React.useState<Record<string, Extract<DbRole, 'admin' | 'operator'>>>({});
-  const [busyMetaOrgUserId, setBusyMetaOrgUserId] = React.useState<string | null>(null);
-  const [metaOrgSearch, setMetaOrgSearch] = React.useState('');
+  const [clusterAdmins, setClusterAdmins] = React.useState<ManagedClusterAccount[]>([]);
+  const [managedClusterId, setManagedClusterId] = React.useState<string | null>(null);
+  const [clusterManagedOrgIds, setClusterManagedOrgIds] = React.useState<string[]>([]);
+  const [clusterAdminsLoading, setClusterAdminsLoading] = React.useState(false);
+  const [clusterAdminsNotice, setClusterAdminsNotice] = React.useState<string | null>(null);
+  const [pendingClusterRoles, setPendingClusterRoles] = React.useState<Record<string, 'cluster_admin' | 'cluster_operator'>>({});
+  const [busyClusterUserId, setBusyClusterUserId] = React.useState<string | null>(null);
+  const [clusterSearch, setClusterSearch] = React.useState('');
 
   const canManageGlobalData = canAccessAdminUi;
   const profileId = user?.id ?? '';
@@ -283,75 +280,53 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     }
   }, [canViewOperatorLogs]);
 
-  const fetchMetaOrgAdmins = React.useCallback(async (
+  const fetchClusterAdmins = React.useCallback(async (
     orgIdOverride?: string,
-    fallbackState?: Pick<ManageMetaOrgAdminsResult, 'meta_org_id' | 'managed_org_ids'>,
   ) => {
     const orgId = orgIdOverride ?? activeOrgId;
-    if (!isSupabaseConfigured || !supabase || !canManageMetaOrgAdmins || !orgId) return;
+    if (!isSupabaseConfigured || !supabase || !canAccessAdminUi || !orgId) return;
 
-    setMetaOrgAdminsLoading(true);
-    setMetaOrgAdminsNotice(null);
+    setClusterAdminsLoading(true);
+    setClusterAdminsNotice(null);
 
     try {
       const accessToken = await getSupabaseAccessToken();
       if (!accessToken) {
-        setMetaOrgAdminsNotice('Meta-org admin loading requires an active auth session. Sign in again and retry.');
+        setClusterAdminsNotice('Cluster admin loading requires an active auth session.');
         return;
       }
 
-      const { data, error } = await supabase.functions.invoke<ManageMetaOrgAdminsResult>('manage-meta-org-admins', {
+      const { data, error } = await supabase.functions.invoke<ManageClusterAdminsResult>('manage-organizations', {
         headers: {
           Authorization: `Bearer ${accessToken}`,
           apikey: SUPABASE_ANON_KEY,
         },
         body: {
-          action: 'list',
+          action: 'list-cluster-admins',
           org_id: orgId,
         },
       });
 
       if (error) {
-        const detailedError = (error as any)?.message ?? String(error);
-        const status = (error as any)?.status;
-        setMetaOrgAccounts([]);
-        setManagedMetaOrgId(null);
-        setMetaManagedOrgIds([]);
-        if (status === 401) {
-          setMetaOrgAdminsNotice('Session expired or unauthorized. Please sign in again.');
-        } else {
-          setMetaOrgAdminsNotice(`Unable to load meta-org admins: ${detailedError}`);
-        }
+        setClusterAdminsNotice(`Unable to load cluster admins: ${String(error)}`);
         return;
       }
 
-      setMetaOrgAccounts(data?.accounts ?? []);
-      setManagedMetaOrgId((current) => data?.meta_org_id ?? fallbackState?.meta_org_id ?? current);
-      setMetaManagedOrgIds((current) => {
-        if (data?.managed_org_ids && data.managed_org_ids.length > 0) {
-          return data.managed_org_ids;
-        }
-        if (fallbackState?.managed_org_ids && fallbackState.managed_org_ids.length > 0) {
-          return fallbackState.managed_org_ids;
-        }
-        return current;
-      });
+      setClusterAdmins(data?.admins ?? []);
+      setManagedClusterId(data?.cluster_id ?? null);
+      setClusterManagedOrgIds(data?.managed_org_ids ?? []);
     } catch (error) {
-      const detailedError = error instanceof Error ? error.message : 'Transport request failed.';
-      setMetaOrgAccounts([]);
-      setManagedMetaOrgId(null);
-      setMetaManagedOrgIds([]);
-      setMetaOrgAdminsNotice(`Unable to load meta-org admins: ${detailedError}`);
+      setClusterAdminsNotice(`Transport error: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
-      setMetaOrgAdminsLoading(false);
+      setClusterAdminsLoading(false);
     }
-  }, [activeOrgId, canManageMetaOrgAdmins]);
+  }, [activeOrgId, canAccessAdminUi]);
 
   React.useEffect(() => {
     void fetchAccessRequests();
     void fetchAccessInvites();
-    void fetchMetaOrgAdmins();
-  }, [fetchAccessInvites, fetchAccessRequests, fetchMetaOrgAdmins]);
+    void fetchClusterAdmins();
+  }, [fetchAccessInvites, fetchAccessRequests, fetchClusterAdmins]);
 
   const reviewAccessRequest = async (request: AccessRequestRow, status: 'approved' | 'rejected') => {
     if (!supabase || !user) return;
@@ -446,28 +421,28 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     setBusyRequestId(null);
   };
 
-  const updateMetaOrgAccountRole = async (account: ManagedMetaOrgAccount) => {
+  const updateClusterAccountRole = async (account: ManagedClusterAccount) => {
     if (!supabase || !activeOrgId) return;
 
-    const nextRole = pendingMetaOrgRoles[account.user_id] || (account.role === 'admin' ? 'admin' : 'operator');
+    const nextRole = pendingClusterRoles[account.user_id] || account.role;
     if (nextRole === account.role) return;
 
     const accessToken = await getSupabaseAccessToken();
     if (!accessToken) {
-      setMetaOrgAdminsNotice('Meta-org admin updates require an active auth session. Sign in again and retry.');
+      setClusterAdminsNotice('Session expired.');
       return;
     }
 
-    setBusyMetaOrgUserId(account.user_id);
-    setMetaOrgAdminsNotice(null);
+    setBusyClusterUserId(account.user_id);
+    setClusterAdminsNotice(null);
 
-    const { error } = await supabase.functions.invoke<ManageMetaOrgAdminsResult>('manage-meta-org-admins', {
+    const { error } = await supabase.functions.invoke('manage-organizations', {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         apikey: SUPABASE_ANON_KEY,
       },
       body: {
-        action: 'set-role',
+        action: 'set-cluster-role',
         org_id: activeOrgId,
         target_user_id: account.user_id,
         target_role: nextRole,
@@ -475,38 +450,25 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     });
 
     if (error) {
-      const detailedError = (error as any)?.message ?? String(error);
-      setMetaOrgAdminsNotice(`Unable to update account role: ${detailedError}`);
-      notify({ type: 'error', message: `Unable to update account role: ${detailedError}` });
-      setBusyMetaOrgUserId(null);
+      setClusterAdminsNotice(`Update failed: ${String(error)}`);
+      setBusyClusterUserId(null);
       return;
     }
 
-    await fetchMetaOrgAdmins();
-    void recordSystemEvent({
-      action: 'role_updated',
-      entity: 'member',
-      unit_id: account.user_id,
-      details: `Role updated for ${account.login_id}: ${nextRole}`,
-    });
-    notify({ type: 'success', message: `Updated ${account.login_id ?? 'account'} to ${nextRole}.` });
-    setBusyMetaOrgUserId(null);
+    await fetchClusterAdmins();
+    notify({ type: 'success', message: `Updated role for ${account.email}.` });
+    setBusyClusterUserId(null);
   };
 
-  const deleteMetaOrgAccount = async (account: ManagedMetaOrgAccount) => {
+  const deleteClusterAccount = async (account: ManagedClusterAccount) => {
     if (!supabase || !activeOrgId) return;
-    if (!window.confirm(`Permanently delete account ${account.login_id ?? account.user_id}? This will remove the authentication record and all associated identity mapping. This cannot be undone.`)) return;
+    if (!window.confirm(`Delete account ${account.email}?`)) return;
 
     const accessToken = await getSupabaseAccessToken();
-    if (!accessToken) {
-      setMetaOrgAdminsNotice('Meta-org admin updates require an active auth session. Sign in again and retry.');
-      return;
-    }
+    if (!accessToken) return;
 
-    setBusyMetaOrgUserId(account.user_id);
-    setMetaOrgAdminsNotice(null);
-
-    const { error } = await supabase.functions.invoke<ManageMetaOrgAdminsResult>('manage-meta-org-admins', {
+    setBusyClusterUserId(account.user_id);
+    const { error } = await supabase.functions.invoke('manage-organizations', {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         apikey: SUPABASE_ANON_KEY,
@@ -519,22 +481,14 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     });
 
     if (error) {
-      const detailedError = (error as any)?.message ?? String(error);
-      setMetaOrgAdminsNotice(`Unable to delete account: ${detailedError}`);
-      notify({ type: 'error', message: `Unable to delete account: ${detailedError}` });
-      setBusyMetaOrgUserId(null);
+      notify({ type: 'error', message: `Deletion failed: ${String(error)}` });
+      setBusyClusterUserId(null);
       return;
     }
 
-    await fetchMetaOrgAdmins();
-    void recordSystemEvent({
-      action: 'member_removed',
-      entity: 'member',
-      unit_id: account.user_id,
-      details: `Permanently deleted account: ${account.login_id}`,
-    });
-    notify({ type: 'success', message: `Permanently removed ${account.login_id ?? 'account'}.` });
-    setBusyMetaOrgUserId(null);
+    await fetchClusterAdmins();
+    notify({ type: 'success', message: `Account removed.` });
+    setBusyClusterUserId(null);
   };
 
   const createAccessInvite = async () => {
@@ -605,24 +559,51 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       : 'Not configured';
   const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
 
-  const filteredInvites = accessInvites.filter(invite =>
-    invite.label?.toLowerCase().includes(inviteSearch.toLowerCase()) ||
-    invite.id.toLowerCase().includes(inviteSearch.toLowerCase())
+  const provisionOrganization = async () => {
+    if (!supabase || !activeOrgId || !clusterId) return;
+    if (!window.confirm('Add a new organization to this cluster?')) return;
+
+    const accessToken = await getSupabaseAccessToken();
+    if (!accessToken) return;
+
+    const { data, error } = await supabase.functions.invoke('manage-organizations', {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        apikey: SUPABASE_ANON_KEY,
+      },
+      body: {
+        action: 'provision-organization',
+        org_id: activeOrgId,
+        cluster_id: clusterId,
+      },
+    });
+
+    if (error) {
+      notify({ type: 'error', message: `Provisioning failed: ${String(error)}` });
+      return;
+    }
+
+    notify({ type: 'success', message: 'New organization provisioned.' });
+    await refreshData();
+    await fetchClusterAdmins();
+  };
+
+  const filteredClusterAdmins = clusterAdmins.filter(admin =>
+    (admin.email ?? '').toLowerCase().includes(clusterSearch.toLowerCase()) ||
+    (admin.user_id ?? '').toLowerCase().includes(clusterSearch.toLowerCase())
   );
 
-  const filteredMetaOrgAccounts = metaOrgAccounts.filter(account =>
-    (account.login_id ?? '').toLowerCase().includes(metaOrgSearch.toLowerCase()) ||
-    (account.member_name ?? '').toLowerCase().includes(metaOrgSearch.toLowerCase()) ||
-    (account.member_id ?? '').toLowerCase().includes(metaOrgSearch.toLowerCase()) ||
-    (account.org_id ?? '').toLowerCase().includes(metaOrgSearch.toLowerCase()) ||
-    (account.user_id ?? '').toLowerCase().includes(metaOrgSearch.toLowerCase())
+  const filteredInvites = accessInvites.filter(invite =>
+    (invite.label ?? '').toLowerCase().includes(inviteSearch.toLowerCase()) ||
+    invite.id.toLowerCase().includes(inviteSearch.toLowerCase())
   );
 
   return (
     <div className={cn(embedded ? 'space-y-6' : 'page-shell', 'w-full min-w-0 overflow-x-hidden')}>
       {!embedded && (
-        <div>
+        <div className="mb-6">
           <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100 mb-1">Settings</h2>
+          <p className="text-xs text-stone-500">Deterministic Cluster-Organization Administration</p>
         </div>
       )}
 
@@ -636,319 +617,145 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
           </div>
         </div>
 
+        {/* 1. Cluster Administration */}
         <div className="section border-t border-stone-200 dark:border-stone-800 pt-6">
           <div className="flex items-center justify-between mb-4">
-            <h3 className="font-medium text-stone-900 dark:text-stone-100">Organization Context</h3>
-            {metaOrgId === null && role === 'admin' && (
-              <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50">
-                Global Admin
-              </span>
-            )}
-            {metaOrgId && (
+            <h3 className="font-medium text-stone-900 dark:text-stone-100">Cluster Administration</h3>
+            {clusterId && (
               <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300 border border-stone-200 dark:border-stone-700">
-                Cluster Admin
+                Authoritative Cluster
               </span>
             )}
           </div>
           
           <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Current Scope (Active Org ID)</label>
+            <div className="bg-stone-50 dark:bg-stone-900/40 rounded-xl p-4 border border-stone-200 dark:border-stone-800">
+              <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-[13px] bg-stone-100 dark:bg-stone-800/50 px-2 py-1.5 rounded border border-stone-200 dark:border-stone-800 text-stone-600 dark:text-stone-400 flex-1 truncate">
-                    {activeOrgId || 'No Organization Assigned'}
-                  </span>
+                  <ShieldCheck size={16} className="text-stone-400" />
+                  <span className="text-xs font-semibold text-stone-500 uppercase tracking-tight">Active Cluster ID</span>
                 </div>
+                <span className="font-mono text-[11px] text-stone-400 select-all">{clusterId || 'None'}</span>
               </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Cluster ID (Meta Org ID)</label>
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-[13px] bg-stone-100 dark:bg-stone-800/50 px-2 py-1.5 rounded border border-stone-200 dark:border-stone-800 text-stone-600 dark:text-stone-400 flex-1 truncate">
-                    {metaOrgId || 'None (Global Visibility)'}
-                  </span>
-                </div>
-              </div>
-            </div>
 
-            {managedOrgIds.length > 0 && (
-              <div className="space-y-2">
-                <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Switch Active Organization</label>
-                <div className="flex items-center gap-2 max-w-md">
-                  <select 
-                    className="control-input flex-1 text-xs"
-                    value={activeOrgId || ''}
-                    onChange={(e) => void updateProfileOrgId(e.target.value)}
-                  >
-                    <option value="">No Active Organization</option>
-                    {managedOrgIds.map(id => (
-                      <option key={id} value={id}>{id}</option>
-                    ))}
-                  </select>
-                  <button 
-                    type="button" 
-                    onClick={() => { void refreshData(); }}
-                    className="action-btn-secondary h-9 px-3"
-                    title="Refresh available list"
-                  >
-                    Refresh
-                  </button>
-                </div>
-                <p className="text-[11px] text-stone-400 dark:text-stone-500 italic">
-                  Switching organization context updates your RLS scope and reloads application data.
-                </p>
-              </div>
-            )}
-
-            {managedOrgIds.length === 0 && canAccessAdminUi && (
-              <div className="rounded-lg border border-stone-200 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-900/30 p-4">
-                <div className="flex items-center gap-3 mb-3">
-                  <AlertTriangle size={18} className="text-amber-600 dark:text-amber-400" />
-                  <p className="text-sm font-medium text-stone-900 dark:text-stone-100">No Managed Organizations Found</p>
-                </div>
-                <p className="text-xs text-stone-600 dark:text-stone-400 mb-4">
-                  You are an administrator but have no assigned organization context or cluster. 
-                  Provision a new organization to begin managing a workspace.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => { void provisionProfileOrgContext(); }}
-                  className="action-btn-primary text-xs flex items-center gap-2"
-                >
-                  <ShieldCheck size={14} />
-                  Provision My First Org Cluster
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="section border-t border-stone-200 dark:border-stone-800 pt-6">
-          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Access</h3>
-          <div className="space-y-2 text-sm text-stone-700 dark:text-stone-300">
-            <p><span className="font-medium">Role Source:</span> Locked</p>
-            <p className="truncate"><span className="font-medium">Workspace:</span> {activeOrgId ?? 'Not assigned'}</p>
-            {canManageMetaOrgAdmins && (
-              <p className="truncate"><span className="font-medium">Meta-Org:</span> {managedMetaOrgId ?? 'Not assigned yet'}</p>
-            )}
-          </div>
-        </div>
-
-        {!isDemoMode && user && (
-          <div className="section border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 shadow-sm">
-            <h3 className="font-medium mb-3 text-stone-900 dark:text-stone-100 flex items-center gap-2 text-base">
-              <ShieldCheck size={18} className="text-emerald-500" />
-              Organization & Context
-            </h3>
-            
-            <div className="space-y-4">
-              {!activeOrgId ? (
-                <div className="p-4 rounded-xl border border-amber-200 bg-amber-50 dark:border-amber-900/40 dark:bg-amber-950/20 text-sm text-amber-800 dark:text-amber-300">
-                  <p className="font-medium mb-1">Global Context Active</p>
-                  <p>Individual workspace features are locked until you join or provision a cluster. This ensures authoritative scoping for all operational data.</p>
-                </div>
+              {clusterAdminsLoading ? (
+                <div className="py-4 text-center text-xs text-stone-400">Loading cluster hierarchy...</div>
               ) : (
-                <div className="flex items-center justify-between p-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/50">
-                  <div>
-                    <p className="text-[10px] uppercase tracking-wider text-stone-500 dark:text-stone-400 font-bold">Active Cluster</p>
-                    <p className="font-mono text-[13px] text-stone-900 dark:text-stone-200 break-all">{activeOrgId}</p>
-                  </div>
-                  <button 
-                    onClick={() => { if(window.confirm('Detach from this workspace?')) void updateProfileOrgId(null); }}
-                    className="text-xs text-red-600 hover:text-red-700 font-medium px-2 py-1"
-                  >
-                    Detach
-                  </button>
+                <div className="space-y-3">
+                  {clusterAdmins.length === 0 && <p className="text-xs text-stone-400 italic text-center py-4">No cluster admins found.</p>}
+                  {filteredClusterAdmins.map(admin => (
+                    <div key={admin.user_id} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700/50">
+                      <div className="min-w-0 flex-1 mr-4">
+                        <p className="text-xs font-medium text-stone-900 dark:text-stone-100 truncate">{admin.email}</p>
+                        <p className="text-[10px] text-stone-500 uppercase tracking-tighter">{admin.role.replace('_', ' ')}</p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <select
+                          className="text-[10px] bg-stone-50 dark:bg-stone-900 border-stone-200 rounded px-1 py-0.5"
+                          value={pendingClusterRoles[admin.user_id] || admin.role}
+                          onChange={(e) => setPendingClusterRoles(prev => ({ ...prev, [admin.user_id]: e.target.value as any }))}
+                        >
+                          <option value="cluster_admin">Admin</option>
+                          <option value="cluster_operator">Operator</option>
+                          <option value="viewer">Viewer</option>
+                        </select>
+                        <button 
+                          onClick={() => void updateClusterAccountRole(admin)}
+                          disabled={busyClusterUserId === admin.user_id}
+                          className="text-[10px] text-emerald-600 font-bold uppercase hover:bg-emerald-50 dark:hover:bg-emerald-900/20 px-1.5 py-0.5 rounded"
+                        >
+                          {busyClusterUserId === admin.user_id ? '...' : 'Save'}
+                        </button>
+                        {admin.user_id !== user?.id && (
+                          <button 
+                            onClick={() => void deleteClusterAccount(admin)}
+                            disabled={busyClusterUserId === admin.user_id}
+                            className="text-[10px] text-stone-400 hover:text-red-600 px-1.5 py-0.5 rounded"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Workspace Deployment</label>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-stone-100 dark:bg-stone-800 text-stone-500 font-medium">Secured RPC</span>
-                </div>
-                <div className="flex gap-2">
-                  <select 
-                    className="control-input text-sm"
-                    value={activeOrgId || ''}
-                    onChange={(e) => { 
-                      const val = e.target.value;
-                      if (!val) return;
-                      void updateProfileOrgId(val); 
-                    }}
-                  >
-                    <option value="" disabled>Select a deployment to join...</option>
-                    {managedOrgIds.map((id: string) => (
-                      <option key={id} value={id}>{id.slice(0, 8)}...{id.slice(-8)} (Authoritative)</option>
-                    ))}
-                  </select>
-                </div>
-                <p className="text-[10px] text-stone-500 dark:text-stone-400 italic">Discovered {managedOrgIds.length} active workspace deployments via backend oracle.</p>
-              </div>
-
-              <div className="pt-2">
-                <button 
-                  onClick={() => {
-                    if (window.confirm('Provision and join a fresh workspace cluster?')) {
-                      void (async () => {
-                        try {
-                          const result = await provisionProfileOrgContext();
-                          if (Object.prototype.hasOwnProperty.call(result, 'meta_org_id')) {
-                            setManagedMetaOrgId(result.meta_org_id);
-                          }
-                          setMetaManagedOrgIds(result.managed_org_ids);
-                          void fetchMetaOrgAdmins(result.org_id, {
-                            meta_org_id: result.meta_org_id,
-                            managed_org_ids: result.managed_org_ids,
-                          });
-                        } catch (error) {
-                          const detailedError = error instanceof Error ? error.message : 'Unable to provision fresh workspace cluster.';
-                          notify({ type: 'error', message: detailedError });
-                        }
-                      })();
-                    }
-                  }}
-                  className="w-full interactive-3d bg-stone-900 dark:bg-emerald-600 text-white p-2.5 rounded-xl text-sm font-medium hover:bg-stone-800 dark:hover:bg-emerald-500 transition-colors shadow-sm"
-                >
-                  Provision Fresh Workspace
-                </button>
-              </div>
             </div>
           </div>
-        )}
+        </div>
 
-        {canManageMetaOrgAdmins && (
-          <div className="section">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-medium text-stone-900 dark:text-stone-100">Meta-Org Admins</h3>
-              <div className="flex items-center gap-2">
-                <span className="text-xs px-2 py-1 rounded-full bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300">
-                  {metaOrgAccounts.filter((account) => account.role === 'admin').length} admins
-                </span>
-                <button
-                  type="button"
-                  onClick={() => { void fetchMetaOrgAdmins(); }}
-                  disabled={metaOrgAdminsLoading}
-                  className="action-btn-secondary text-xs"
-                >
-                  {metaOrgAdminsLoading ? 'Loading…' : 'Refresh'}
-                </button>
-              </div>
-            </div>
-            <p className="text-sm text-stone-500 dark:text-stone-400 mb-4">
-              Promote or demote shared-org operators inside the current meta-org. Viewer accounts stay on the invite/request path so demo tenants remain isolated.
+        {/* 2. Organization Provisioning */}
+        <div className="section border-t border-stone-200 dark:border-stone-800 pt-6">
+          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Deterministic Provisioning</h3>
+          <div className="bg-white dark:bg-stone-900 border border-emerald-100 dark:border-emerald-900/30 rounded-xl p-4">
+            <p className="text-xs text-stone-600 dark:text-stone-400 mb-4">
+              Provision a new organization within your cluster. Deterministic mapping ensures cross-org stability.
             </p>
-            <div className="grid gap-2 md:grid-cols-2 mb-4 text-xs text-stone-500 dark:text-stone-400">
-              <div className="rounded-lg border border-stone-200 dark:border-stone-800 px-3 py-2">
-                <span className="font-medium text-stone-700 dark:text-stone-300">Managed meta-org:</span> {managedMetaOrgId ?? 'Will be assigned on first shared admin promotion'}
-              </div>
-              <div className="rounded-lg border border-stone-200 dark:border-stone-800 px-3 py-2">
-                <span className="font-medium text-stone-700 dark:text-stone-300">Managed orgs:</span> {managedOrgIds.length > 0 ? managedOrgIds.length : 1}
-              </div>
+            <div className="flex gap-3">
+              <button 
+                disabled={!clusterId}
+                onClick={() => void provisionOrganization()}
+                className="action-btn-primary text-xs h-9 px-4 disabled:opacity-50"
+              >
+                Add Organization to Cluster
+              </button>
+              {!clusterId && (
+                <button 
+                  onClick={() => void bootstrapClusterAdmin()}
+                  className="action-btn-secondary text-xs h-9 px-4 border-amber-200 text-amber-800 dark:text-amber-400 dark:border-amber-900/50"
+                >
+                  Bootstrap New Cluster
+                </button>
+              )}
             </div>
-
-            {metaOrgAdminsNotice && (
-              <div className="rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-4 py-3 text-xs text-stone-700 dark:text-stone-200 mb-4">
-                {metaOrgAdminsNotice}
-              </div>
-            )}
-
-            <CollapsibleWorkspaceSection
-              title="Meta-Org Accounts"
-              summary={`${metaOrgAccounts.length} scoped users`}
-              defaultExpanded
-              maxExpandedHeightClass="max-h-[420px]"
-              maxCollapsedHeightClass="max-h-[96px]"
-              extraHeaderContent={
-                <input
-                  type="text"
-                  placeholder="Search accounts..."
-                  value={metaOrgSearch}
-                  onChange={e => setMetaOrgSearch(e.target.value)}
-                  className="control-input py-1 px-2 text-xs min-w-[150px]"
-                />
-              }
-            >
-              <table className="desktop-grid w-full workspace-auto text-left text-[13px]">
-                <thead className="sticky top-0 z-10 bg-white dark:bg-stone-900 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-800">
-                  <tr>
-                    <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Login</th>
-                    <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Team Record</th>
-                    <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Org</th>
-                    <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Current</th>
-                    <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Set Role</th>
-                    <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                  {filteredMetaOrgAccounts.map((account) => {
-                    const currentSelectableRole: Extract<DbRole, 'admin' | 'operator'> = account.role === 'admin' ? 'admin' : 'operator';
-                    const pendingRole = pendingMetaOrgRoles[account.user_id] || currentSelectableRole;
-                    return (
-                      <tr key={account.user_id} className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 text-stone-700 dark:text-stone-300">
-                        <td className="px-4 py-2.5">
-                          <div className="truncate" title={account.login_id ?? ''}>{account.login_id ?? 'Unknown'}</div>
-                          <div className="text-[11px] text-stone-400 dark:text-stone-500">{account.created_at ? new Date(account.created_at).toLocaleDateString() : 'No created date'}</div>
-                        </td>
-                        <td className="px-4 py-2.5 text-xs">
-                          <div>{account.member_name ?? 'No team record'}</div>
-                          <div className="text-[11px] text-stone-400 dark:text-stone-500">{account.member_id ?? 'No member ID'}</div>
-                        </td>
-                        <td className="px-4 py-2.5 text-xs font-mono text-stone-500 dark:text-stone-400">{account.org_id ?? '-'}</td>
-                        <td className="px-4 py-2.5 capitalize">{dbRoleToAppRole(account.role)}</td>
-                        <td className="px-4 py-2.5">
-                          <select
-                            className="w-full px-2 py-1 text-xs border border-stone-200 dark:border-stone-700 rounded bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100"
-                            value={pendingRole}
-                            onChange={(e) => setPendingMetaOrgRoles(prev => ({ ...prev, [account.user_id]: e.target.value as Extract<DbRole, 'admin' | 'operator'> }))}
-                          >
-                            <option value="operator">Operator</option>
-                            <option value="admin">Admin</option>
-                          </select>
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => { void updateMetaOrgAccountRole(account); }}
-                              disabled={busyMetaOrgUserId === account.user_id || pendingRole === currentSelectableRole}
-                              className="px-2 py-1 rounded-md text-xs bg-stone-900 text-white hover:bg-stone-700 disabled:opacity-60 dark:bg-stone-100 dark:text-stone-900 dark:hover:bg-stone-300 transition-colors"
-                            >
-                              {busyMetaOrgUserId === account.user_id ? 'Saving…' : 'Apply'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => { void deleteMetaOrgAccount(account); }}
-                              disabled={busyMetaOrgUserId === account.user_id || account.user_id === user?.id}
-                              className="px-2 py-1 rounded-md text-xs border border-red-200 text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:text-red-400 dark:hover:bg-red-900/20 transition-colors"
-                              title="Delete Auth Account"
-                            >
-                              {busyMetaOrgUserId === account.user_id ? '…' : 'Delete'}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {!metaOrgAdminsLoading && metaOrgAccounts.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-stone-400">No scoped accounts found for this meta-org yet.</td>
-                    </tr>
-                  )}
-                  {metaOrgAdminsLoading && (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8">
-                        <div className="mx-auto max-w-sm">
-                          <LoadingLine label="Loading meta-org admins…" compact />
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </CollapsibleWorkspaceSection>
           </div>
-        )}
+        </div>
+
+        {/* 3. Cross-Organization Switching */}
+        <div className="section border-t border-stone-200 dark:border-stone-800 pt-6">
+          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Scoped Context Switcher</h3>
+          <div className="space-y-4">
+            <div className="flex flex-wrap gap-2">
+              {managedOrgIds.length === 0 && <p className="text-xs text-stone-400 italic">No organizations available to switch.</p>}
+              {managedOrgIds.map(id => (
+                <button
+                  key={id}
+                  onClick={() => void updateProfileOrgId(id)}
+                  className={cn(
+                    "text-[11px] px-3 py-1.5 rounded-full border transition-all",
+                    activeOrgId === id 
+                      ? "bg-stone-900 text-white border-stone-900 dark:bg-stone-100 dark:text-stone-900 dark:border-stone-100" 
+                      : "bg-white dark:bg-stone-800 text-stone-600 border-stone-200 dark:border-stone-700 hover:border-stone-400"
+                  )}
+                >
+                  {id.slice(0, 8)}...
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-stone-400 italic">
+              Switching organization updates your RLS scope instantly.
+            </p>
+          </div>
+        </div>
+
+        {/* 4. Admin Hierarchy Rules */}
+        <div className="section border-t border-stone-200 dark:border-stone-800 pt-6">
+          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Hierarchy Definitions</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="p-3 rounded-lg bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700">
+              <p className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-1">Clusters</p>
+              <p className="text-[11px] text-stone-600 dark:text-stone-400 leading-relaxed">
+                Top-level administrative containers. Cluster Admins manage all Orgs within.
+              </p>
+            </div>
+            <div className="p-3 rounded-lg bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700">
+              <p className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-1">Organizations</p>
+              <p className="text-[11px] text-stone-600 dark:text-stone-400 leading-relaxed">
+                Standard work environments. Membership is explicit and scoped per Org.
+              </p>
+            </div>
+          </div>
+        </div>
 
         <div className="section">
           <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Data</h3>
