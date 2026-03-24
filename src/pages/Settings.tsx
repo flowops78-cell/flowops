@@ -81,26 +81,37 @@ const generateInviteToken = () => {
 };
 
 export default function Settings({ embedded = false }: { embedded?: boolean }) {
+  // Pull only canonical DataContext properties
   const {
     isDemoMode,
     activeOrgId,
-    entities,
-    activities,
-    records,
-    teamMembers: teamMembers,
-    activityLogs,
-    expenses,
-    adjustments,
-    channelEntries,
-    systemEvents,
-    operatorLogs,
-    recordSystemEvent,
+    entities: rawEntities,
+    activities: rawActivities,
+    records: rawRecords,
+    teamMembers: rawTeamMembers,
+    activityLogs: rawActivityLogs,
+    systemEvents: rawSystemEvents,
     refreshData,
-    updateProfileOrgId,
-    bootstrapClusterAdmin,
-    managedOrgIds,
-    clusterId,
   } = useData();
+
+  // Defensive guards — no collection can be undefined
+  const entities = rawEntities ?? [];
+  const activities = rawActivities ?? [];
+  const records = rawRecords ?? [];
+  const teamMembers = rawTeamMembers ?? [];
+  const activityLogs = rawActivityLogs ?? [];
+  const systemEvents = rawSystemEvents ?? [];
+
+  // Removed APIs — stubbed as safe no-ops until Settings is fully migrated
+  const expenses: any[] = [];
+  const adjustments: any[] = [];
+  const channelEntries: any[] = [];
+  const operatorLogs: any[] = [];
+  const recordSystemEvent = async (_data: any) => {};
+  const updateProfileOrgId = async (_id: string) => {};
+  const bootstrapClusterAdmin = async (_data: any) => {};
+  const managedOrgIds: string[] = [];
+  const clusterId: string | null = null;
   const { role, clusterRole, isClusterAdmin, canAccessAdminUi } = useAppRole();
 
   const { notify } = useNotification();

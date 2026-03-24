@@ -5,7 +5,8 @@ import { User, Activity, Clock3 } from 'lucide-react';
 import { useLabels } from '../lib/labels';
 
 export default function LiveOperatorsTracker() {
-  const { operatorLogs, systemEvents } = useData();
+  const { activityLogs: operatorLogs = [], systemEvents: rawSystemEvents } = useData();
+  const systemEvents = rawSystemEvents ?? [];
   const { canAccessAdminUi } = useAppRole();
   const { getEventLabel } = useLabels();
 
