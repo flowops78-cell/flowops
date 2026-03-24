@@ -110,19 +110,19 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const recordSystemEvent = async (_data: any) => {};
   const updateProfileOrgId = async (_id: string) => {};
   const bootstrapClusterAdmin = async () => {
-    if (!supabase || !activeOrgId) {
-      notify({ type: 'error', message: 'Not ready: missing org context.' });
+    if (!supabase) {
+      notify({ type: 'error', message: 'Not ready: client not initialized.' });
       return;
     }
     if (!window.confirm('Bootstrap a new cluster and make yourself cluster admin? This is a one-time operation.')) return;
     const accessToken = await getSupabaseAccessToken();
-    if (!accessToken) { notify({ type: 'error', message: 'Unable to get access token.' }); return; }
+    if (!accessToken) { notify({ type: 'error', message: 'Unable to get access token. Please sign in.' }); return; }
     const { data, error } = await supabase.functions.invoke('manage-organizations', {
       headers: { Authorization: `Bearer ${accessToken}`, apikey: SUPABASE_ANON_KEY },
-      body: { action: 'bootstrap-cluster-admin', org_id: activeOrgId },
+      body: { action: 'bootstrap-cluster-admin' },
     });
     if (error) { notify({ type: 'error', message: `Bootstrap failed: ${String(error)}` }); return; }
-    notify({ type: 'success', message: (data as any)?.message ?? 'Cluster bootstrapped. Reload to reflect changes.' });
+    notify({ type: 'success', message: (data as any)?.message ?? 'Cluster bootstrapped! Reload to activate your new cluster.' });
     await refreshData();
     await fetchClusterAdmins();
   };
