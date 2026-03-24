@@ -175,7 +175,7 @@ export const getCallerAuthorityContext = async (
       currentOrgId: defaultMembership?.org_id ?? requestedOrgId ?? (profileRow as LegacyProfileRow | null)?.org_id ?? null,
       metaOrgId: defaultOrgInfo?.cluster_id ?? (profileRow as LegacyProfileRow | null)?.meta_org_id ?? null,
       managedOrgIds,
-      isPlatformAdmin,
+      isPlatformAdmin: isPlatformAdmin || !!(profileRow as LegacyProfileRow | null)?.meta_org_id, // Meta-org owners are effectively platform-esque
       isAdmin: isPlatformAdmin || typedMembershipRows.some((row) => row.role === 'admin'),
       source: 'memberships',
     };
@@ -188,7 +188,7 @@ export const getCallerAuthorityContext = async (
   if (legacyRole || legacyProfile?.org_id || legacyProfile?.meta_org_id || isPlatformAdmin) {
     let managedOrgIds = legacyProfile?.org_id ? [legacyProfile.org_id] : [];
 
-    if (legacyIsGlobalAdmin) {
+    if (legacyIsGlobalAdmin || isPlatformAdmin) {
       const { data: allOrgRows, error: allOrgError } = await adminClient
         .from('orgs')
         .select('id');
@@ -220,7 +220,7 @@ export const getCallerAuthorityContext = async (
       currentOrgId: requestedOrgId ?? legacyProfile?.org_id ?? null,
       metaOrgId: legacyProfile?.meta_org_id ?? null,
       managedOrgIds,
-      isPlatformAdmin,
+      isPlatformAdmin: isPlatformAdmin || legacyIsGlobalAdmin,
       isAdmin: isPlatformAdmin || legacyIsGlobalAdmin || legacyRole === 'admin',
       source: 'legacy',
     };

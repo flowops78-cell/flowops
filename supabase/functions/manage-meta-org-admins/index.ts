@@ -601,7 +601,7 @@ Deno.serve(async (request: Request) => {
 
   const profileQuery = adminClient
     .from('profiles')
-    .select('id, org_id, meta_org_id, created_at');
+    .select('id, org_id, meta_org_id, created_at, profiles_user_id()');
 
   const { data: profileRows, error: profileRowsError } = (clusterContext.isPlatformAdmin || clusterContext.metaOrgId === null)
     ? await profileQuery
@@ -618,10 +618,9 @@ Deno.serve(async (request: Request) => {
       .from('user_roles')
       .select('user_id, role')
       .in('user_id', profileIds),
-    adminClient
-      .from('org_memberships')
-      .select('user_id, org_id, role, is_default_org')
-      .in('org_id', managedOrgIds),
+    clusterContext.isPlatformAdmin 
+      ? adminClient.from('org_memberships').select('user_id, org_id, role, is_default_org')
+      : adminClient.from('org_memberships').select('user_id, org_id, role, is_default_org').in('org_id', managedOrgIds),
   ]);
 
   if (roleRowsError) {
@@ -632,10 +631,11 @@ Deno.serve(async (request: Request) => {
     return json(400, { error: `Unable to load managed memberships: ${membershipRoleRowsError.message}` }, origin);
   }
 
-  const { data: memberRows, error: memberRowsError } = await adminClient
-    .from('members')
-    .select('user_id, member_id, name, org_id')
-    .in('org_id', managedOrgIds);
+  const { data: memberRows, error: memberRowsError } = await (
+    clusterContext.isPlatformAdmin
+      ? adminClient.from('members').select('user_id, member_id, name, org_id')
+      : adminClient.from('members').select('user_id, member_id, name, org_id').in('org_id', managedOrgIds)
+  );
 
   if (memberRowsError) {
     return json(400, { error: `Unable to load managed member rows: ${memberRowsError.message}` }, origin);

@@ -13,13 +13,31 @@ export default function LiveOperatorsTracker() {
   if (!canAccessAdminUi) return null;
 
   const activeUsers = useMemo(() => {
-    return operatorLogs.filter(activity => activity.is_active);
+    const STALENESS_THRESHOLD_MS = 300000; // 5 minutes
+    const now = Date.now();
+    
+    // 1. Filter by active flag AND recent last_active_at
+    const trulyActive = operatorLogs.filter(activity => {
+      if (!activity.is_active || !activity.last_active_at) return false;
+      const lastActive = new Date(activity.last_active_at).getTime();
+      return (now - lastActive) < STALENESS_THRESHOLD_MS;
+    });
+
+    // 2. Deduplicate by actor_user_id, keeping the most recent activity
+    const seenUsers = new Set<string>();
+    return trulyActive
+      .sort((a, b) => new Date(b.last_active_at).getTime() - new Date(a.last_active_at).getTime())
+      .filter(activity => {
+        if (seenUsers.has(activity.actor_user_id)) return false;
+        seenUsers.add(activity.actor_user_id);
+        return true;
+      });
   }, [operatorLogs]);
 
   const operatorMetrics = useMemo(() => {
     return activeUsers.map(activity => {
       const theirEntries = systemEvents.filter(
-        event => event.operator_activity_id === activity.id
+        event => event.actor_user_id === activity.actor_user_id // Match by user ID for consolidated activity
       ).sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       
       return {
