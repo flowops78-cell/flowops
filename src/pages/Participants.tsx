@@ -78,7 +78,7 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
   };
 
   const openParticipantProfile = (participantId: string) => {
-    navigate(`/units/${participantId}`);
+    navigate(`/participants/${participantId}`);
   };
 
   const normalizeValueInput = (value: string, setValue: (next: string) => void) => {

@@ -9,25 +9,25 @@ import { useAppRole } from '../context/AppRoleContext';
 import { useLabels } from '../lib/labels';
 
 const Activities = lazy(() => import('./Activities'));
-const Entities = lazy(() => import('./Entities'));
+const Participants = lazy(() => import('./Participants'));
 
 export default function ActivityMonitor() {
   const location = useLocation();
   const { canAccessAdminUi } = useAppRole();
   const { tx } = useLabels();
-  const allowedTabs = useMemo<Array<'workspaces' | 'crm'>>(
-    () => (canAccessAdminUi ? ['workspaces', 'crm'] : ['workspaces']),
+  const allowedTabs = useMemo<Array<'workspaces' | 'participants'>>(
+    () => (canAccessAdminUi ? ['workspaces', 'participants'] : ['workspaces']),
     [canAccessAdminUi],
   );
-  const [activeTab, setActiveTab] = useState<'workspaces' | 'crm'>(
-    (canAccessAdminUi && location.pathname === '/units')
-      ? 'crm'
+  const [activeTab, setActiveTab] = useState<'workspaces' | 'participants'>(
+    (canAccessAdminUi && location.pathname === '/participants')
+      ? 'participants'
       : 'workspaces'
   );
 
   useEffect(() => {
-    const nextTab = (canAccessAdminUi && location.pathname === '/units')
-      ? 'crm'
+    const nextTab = (canAccessAdminUi && location.pathname === '/participants')
+      ? 'participants'
       : 'workspaces';
     setActiveTab(nextTab);
   }, [canAccessAdminUi, location.pathname]);
@@ -46,8 +46,8 @@ export default function ActivityMonitor() {
     };
   }, [allowedTabs]);
 
-  const breadcrumbItems = activeTab === 'crm'
-    ? [tx('Activity'), 'Entities']
+  const breadcrumbItems = activeTab === 'participants'
+    ? [tx('Activity'), 'Participants']
     : [tx('Activity'), tx('Overview')];
 
   return (
@@ -75,17 +75,17 @@ export default function ActivityMonitor() {
           </button>
           {canAccessAdminUi && (
             <button
-              onClick={() => setActiveTab('crm')}
-              title="Entity profiles and relationship activity"
+              onClick={() => setActiveTab('participants')}
+              title="Participant profiles and relationship activity"
               className={cn(
                   'interactive-3d px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors inline-flex items-center justify-center gap-1.5 min-h-[36px]',
-                activeTab === 'crm'
+                activeTab === 'participants'
                   ? 'toggle-indirect-active'
                   : 'toggle-indirect-idle'
               )}
             >
               <UserRound size={16} />
-              Entities
+              Participants
             </button>
           )}
         </div>
@@ -100,7 +100,7 @@ export default function ActivityMonitor() {
           </div>
         }
       >
-        {activeTab === 'workspaces' ? <Activities embedded /> : <Entities embedded />}
+        {activeTab === 'workspaces' ? <Activities embedded /> : <Participants embedded />}
       </Suspense>
     </div>
   );

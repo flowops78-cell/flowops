@@ -13,8 +13,8 @@ const routePreloaders: Record<string, () => Promise<unknown>> = {
   '/channels-fallback': () => Promise.all([
     preloadRoute('/channels'),
   ]),
-  '/contacts': () => Promise.all([
-    import('../pages/AssociateNetwork'),
+  '/collaborations': () => Promise.all([
+    import('../pages/CollaborationNetwork'),
   ]),
   '/team': () => Promise.all([
     import('../pages/Team'),
@@ -40,7 +40,7 @@ export const preloadCoreRoutesOnIdle = () => {
       preloadRoute('/'),
       preloadRoute('/activity'),
       preloadRoute('/channels'),
-      preloadRoute('/contacts'),
+      preloadRoute('/collaborations'),
       preloadRoute('/team'),
       preloadRoute('/settings'),
     ]);
