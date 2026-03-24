@@ -141,6 +141,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (typeof window === 'undefined') return null;
     return localStorage.getItem('flow_ops_last_meta_org_id');
   });
+
+  const updateActiveOrgId = (id: string | null) => {
+    setActiveOrgId(id);
+    if (typeof window !== 'undefined') {
+      if (id) localStorage.setItem('flow_ops_last_org_id', id);
+      else localStorage.removeItem('flow_ops_last_org_id');
+    }
+  };
+
+  const updateActiveMetaOrgId = (id: string | null) => {
+    setActiveMetaOrgId(id);
+    if (typeof window !== 'undefined') {
+      if (id) localStorage.setItem('flow_ops_last_meta_org_id', id);
+      else localStorage.removeItem('flow_ops_last_meta_org_id');
+    }
+  };
   const loadingProgressTimerRef = useRef<number | null>(null);
   const loadingProgressResetTimerRef = useRef<number | null>(null);
   const fetchVersionRef = useRef(0);
@@ -3080,9 +3096,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (functionError) throw new Error(functionError.message || 'Failed to switch organization cluster.');
 
     if (Object.prototype.hasOwnProperty.call(data ?? {}, 'org_id')) {
-      setActiveOrgId(data?.org_id ?? null);
+      updateActiveOrgId(data?.org_id ?? null);
     } else {
-      setActiveOrgId(orgId);
+      updateActiveOrgId(orgId);
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data ?? {}, 'meta_org_id')) {
+      updateActiveMetaOrgId(data?.meta_org_id ?? null);
     }
 
     if (user?.id && orgId) {
@@ -3148,11 +3168,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (functionError) throw new Error(functionError.message || 'Failed to provision fresh workspace cluster.');
 
-    if (!data?.org_id) {
-      throw new Error('Provisioning completed without a new organization id.');
+    updateActiveOrgId(data.org_id);
+    
+    if (data?.meta_org_id) {
+      updateActiveMetaOrgId(data.meta_org_id);
     }
-
-    setActiveOrgId(data.org_id);
 
     if (data?.managed_org_ids) {
       setManagedOrgIds(data.managed_org_ids);

@@ -278,7 +278,7 @@ Deno.serve(async (request: Request) => {
     return json(403, { error: error instanceof Error ? error.message : 'Unable to resolve admin scope.' }, origin);
   }
 
-  if (payload.action === 'list-org-contexts') {
+  if (payload.action === 'list-org-contexts' || payload.action === 'list' || (payload as any).action === 'list-meta-org-admins') {
     if (clusterContext.isPlatformAdmin || clusterContext.metaOrgId === null) {
       const { data: workspaceOrgRows, error: workspaceOrgRowsError } = await adminClient
         .from('workspaces')
