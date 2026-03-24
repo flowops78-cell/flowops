@@ -188,11 +188,22 @@ Deno.serve(async (request: Request) => {
   if (payload.action === 'bootstrap-cluster-admin') {
     const { data: existingMemberships, error: membershipError } = await adminClient
       .from('cluster_memberships')
-      .select('id')
+      .select('id, cluster_id')
       .eq('user_id', callerUserId);
 
+    // Cross-validate: membership must reference a real cluster row to count as bootstrapped
     if (!membershipError && existingMemberships && existingMemberships.length > 0) {
-      return json(200, { ok: true, message: 'Cluster already bootstrapped.' }, origin);
+      const clusterIds = existingMemberships.map((m: any) => m.cluster_id).filter(Boolean);
+      if (clusterIds.length > 0) {
+        const { data: realClusters } = await adminClient
+          .from('clusters')
+          .select('id')
+          .in('id', clusterIds);
+        if (realClusters && realClusters.length > 0) {
+          return json(200, { ok: true, message: 'Cluster already bootstrapped.' }, origin);
+        }
+      }
+      // Orphaned membership rows — allow re-bootstrap by falling through
     }
 
     const clusterId = crypto.randomUUID();

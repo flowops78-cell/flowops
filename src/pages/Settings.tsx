@@ -126,8 +126,8 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     await refreshData();
     await fetchClusterAdmins();
   };
-  const managedOrgIds: string[] = [];
-  const clusterId: string | null = null;
+  // NOTE: these are wired to real state below after useState declarations
+  // clusterId and managedOrgIds are declared after the useState block
   const { role, clusterRole, isClusterAdmin, canAccessAdminUi } = useAppRole();
 
   const { notify } = useNotification();
@@ -158,6 +158,10 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [clusterAdmins, setClusterAdmins] = React.useState<ManagedClusterAccount[]>([]);
   const [managedClusterId, setManagedClusterId] = React.useState<string | null>(null);
   const [clusterManagedOrgIds, setClusterManagedOrgIds] = React.useState<string[]>([]);
+
+  // Wire real state to the variables used in JSX
+  const clusterId = managedClusterId;
+  const managedOrgIds = clusterManagedOrgIds;
   const [clusterAdminsLoading, setClusterAdminsLoading] = React.useState(false);
   const [clusterAdminsNotice, setClusterAdminsNotice] = React.useState<string | null>(null);
   const [pendingClusterRoles, setPendingClusterRoles] = React.useState<Record<string, 'cluster_admin' | 'cluster_operator'>>({});
@@ -312,7 +316,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     orgIdOverride?: string,
   ) => {
     const orgId = orgIdOverride ?? activeOrgId;
-    if (!isSupabaseConfigured || !supabase || !canAccessAdminUi || !orgId) return;
+    if (!isSupabaseConfigured || !supabase || !canAccessAdminUi) return;
 
     setClusterAdminsLoading(true);
     setClusterAdminsNotice(null);
