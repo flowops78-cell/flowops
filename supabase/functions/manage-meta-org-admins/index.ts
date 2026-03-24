@@ -601,13 +601,14 @@ Deno.serve(async (request: Request) => {
 
   const profileQuery = adminClient
     .from('profiles')
-    .select('id, org_id, meta_org_id, created_at, profiles_user_id()');
+    .select('id, org_id, meta_org_id, created_at');
 
   const { data: profileRows, error: profileRowsError } = (clusterContext.isPlatformAdmin || clusterContext.metaOrgId === null)
     ? await profileQuery
     : await profileQuery.in('org_id', managedOrgIds);
 
   if (profileRowsError) {
+    console.error(`[manage-meta-org-admins] profileRowsError:`, profileRowsError);
     return json(400, { error: `Unable to load managed profiles: ${profileRowsError.message}` }, origin);
   }
 
@@ -622,6 +623,8 @@ Deno.serve(async (request: Request) => {
       ? adminClient.from('org_memberships').select('user_id, org_id, role, is_default_org')
       : adminClient.from('org_memberships').select('user_id, org_id, role, is_default_org').in('org_id', managedOrgIds),
   ]);
+
+  console.log(`[manage-meta-org-admins] Loaded roles: ${roleRows?.length ?? 0}, memberships: ${membershipRoleRows?.length ?? 0}`);
 
   if (roleRowsError) {
     return json(400, { error: `Unable to load managed roles: ${roleRowsError.message}` }, origin);
@@ -648,6 +651,8 @@ Deno.serve(async (request: Request) => {
   if (!authUsers.data?.users) {
     return json(400, { error: 'Auth user directory is currently unreachable. Please retry.' }, origin);
   }
+
+  console.log(`[manage-meta-org-admins] Mapping ${typedProfileRows.length} accounts with ${authUsers.data.users.length} auth users`);
 
   const emailByUserId = new Map<string, string | null>(
     authUsers.data.users.map((item: AuthUserSummary) => [item.id, typeof item.email === 'string' ? item.email : null]),
