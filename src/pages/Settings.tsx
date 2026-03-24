@@ -176,8 +176,15 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [pendingClusterRoles, setPendingClusterRoles] = React.useState<Record<string, 'cluster_admin' | 'cluster_operator'>>({});
   const [busyClusterUserId, setBusyClusterUserId] = React.useState<string | null>(null);
   const [clusterSearch, setClusterSearch] = React.useState('');
-  // Two-level switcher state: which cluster is selected in the scope switcher
   const [scopeClusterId, setScopeClusterId] = React.useState<string | null>(null);
+  // Bulk Export state
+  const [exportScope, setExportScope] = React.useState<'cluster' | 'org'>('org');
+  const [exportOrgId, setExportOrgId] = React.useState<string>('');
+  const [exportClusterId, setExportClusterId] = React.useState<string>('');
+  const [exportDataset, setExportDataset] = React.useState<string>('all');
+  const [isExporting, setIsExporting] = React.useState(false);
+  const [lastExportMeta, setLastExportMeta] = React.useState<{ rows: number; ts: string } | null>(null);
+  const isOrgAdmin = !isClusterAdmin && role === 'admin';
 
   const canManageGlobalData = canAccessAdminUi;
   const profileId = user?.id ?? '';
@@ -1048,39 +1055,131 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               </button>
             </div>
 
-            <div className={cn(
-              "border rounded-xl p-4 flex flex-col justify-between transition-all shadow-sm",
-              isClusterAdmin 
-                ? "bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800" 
-                : "bg-stone-50/50 dark:bg-stone-900/20 border-dashed border-stone-200 dark:border-stone-700/50 opacity-80"
-            )}>
-              <div>
-                <h4 className={cn(
-                  "text-xs font-semibold uppercase tracking-tight mb-2",
-                  isClusterAdmin ? "text-stone-900 dark:text-stone-100" : "text-stone-400"
-                )}>Bulk Export</h4>
-                <p className={cn(
-                  "text-[11px] leading-relaxed",
-                  isClusterAdmin ? "text-stone-600 dark:text-stone-400" : "text-stone-400 italic"
-                )}>
-                  {isClusterAdmin 
-                    ? "Generate a comprehensive operational audit. Export all entities, activities, and records to a deterministic JSON/CSV package." 
-                    : "Data export is currently restricted to reduce privacy exposure and maintain compliance integrity."}
-                </p>
-              </div>
-              <button 
-                onClick={() => isClusterAdmin && notify({ type: 'success', message: 'Export engine initializing... preparing deterministic data package.' })}
-                disabled={!isClusterAdmin} 
-                className={cn(
-                  "mt-4 w-full text-xs h-9 rounded-md transition-all font-semibold",
-                  isClusterAdmin 
-                    ? "bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 hover:opacity-90 active:scale-[0.98]" 
-                    : "border border-stone-100 dark:border-stone-800 text-stone-300 dark:text-stone-600 bg-transparent cursor-not-allowed"
-                )}
-              >
-                {isClusterAdmin ? 'Export Operational Data' : 'Export (Restricted)'}
-              </button>
-            </div>
+            {/* Bulk Export — governed, scoped, role-gated */}
+            {(() => {
+              const canExport = isClusterAdmin || isOrgAdmin;
+              if (!canExport) {
+                return (
+                  <div className="bg-stone-50/50 dark:bg-stone-900/20 border border-dashed border-stone-200 dark:border-stone-700/50 rounded-xl p-4 opacity-70">
+                    <h4 className="text-xs font-semibold uppercase tracking-tight text-stone-400 mb-1">Bulk Export</h4>
+                    <p className="text-[11px] text-stone-400 italic">Data export is restricted to workspace admins and above. Operators do not have export access.</p>
+                  </div>
+                );
+              }
+
+              const runExport = async () => {
+                if (!window.confirm(
+                  `Export ${exportDataset} data for ${exportScope === 'cluster' ? 'entire cluster' : 'selected org'}?\n\nThis action will be recorded in the audit log.`
+                )) return;
+                setIsExporting(true);
+                try {
+                  const accessToken = await getSupabaseAccessToken();
+                  if (!accessToken) throw new Error('Session expired.');
+                  const body: Record<string, string> = { scope: exportScope, dataset: exportDataset };
+                  if (exportScope === 'org') body.org_id = exportOrgId || activeOrgId || '';
+                  if (exportScope === 'cluster') body.cluster_id = exportClusterId || clusterId || '';
+
+                  const { data, error } = await supabase!.functions.invoke('export-data', {
+                    headers: { Authorization: `Bearer ${accessToken}`, apikey: SUPABASE_ANON_KEY },
+                    body,
+                  });
+                  if (error) throw error;
+                  const result = data as any;
+                  // Trigger JSON download
+                  const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `flow-ops-export-${exportScope}-${exportDataset}-${new Date().toISOString().slice(0, 10)}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  setLastExportMeta({ rows: result.total_rows ?? 0, ts: result.exported_at ?? new Date().toISOString() });
+                  notify({ type: 'success', message: `Exported ${result.total_rows ?? 0} rows. Audit trail saved.` });
+                } catch (err) {
+                  notify({ type: 'error', message: `Export failed: ${err instanceof Error ? err.message : String(err)}` });
+                } finally {
+                  setIsExporting(false);
+                }
+              };
+
+              const orgOptions = isClusterAdmin
+                ? Object.entries(availableOrgs)
+                : Object.entries(availableOrgs).filter(([id]) => managedOrgIds.includes(id));
+
+              return (
+                <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl p-4 flex flex-col gap-3 shadow-sm">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-semibold uppercase tracking-tight text-stone-900 dark:text-stone-100">Bulk Export</h4>
+                    {lastExportMeta && (
+                      <span className="text-[10px] text-stone-400 italic">
+                        Last: {lastExportMeta.rows} rows · {new Date(lastExportMeta.ts).toLocaleTimeString()}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-stone-500 dark:text-stone-400 leading-relaxed">
+                    Generate a deterministic operational export. All exports are audit-logged with actor, timestamp, scope, and row counts.
+                  </p>
+
+                  {/* Scope selector */}
+                  {isClusterAdmin && (
+                    <div className="flex gap-2">
+                      {(['cluster', 'org'] as const).map(s => (
+                        <button
+                          key={s}
+                          onClick={() => setExportScope(s)}
+                          className={cn(
+                            "px-3 py-1 rounded-lg text-[11px] font-medium border transition-all",
+                            exportScope === s
+                              ? "bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 border-stone-900 dark:border-stone-100"
+                              : "bg-white dark:bg-stone-800 text-stone-500 border-stone-200 dark:border-stone-700 hover:border-stone-400"
+                          )}
+                        >
+                          {s === 'cluster' ? 'Cluster Scope' : 'Org Scope'}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Org selector (org scope only) */}
+                  {(exportScope === 'org' || !isClusterAdmin) && orgOptions.length > 1 && (
+                    <select
+                      value={exportOrgId || activeOrgId || ''}
+                      onChange={e => setExportOrgId(e.target.value)}
+                      className="w-full border border-stone-200 dark:border-stone-700 rounded-lg px-3 py-1.5 text-xs bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-200"
+                    >
+                      {orgOptions.map(([id, org]) => (
+                        <option key={id} value={id}>{org.name || id}</option>
+                      ))}
+                    </select>
+                  )}
+
+                  {/* Dataset selector */}
+                  <select
+                    value={exportDataset}
+                    onChange={e => setExportDataset(e.target.value)}
+                    className="w-full border border-stone-200 dark:border-stone-700 rounded-lg px-3 py-1.5 text-xs bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-200"
+                  >
+                    <option value="all">All Datasets</option>
+                    <option value="entities">Entities</option>
+                    <option value="activities">Activities</option>
+                    <option value="records">Records</option>
+                    <option value="team_members">Team Members</option>
+                    <option value="collaborations">Collaborations</option>
+                    <option value="channels">Channels</option>
+                    <option value="audit_events">Audit Events</option>
+                  </select>
+
+                  <button
+                    onClick={() => void runExport()}
+                    disabled={isExporting}
+                    className="w-full text-xs h-9 rounded-md font-semibold transition-all bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 hover:opacity-90 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isExporting ? 'Exporting…' : 'Export Operational Data'}
+                  </button>
+                </div>
+              );
+            })()}
+
           </div>
         </div>
 
