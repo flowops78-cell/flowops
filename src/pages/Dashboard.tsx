@@ -12,7 +12,7 @@ import { useAppRole } from '../context/AppRoleContext';
 const DashboardCharts = lazy(() => import('../components/dashboard/DashboardCharts'));
 
 export default function Dashboard({ embedded = false }: { embedded?: boolean }) {
-  const { entities, activities, records, channelEntries, adjustments } = useData();
+  const { entities, activities, records } = useData();
   const { canAccessAdminUi } = useAppRole();
   const { theme } = useTheme();
   const navigate = useNavigate();
@@ -25,27 +25,27 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
   // Stats Calculation
   const totalActivitys = activities.length;
   const totalEntitys = entities.length;
-  const totalRecordFlow = useMemo(() => records.reduce((sum, record) => sum + record.unit_amount, 0), [records]);
+  const safeRecords = records ?? [];
+  const totalRecordFlow = useMemo(() => safeRecords.reduce((sum, r) => sum + (r.unit_amount ?? 0), 0), [safeRecords]);
+  // Derive channel-level stats from applied records
   const currentChannelTotal = useMemo(
-    () => channelEntries.reduce((sum, record) => sum + (record.type === 'increment' ? record.amount : -record.amount), 0),
-    [channelEntries]
+    () => safeRecords.filter(r => r.status === 'applied').reduce((sum, r) =>
+      sum + (r.direction === 'increase' ? r.unit_amount : r.direction === 'decrease' ? -r.unit_amount : 0), 0),
+    [safeRecords]
   );
   const totalInflow = useMemo(
-    () => channelEntries.reduce((sum, record) => sum + (record.type === 'increment' ? record.amount : 0), 0),
-    [channelEntries],
+    () => safeRecords.filter(r => r.status === 'applied' && r.direction === 'increase').reduce((sum, r) => sum + r.unit_amount, 0),
+    [safeRecords],
   );
   const totalOutflow = useMemo(
-    () => channelEntries.reduce((sum, record) => sum + (record.type === 'decrement' ? record.amount : 0), 0),
-    [channelEntries],
+    () => safeRecords.filter(r => r.status === 'applied' && r.direction === 'decrease').reduce((sum, r) => sum + r.unit_amount, 0),
+    [safeRecords],
   );
-  const totalDeferredActive = useMemo(() => {
-    const entityTotals: Record<string, number> = {};
-    adjustments.forEach(record => {
-      if (!entityTotals[record.entity_id]) entityTotals[record.entity_id] = 0;
-      entityTotals[record.entity_id] += record.type === 'input' ? record.amount : -record.amount;
-    });
-    return Object.values(entityTotals).reduce((sum, value) => sum + value, 0);
-  }, [adjustments]);
+  // Deferred = sum of pending/deferred records not yet applied
+  const totalDeferredActive = useMemo(() =>
+    safeRecords.filter(r => r.status === 'deferred' || r.status === 'pending')
+      .reduce((sum, r) => sum + (r.unit_amount ?? 0), 0),
+    [safeRecords]);
   const activeActivitysCount = useMemo(() => activities.filter(g => !g.end_time).length, [activities]);
 
   // Optimize O(N^2) operations with indexed lookups
