@@ -17,7 +17,13 @@ alter table if exists adjustments rename column unit_id to entity_id;
 alter table if exists entity_account_entries rename column unit_id to entity_id;
 
 -- 4. Rename Functions
-alter function if exists adjust_unit_balance(uuid, numeric) rename to adjust_entity_balance;
+do $$
+begin
+  if exists (select 1 from pg_proc where proname = 'adjust_unit_balance') then
+    alter function adjust_unit_balance(uuid, numeric) rename to adjust_entity_balance;
+  end if;
+end;
+$$;
 
 -- 5. Update RLS Policies (Rename them for clarity)
 alter policy if exists "units_select" on entities rename to "entities_select";
