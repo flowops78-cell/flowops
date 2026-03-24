@@ -131,7 +131,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   };
   // NOTE: these are wired to real state below after useState declarations
   // clusterId and managedOrgIds are declared after the useState block
-  const { role, clusterRole, isClusterAdmin, canAccessAdminUi, clusterId: contextClusterId } = useAppRole();
+  const { role, clusterRole, isClusterAdmin, canAccessAdminUi, clusterId: contextClusterId, refreshAuthority } = useAppRole();
 
   const { notify } = useNotification();
   const { user, updatePassword: supabaseUpdatePassword } = useAuth();
@@ -678,8 +678,14 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     }
 
     notify({ type: 'success', message: 'New organization provisioned.' });
+    // Refresh authority so managedOrgIds updates → availableOrgs re-fetches → switcher shows new org
+    await refreshAuthority();
     await refreshData();
     await fetchClusterAdmins();
+    // Auto-switch into the newly provisioned org if returned
+    if ((data as any)?.org_id) {
+      switchOrg((data as any).org_id);
+    }
   };
 
   const filteredClusterAdmins = clusterAdmins.filter(admin =>

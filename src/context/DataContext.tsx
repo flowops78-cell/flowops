@@ -122,20 +122,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         })));
       }
 
-      // Fetch organization metadata for managedOrgIds
-      if (managedOrgIds.length > 0) {
-        const { data: orgs } = await supabase!
-          .from('organizations')
-          .select('id, name, tag, slug')
-          .in('id', managedOrgIds);
-        if (orgs) {
-          const orgMap = (orgs as any[]).reduce((acc, org) => ({
-            ...acc,
-            [org.id]: org
-          }), {} as Record<string, Organization>);
-          setAvailableOrgs(orgMap);
-        }
-      }
+      // Fetch organization metadata for managedOrgIds is handled in its own effect below
+
     } catch (err) {
       console.error("Fetch error:", err);
     } finally {
@@ -148,6 +136,27 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       fetchData();
     }
   }, [authLoading, roleLoading, activeOrgId]);
+
+  // Dedicated effect: refresh available orgs whenever the admin's managed org list changes
+  // This ensures the Scoped Context Switcher updates immediately after provisioning
+  const refreshAvailableOrgs = async () => {
+    if (!supabase || managedOrgIds.length === 0) {
+      setAvailableOrgs({});
+      return;
+    }
+    const { data: orgs } = await supabase
+      .from('organizations')
+      .select('id, name, tag, slug')
+      .in('id', managedOrgIds);
+    if (orgs) {
+      const orgMap = (orgs as any[]).reduce((acc, org) => ({ ...acc, [org.id]: org }), {} as Record<string, Organization>);
+      setAvailableOrgs(orgMap);
+    }
+  };
+
+  useEffect(() => {
+    if (!roleLoading) refreshAvailableOrgs();
+  }, [managedOrgIds.join(','), roleLoading]);
 
   const requireOrgScope = () => {
     if (!activeOrgId) throw new Error("Organization context required.");

@@ -18,6 +18,7 @@ type AppRoleContextType = {
   isClusterAdmin: boolean;
   clusterId: string | null;
   managedOrgIds: string[];
+  refreshAuthority: () => Promise<void>;
 };
 
 
@@ -83,6 +84,18 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, [metadataRole, user?.id]);
 
+  const refreshAuthority = async () => {
+    if (!supabase || !user?.id) return;
+    const authority = await getUserAuthorityContext(user.id);
+    if (authority.source === 'none') return;
+    setClusterRoleState(authority.clusterRole);
+    setIsClusterAdminState(authority.isPlatformAdmin);
+    setClusterIdState(authority.clusterId);
+    setManagedOrgIdsState(authority.managedOrgIds);
+    const roleFromProfile = normalizeAppRole(authority.role);
+    setProfileRole(roleFromProfile);
+  };
+
   useEffect(() => {
     if (effectiveServerRole) {
       setRoleState(effectiveServerRole);
@@ -114,6 +127,7 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
        isClusterAdmin: isClusterAdminState,
        clusterId: clusterIdState,
        managedOrgIds: managedOrgIdsState,
+       refreshAuthority,
      };
    }, [loading, role, roleLocked, clusterRoleState, isClusterAdminState, clusterIdState, managedOrgIdsState]);
 
