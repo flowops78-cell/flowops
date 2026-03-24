@@ -603,9 +603,12 @@ Deno.serve(async (request: Request) => {
     .from('profiles')
     .select('id, org_id, meta_org_id, created_at');
 
-  const { data: profileRows, error: profileRowsError } = (clusterContext.isPlatformAdmin || clusterContext.metaOrgId === null)
+  const isPlatformAdmin = clusterContext.isPlatformAdmin;
+  const { data: profileRows, error: profileRowsError } = isPlatformAdmin
     ? await profileQuery
-    : await profileQuery.in('org_id', managedOrgIds);
+    : (managedOrgIds.length > 0)
+      ? await profileQuery.in('org_id', managedOrgIds)
+      : { data: [], error: null };
 
   if (profileRowsError) {
     console.error(`[manage-meta-org-admins] profileRowsError:`, profileRowsError);

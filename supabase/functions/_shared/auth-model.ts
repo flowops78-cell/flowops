@@ -170,17 +170,17 @@ export const getCallerAuthorityContext = async (
 
     const defaultOrgInfo = Array.isArray(defaultMembership?.orgs) ? defaultMembership.orgs[0] : defaultMembership?.orgs;
 
-    const resolvedMetaOrgId = defaultOrgInfo?.cluster_id ?? (profileRow as LegacyProfileRow | null)?.meta_org_id ?? null;
+    const resolvedMetaOrgId = (profileRow as LegacyProfileRow | null)?.meta_org_id ?? defaultOrgInfo?.cluster_id ?? null;
     
-    console.log(`[auth-model] Resolved via memberships: userId=${userId}, isPlatform=${isPlatformAdmin}, metaOrgId=${resolvedMetaOrgId}, managedOrgs=${managedOrgIds.length}`);
+    console.log(`[auth-model] Membership Check: userId=${userId}, profileMeta=${(profileRow as LegacyProfileRow | null)?.meta_org_id}, clusterMeta=${defaultOrgInfo?.cluster_id}, resolved=${resolvedMetaOrgId}`);
 
     return {
       role: pickStrongestRole(typedMembershipRows.map((row) => row.role)),
-      currentOrgId: defaultMembership?.org_id ?? requestedOrgId ?? (profileRow as LegacyProfileRow | null)?.org_id ?? null,
+      currentOrgId: requestedOrgId ?? defaultMembership?.org_id ?? (profileRow as LegacyProfileRow | null)?.org_id ?? null,
       metaOrgId: resolvedMetaOrgId,
       managedOrgIds,
-      isPlatformAdmin: isPlatformAdmin || !!(profileRow as LegacyProfileRow | null)?.meta_org_id, // Meta-org owners are effectively platform-esque
-      isAdmin: isPlatformAdmin || typedMembershipRows.some((row) => row.role === 'admin'),
+      isPlatformAdmin: isPlatformAdmin || !!resolvedMetaOrgId, // Meta-org owners are effectively platform-esque
+      isAdmin: isPlatformAdmin || !!resolvedMetaOrgId || typedMembershipRows.some((row) => row.role === 'admin'),
       source: 'memberships',
     };
   }
