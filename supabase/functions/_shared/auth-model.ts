@@ -78,7 +78,7 @@ export const getCallerAuthorityContext = async (
       .maybeSingle(),
     adminClient
       .from('org_memberships')
-      .select('org_id, role, status, is_default_org, orgs!inner(cluster_id)')
+      .select('org_id, role, status, is_default_org, orgs(cluster_id)')
       .eq('user_id', userId)
       .eq('status', 'active'),
     adminClient
