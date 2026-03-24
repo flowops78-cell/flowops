@@ -170,10 +170,14 @@ export const getCallerAuthorityContext = async (
 
     const defaultOrgInfo = Array.isArray(defaultMembership?.orgs) ? defaultMembership.orgs[0] : defaultMembership?.orgs;
 
+    const resolvedMetaOrgId = defaultOrgInfo?.cluster_id ?? (profileRow as LegacyProfileRow | null)?.meta_org_id ?? null;
+    
+    console.log(`[auth-model] Resolved via memberships: userId=${userId}, isPlatform=${isPlatformAdmin}, metaOrgId=${resolvedMetaOrgId}, managedOrgs=${managedOrgIds.length}`);
+
     return {
       role: pickStrongestRole(typedMembershipRows.map((row) => row.role)),
       currentOrgId: defaultMembership?.org_id ?? requestedOrgId ?? (profileRow as LegacyProfileRow | null)?.org_id ?? null,
-      metaOrgId: defaultOrgInfo?.cluster_id ?? (profileRow as LegacyProfileRow | null)?.meta_org_id ?? null,
+      metaOrgId: resolvedMetaOrgId,
       managedOrgIds,
       isPlatformAdmin: isPlatformAdmin || !!(profileRow as LegacyProfileRow | null)?.meta_org_id, // Meta-org owners are effectively platform-esque
       isAdmin: isPlatformAdmin || typedMembershipRows.some((row) => row.role === 'admin'),
@@ -184,6 +188,8 @@ export const getCallerAuthorityContext = async (
   const legacyProfile = (profileRow ?? null) as LegacyProfileRow | null;
   const legacyRole = normalizeRole((userRoleRow as LegacyUserRoleRow | null)?.role);
   const legacyIsGlobalAdmin = legacyRole === 'admin' && !legacyProfile?.meta_org_id;
+
+  console.log(`[auth-model] Legacy check: userId=${userId}, role=${legacyRole}, profileMetaOrg=${legacyProfile?.meta_org_id}, isGlobal=${legacyIsGlobalAdmin}`);
 
   if (legacyRole || legacyProfile?.org_id || legacyProfile?.meta_org_id || isPlatformAdmin) {
     let managedOrgIds = legacyProfile?.org_id ? [legacyProfile.org_id] : [];
@@ -215,6 +221,8 @@ export const getCallerAuthorityContext = async (
       ]);
     }
 
+    console.log(`[auth-model] Resolved via legacy: userId=${userId}, isPlatform=${isPlatformAdmin}, metaOrgId=${legacyProfile?.meta_org_id}, managedOrgs=${managedOrgIds.length}`);
+
     return {
       role: legacyRole,
       currentOrgId: requestedOrgId ?? legacyProfile?.org_id ?? null,
@@ -225,6 +233,8 @@ export const getCallerAuthorityContext = async (
       source: 'legacy',
     };
   }
+
+  console.log(`[auth-model] No authority found for userId=${userId}`);
 
   return {
     role: null,
