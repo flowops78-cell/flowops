@@ -7,7 +7,7 @@ import { useNotification } from '../context/NotificationContext';
 import { formatValue, formatDate } from '../lib/utils';
 import { cn } from '../lib/utils';
 import { OutputRequest } from '../types';
-import ParticipantSnapshot from '../components/ParticipantSnapshot';
+import EntitySnapshot from '../components/EntitySnapshot';
 import { useLabels } from '../lib/labels';
 
 type UnitAccountEntryType = 'increment' | 'adjustment' | 'decrement';
@@ -630,11 +630,11 @@ export default function ParticipantDetail() {
       )}
 
       {isSnapshotOpen && (
-        <ParticipantSnapshot
+        <EntitySnapshot
           entity={unit}
           type="entity"
           onClose={() => setIsSnapshotOpen(false)}
-          onUpdateTags={(unitId, tags) => { void handleUpdateEntityTags(unitId, tags); }}
+          onUpdateTags={handleUpdateEntityTags}
           workspaceNet={performanceDelta}
           variant="modal"
         />
