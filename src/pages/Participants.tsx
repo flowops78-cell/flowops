@@ -10,7 +10,7 @@ import MobileRecordCard from '../components/MobileRecordCard';
 import CollapsibleWorkspaceSection from '../components/CollapsibleWorkspaceSection';
 import { useAppRole } from '../context/AppRoleContext';
 import DataActionMenu from '../components/DataActionMenu';
-import ParticipantSnapshot from '../components/ParticipantSnapshot';
+import EntitySnapshot from '../components/EntitySnapshot';
 import { useLabels } from '../lib/labels';
 
 const getParticipantDisplayName = (name?: string | null) => {
@@ -372,9 +372,9 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
 
     try {
       await updateUnit({ ...existing, tags });
-      setImportStatus({ type: 'success', message: 'Entity tags updated.' });
+      setImportStatus({ type: 'success', message: 'Participant tags updated.' });
     } catch (error: any) {
-      setImportStatus({ type: 'error', message: error?.message || 'Unable to update entity tags.' });
+      setImportStatus({ type: 'error', message: error?.message || 'Unable to update participant tags.' });
     }
   };
 
@@ -388,7 +388,7 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
       label: 'Transfer Totals',
       onClick: () => {
         if (!canManageValue) {
-          setImportStatus({ type: 'error', message: 'Only admin can transfer entity totals.' });
+          setImportStatus({ type: 'error', message: 'Only admin can transfer participant totals.' });
           return;
         }
         openTransferForm();
@@ -451,7 +451,7 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
           {!embedded && (
             <div className="hidden lg:flex items-center gap-2 text-xs">
               <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
-                <span className="font-mono text-stone-900 dark:text-stone-100">{units.length}</span> units
+                <span className="font-mono text-stone-900 dark:text-stone-100">{units.length}</span> participants
               </span>
               <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
                 <span className="font-mono text-stone-900 dark:text-stone-100">{activeParticipantsCount}</span> active
@@ -490,7 +490,7 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
 
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm text-stone-500 dark:text-stone-400">
-            <span className="font-medium text-stone-900 dark:text-stone-100">{filteredParticipants.length}</span> units
+            <span className="font-medium text-stone-900 dark:text-stone-100">{filteredParticipants.length}</span> participants
           </p>
           <div className="toggle-indirect-track toggle-compact-track">
             <button
@@ -534,13 +534,13 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
                 onChange={e => setName(e.target.value)}
                 required
               />
-              <p className="text-[11px] text-stone-500 dark:text-stone-400">Used to identify this entity.</p>
+              <p className="text-[11px] text-stone-500 dark:text-stone-400">Used to identify this participant.</p>
             </div>
             <input
               type="number"
               step="0.01"
               className="control-input"
-              placeholder="Starting Total (optional)"
+              placeholder="Total (optional)"
               value={profileTotal}
               onChange={e => setProfileTotal(e.target.value)}
             />
@@ -718,7 +718,7 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
       {isRecordingOutputRequest && (
         <div className="fixed inset-0 z-40 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center p-4">
           <form onSubmit={handleRecordAlignmentRequest} className="section-card w-full max-w-3xl p-6 animate-in fade-in zoom-in-95">
-            <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Record Entity Alignment Request</h3>
+            <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Record Participant Alignment Request</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <select
                 className="control-input"
@@ -786,13 +786,13 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
           })}
           {filteredParticipants.length === 0 && (
             <div className="section-card p-8 text-center text-stone-400 sm:col-span-2 xl:col-span-3">
-              <p>No units found.</p>
+              <p>No participants found.</p>
               <button
                 type="button"
                 onClick={() => setIsAdding(true)}
                 className="action-btn-primary text-xs px-3 py-1.5 mt-3"
               >
-                Add first entity
+                Add first participant
               </button>
             </div>
           )}
@@ -828,7 +828,7 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
                         <button
                           onClick={() => openTransferForm(entity.id)}
                           className="p-1.5 text-stone-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition-colors"
-                          title="Transfer from this entity"
+                          title="Transfer from this participant"
                         >
                           <ArrowRightLeft size={16} />
                         </button>
@@ -858,7 +858,7 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
                         <button
                           onClick={() => { void handleDeleteParticipantProfile(entity); }}
                           className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-                          title="Delete entity"
+                          title="Delete participant"
                         >
                           <Trash2 size={16} />
                         </button>
@@ -870,13 +870,13 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
             })}
             {filteredParticipants.length === 0 && (
               <div className="px-6 py-10 text-center text-stone-400 text-sm">
-                <p>No units found.</p>
+                <p>No participants found.</p>
                 <button
                   type="button"
                   onClick={() => setIsAdding(true)}
                   className="action-btn-primary text-xs px-3 py-1.5 mt-3"
                 >
-                  Add first entity
+                  Add first participant
                 </button>
               </div>
             )}
@@ -884,7 +884,7 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
 
           <CollapsibleWorkspaceSection
             title="Participants"
-            summary={`${filteredParticipants.length} units`}
+            summary={`${filteredParticipants.length} participants`}
             className="hidden md:block"
             defaultExpanded={false}
             maxExpandedHeightClass="max-h-[560px]"
@@ -941,13 +941,13 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-stone-400">
                     <div className="flex flex-col items-center gap-2">
-                      <span>No units found.</span>
+                      <span>No participants found.</span>
                       <button
                         type="button"
                         onClick={() => setIsAdding(true)}
                         className="action-btn-primary text-xs px-3 py-1.5"
                       >
-                        Add first entity
+                        Add first participant
                       </button>
                     </div>
                   </td>
@@ -960,7 +960,7 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
       )}
 
       {quickViewParticipant && (
-        <ParticipantSnapshot
+        <EntitySnapshot
           entity={quickViewParticipant}
           type="entity"
           onClose={() => setQuickViewParticipant(null)}
@@ -997,7 +997,7 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
               <div className="rounded-xl border border-stone-200 dark:border-stone-700 overflow-hidden">
                 {quickViewEntries.length === 0 ? (
                   <div className="px-4 py-8 text-center text-sm text-stone-500 dark:text-stone-400">
-                    No entity entries yet.
+                    No participant entries yet.
                   </div>
                 ) : (
                   <table className="w-full text-sm">
@@ -1143,7 +1143,7 @@ function ParticipantGridCard({
                 onDelete();
               }}
               className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-              title="Delete entity"
+              title="Delete participant"
             >
               <Trash2 size={16} />
             </button>
@@ -1315,7 +1315,7 @@ function ParticipantRow({ entity, stats, updateUnit, onOpenProfile, onOpenSnapsh
             <button
               onClick={onDelete}
               className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-              title="Delete entity"
+              title="Delete participant"
             >
               <Trash2 size={16} />
             </button>

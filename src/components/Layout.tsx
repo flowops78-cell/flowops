@@ -22,7 +22,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [isFocusFullscreen, setIsFocusFullscreen] = useState(false);
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [isTelemetryOpen, setIsTelemetryOpen] = useState(false);
-  const [shortcutPrefix, setShortcutPrefix] = useState<'g' | 'c' | null>(null);
+  const [shortcutPrefix, setShortcutPrefix] = useState<'n' | null>(null);
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
   const shortcutPrefixTimeoutRef = useRef<number | null>(null);
 
@@ -95,7 +95,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const armShortcutPrefix = useCallback((prefix: 'g' | 'c') => {
+  const armShortcutPrefix = useCallback((prefix: 'n') => {
     setShortcutPrefix(prefix);
     if (shortcutPrefixTimeoutRef.current !== null) {
       window.clearTimeout(shortcutPrefixTimeoutRef.current);
@@ -132,32 +132,30 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       }
 
       if (!isTypingTarget && !event.metaKey && !event.ctrlKey && !event.altKey) {
-        if (shortcutPrefix === null && (normalizedKey === 'g' || normalizedKey === 'c')) {
+        const goRouteMap: Record<string, string> = {
+          b: '/dashboard',
+          a: '/activity',
+          p: '/participants',
+          c: '/collaborations',
+          v: '/channels',
+          t: '/team',
+          s: canAccessAdminUi ? '/settings' : '/activity',
+        };
+        const route = goRouteMap[normalizedKey];
+        if (route) {
+          event.preventDefault();
+          clearShortcutPrefix();
+          navigate(route);
+          return;
+        }
+
+        if (shortcutPrefix === null && normalizedKey === 'n') {
           event.preventDefault();
           armShortcutPrefix(normalizedKey);
           return;
         }
 
-        if (shortcutPrefix === 'g') {
-          const goRouteMap: Record<string, string> = {
-            d: '/dashboard',
-            a: '/activity',
-            e: '/participants',
-            p: '/collaborations',
-            v: '/channels',
-            o: '/team',
-            s: canAccessAdminUi ? '/settings' : '/activity',
-          };
-          const route = goRouteMap[normalizedKey];
-          if (route) {
-            event.preventDefault();
-            clearShortcutPrefix();
-            navigate(route);
-            return;
-          }
-        }
-
-        if (shortcutPrefix === 'c') {
+        if (shortcutPrefix === 'n') {
           if (normalizedKey === 'a') {
             event.preventDefault();
             clearShortcutPrefix();
@@ -184,7 +182,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             return;
           }
 
-          if (normalizedKey === 'o') {
+          if (normalizedKey === 'p') {
+            event.preventDefault();
+            clearShortcutPrefix();
+            navigate('/participants?action=add-participant');
+            return;
+          }
+
+          if (normalizedKey === 'm') {
             event.preventDefault();
             clearShortcutPrefix();
             navigate('/team?action=add-viewer');

@@ -115,6 +115,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [inviteExpiryDays, setInviteExpiryDays] = React.useState('7');
   const [inviteMaxUses, setInviteMaxUses] = React.useState('1');
   const [inviteLoading, setInviteLoading] = React.useState(false);
+  const [inviteSearch, setInviteSearch] = React.useState('');
   const [inviteNotice, setInviteNotice] = React.useState<string | null>(null);
   const [inviteTokenValue, setInviteTokenValue] = React.useState<string | null>(null);
   const [inviteTokenCopied, setInviteTokenCopied] = React.useState(false);
@@ -598,6 +599,11 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       : 'Not configured';
   const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
 
+  const filteredInvites = accessInvites.filter(invite =>
+    invite.label?.toLowerCase().includes(inviteSearch.toLowerCase()) ||
+    invite.id.toLowerCase().includes(inviteSearch.toLowerCase())
+  );
+
   return (
     <div className={cn(embedded ? 'space-y-6' : 'page-shell', 'w-full min-w-0 overflow-x-hidden')}>
       {!embedded && (
@@ -1042,6 +1048,15 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               defaultExpanded
               maxExpandedHeightClass="max-h-[420px]"
               maxCollapsedHeightClass="max-h-[96px]"
+              extraHeaderContent={
+                <input
+                  type="text"
+                  placeholder="Search labels..."
+                  value={inviteSearch}
+                  onChange={e => setInviteSearch(e.target.value)}
+                  className="control-input py-1 px-2 text-xs min-w-[150px]"
+                />
+              }
             >
               <table className="desktop-grid w-full workspace-auto text-left text-[13px]">
                 <thead className="sticky top-0 z-10 bg-white dark:bg-stone-900 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-800">
@@ -1055,7 +1070,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                  {accessInvites.map((invite) => {
+                  {filteredInvites.map((invite) => {
                     const isRevoked = Boolean(invite.revoked_at);
                     const isExpired = Boolean(invite.expires_at && new Date(invite.expires_at).getTime() < Date.now());
                     const isExhausted = invite.use_count >= invite.max_uses;

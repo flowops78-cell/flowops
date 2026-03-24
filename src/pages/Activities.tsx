@@ -213,8 +213,8 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               <p className="font-mono font-medium text-stone-900 dark:text-stone-100">{formatValue(totalEntryValue)}</p>
             </div>
             <div className="text-left md:text-right">
-              <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Entities</p>
-              <p className="font-medium text-stone-900 dark:text-stone-100">{unitCount}</p>
+              <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Participants</p>
+              <p className="font-medium text-stone-900 dark:text-stone-100">{unitCount} participants</p>
             </div>
             <button
               type="button"
@@ -243,7 +243,6 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               Activity Registry
             </div>
             <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Activity History</h2>
-            <p className="text-stone-500 dark:text-stone-400 text-sm">{tx('Track live operations, archived activity, and activity details in one place.')}</p>
           </div>
           <div className="flex flex-col items-start lg:items-end gap-3">
             <div className="hidden lg:flex items-center gap-2 text-xs">
@@ -398,7 +397,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
 
         {activeActivitys.length === 0 && role === 'operator' && (
           <div className="text-center py-8 rounded-xl border border-dashed border-stone-300 dark:border-stone-700 bg-stone-50/80 dark:bg-stone-900/70">
-            <p className="text-stone-500 dark:text-stone-400 text-sm">{tx('No live activities are currently assigned to your operator account.')}</p>
+            {tx('No live activities are currently assigned to your operator account.')}
           </div>
         )}
 

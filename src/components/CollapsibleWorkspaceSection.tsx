@@ -14,6 +14,7 @@ interface CollapsibleWorkspaceSectionProps {
   contentRef?: Ref<HTMLDivElement>;
   onContentScroll?: UIEventHandler<HTMLDivElement>;
   children: ReactNode;
+  extraHeaderContent?: ReactNode;
 }
 
 export default function CollapsibleWorkspaceSection({
@@ -28,6 +29,7 @@ export default function CollapsibleWorkspaceSection({
   contentRef,
   onContentScroll,
   children,
+  extraHeaderContent,
 }: CollapsibleWorkspaceSectionProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
@@ -43,7 +45,10 @@ export default function CollapsibleWorkspaceSection({
           {isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
           {title}
         </button>
-        {summary ? <span className="text-xs text-stone-500 dark:text-stone-400">{summary}</span> : null}
+        <div className="flex items-center gap-3 ml-auto">
+          {extraHeaderContent}
+          {summary ? <span className="text-xs text-stone-500 dark:text-stone-400">{summary}</span> : null}
+        </div>
       </div>
 
       <div

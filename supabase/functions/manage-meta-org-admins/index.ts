@@ -271,6 +271,78 @@ Deno.serve(async (request: Request) => {
 
   const callerUserId = authUserData.user.id;
 
+  if (payload.action === 'provision-org-context') {
+    const requestedOrgId = normalizeOrgId(payload.org_id) ?? crypto.randomUUID();
+    const provisionedMetaOrgId = crypto.randomUUID();
+
+    // 1. Create the cluster record
+    const { error: clusterError } = await adminClient
+      .from('org_clusters')
+      .insert({ id: provisionedMetaOrgId, name: 'Default Cluster' });
+
+    if (clusterError) {
+      return json(400, { error: `Unable to initialize cluster: ${clusterError.message}` }, origin);
+    }
+
+    // 2. Create the org record
+    const { error: orgError } = await adminClient
+      .from('orgs')
+      .insert({ id: requestedOrgId, name: 'Default Organization', cluster_id: provisionedMetaOrgId });
+
+    if (orgError) {
+      return json(400, { error: `Unable to initialize organization: ${orgError.message}` }, origin);
+    }
+
+    // 3. Update the profile
+    const { error: profileUpdateError } = await adminClient
+      .from('profiles')
+      .update({
+        org_id: requestedOrgId,
+        meta_org_id: provisionedMetaOrgId,
+      })
+      .eq('id', callerUserId);
+
+    if (profileUpdateError) {
+      // If profile doesn't exist, try to insert it (though it should exist)
+      const { error: profileInsertError } = await adminClient
+        .from('profiles')
+        .upsert({
+          id: callerUserId,
+          org_id: requestedOrgId,
+          meta_org_id: provisionedMetaOrgId,
+        });
+      
+      if (profileInsertError) {
+        return json(400, { error: `Unable to provision organization context: ${profileUpdateError.message}` }, origin);
+      }
+    }
+
+    try {
+      await upsertOrgMetaMapping(adminClient, requestedOrgId, provisionedMetaOrgId);
+      await syncOrgGraph(adminClient, requestedOrgId, provisionedMetaOrgId);
+      await ensureOrgMembership(adminClient, callerUserId, requestedOrgId, 'admin', {
+        isDefaultOrg: true,
+        status: 'active',
+      });
+    } catch (error) {
+      return json(400, { error: error instanceof Error ? error.message : 'Unable to persist fresh workspace mapping.' }, origin);
+    }
+
+    let clusterContext;
+    try {
+      clusterContext = await loadClusterContext(adminClient, callerUserId, requestedOrgId);
+    } catch (error) {
+      return json(400, { error: error instanceof Error ? error.message : 'Unable to reload provisioned admin scope.' }, origin);
+    }
+
+    return json(200, {
+      ok: true,
+      org_id: requestedOrgId,
+      meta_org_id: provisionedMetaOrgId,
+      managed_org_ids: clusterContext.managedOrgIds,
+    }, origin);
+  }
+
   let clusterContext;
   try {
     clusterContext = await loadClusterContext(adminClient, callerUserId, normalizeOrgId(payload.org_id) ?? undefined);
@@ -357,66 +429,6 @@ Deno.serve(async (request: Request) => {
       ok: true,
       org_id: requestedOrgId,
       meta_org_id: clusterContext.metaOrgId,
-    }, origin);
-  }
-
-  if (payload.action === 'provision-org-context') {
-    const requestedOrgId = normalizeOrgId(payload.org_id) ?? crypto.randomUUID();
-    const provisionedMetaOrgId = crypto.randomUUID();
-
-    // 1. Create the cluster record
-    const { error: clusterError } = await adminClient
-      .from('org_clusters')
-      .insert({ id: provisionedMetaOrgId, name: 'Default Cluster' });
-
-    if (clusterError) {
-      return json(400, { error: `Unable to initialize cluster: ${clusterError.message}` }, origin);
-    }
-
-    // 2. Create the org record
-    const { error: orgError } = await adminClient
-      .from('orgs')
-      .insert({ id: requestedOrgId, name: 'Default Organization', cluster_id: provisionedMetaOrgId });
-
-    if (orgError) {
-      return json(400, { error: `Unable to initialize organization: ${orgError.message}` }, origin);
-    }
-
-    // 3. Update the profile
-    const { error: profileUpdateError } = await adminClient
-      .from('profiles')
-      .update({
-        org_id: requestedOrgId,
-        meta_org_id: provisionedMetaOrgId,
-      })
-      .eq('id', callerUserId);
-
-    if (profileUpdateError) {
-      return json(400, { error: `Unable to provision organization context: ${profileUpdateError.message}` }, origin);
-    }
-
-    try {
-      await upsertOrgMetaMapping(adminClient, requestedOrgId, provisionedMetaOrgId);
-      await syncOrgGraph(adminClient, requestedOrgId, provisionedMetaOrgId);
-      await ensureOrgMembership(adminClient, callerUserId, requestedOrgId, 'admin', {
-        isDefaultOrg: true,
-        status: 'active',
-      });
-    } catch (error) {
-      return json(400, { error: error instanceof Error ? error.message : 'Unable to persist fresh workspace mapping.' }, origin);
-    }
-
-    try {
-      clusterContext = await loadClusterContext(adminClient, callerUserId, requestedOrgId);
-    } catch (error) {
-      return json(400, { error: error instanceof Error ? error.message : 'Unable to reload provisioned admin scope.' }, origin);
-    }
-
-    return json(200, {
-      ok: true,
-      org_id: requestedOrgId,
-      meta_org_id: provisionedMetaOrgId,
-      managed_org_ids: clusterContext.managedOrgIds,
     }, origin);
   }
 

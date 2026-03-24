@@ -129,7 +129,6 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
         <div className="section-card p-5 lg:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div>
             <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100 mb-1">Brief</h2>
-            <p className="text-stone-500 dark:text-stone-400 text-sm">Operational snapshot and flow-based activity metrics.</p>
           </div>
           <div className="flex flex-col items-start lg:items-end gap-3">
             <div className="hidden lg:flex items-center gap-2 text-xs">
@@ -319,7 +318,7 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
                           </div>
                           <div className="text-right">
                             <p className="font-mono font-medium text-stone-900 dark:text-stone-100 text-[13px]">{formatValue(entryFlow)}</p>
-                            <p className="text-xs text-stone-500 dark:text-stone-400">{entityCount}</p>
+                            <p className="text-xs text-stone-500 dark:text-stone-400">{entityCount} participants</p>
                           </div>
                         </div>
                       );

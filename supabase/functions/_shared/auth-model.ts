@@ -80,7 +80,7 @@ export const getCallerAuthorityContext = async (
       .from('org_memberships')
       .select('org_id, role, status, is_default_org, orgs(cluster_id)')
       .eq('user_id', userId)
-      .eq('status', 'active'),
+      .in('status', ['active', 'invited']),
     adminClient
       .from('profiles')
       .select('org_id, meta_org_id')
@@ -145,7 +145,10 @@ export const getCallerAuthorityContext = async (
   if (typedMembershipRows.length > 0) {
     const clusterIds = dedupeStrings(typedMembershipRows
       .filter((row) => row.role === 'admin')
-      .map((row) => row.orgs?.cluster_id ?? null));
+      .map((row) => {
+        const orgInfo = Array.isArray(row.orgs) ? row.orgs[0] : row.orgs;
+        return orgInfo?.cluster_id ?? null;
+      }));
 
     let managedOrgIds = dedupeStrings(typedMembershipRows.map((row) => row.org_id));
     if (clusterIds.length > 0) {
@@ -155,6 +158,7 @@ export const getCallerAuthorityContext = async (
         .in('cluster_id', clusterIds);
 
       if (clusterOrgError) {
+        console.error(`[auth-model] Failed to resolve cluster orgs for clusterIds: ${clusterIds.join(',')}`, clusterOrgError);
         throw new Error(`Unable to resolve cluster orgs: ${clusterOrgError.message}`);
       }
 
@@ -164,10 +168,12 @@ export const getCallerAuthorityContext = async (
       ]);
     }
 
+    const defaultOrgInfo = Array.isArray(defaultMembership?.orgs) ? defaultMembership.orgs[0] : defaultMembership?.orgs;
+
     return {
       role: pickStrongestRole(typedMembershipRows.map((row) => row.role)),
       currentOrgId: defaultMembership?.org_id ?? requestedOrgId ?? (profileRow as LegacyProfileRow | null)?.org_id ?? null,
-      metaOrgId: defaultMembership?.orgs?.cluster_id ?? (profileRow as LegacyProfileRow | null)?.meta_org_id ?? null,
+      metaOrgId: defaultOrgInfo?.cluster_id ?? (profileRow as LegacyProfileRow | null)?.meta_org_id ?? null,
       managedOrgIds,
       isPlatformAdmin,
       isAdmin: isPlatformAdmin || typedMembershipRows.some((row) => row.role === 'admin'),

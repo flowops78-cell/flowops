@@ -611,7 +611,6 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
         <div className="section-card p-5 lg:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div>
             <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Collaborations</h2>
-            <p className="text-stone-500 dark:text-stone-400 text-sm">Collaboration network, configuration, and activity logs.</p>
           </div>
           <div className="flex flex-col items-start lg:items-end gap-3">
             <div className="hidden lg:flex items-center gap-2 text-xs">
@@ -670,7 +669,6 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
                 <option value="associate">Collaboration</option>
                 <option value="hybrid">Hybrid</option>
               </select>
-              <p className="text-[11px] text-stone-500 dark:text-stone-400">Defines how this profile participates in activities.</p>
             </div>
           </div>
 
@@ -728,7 +726,6 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
         <div className="lg:col-span-1 space-y-4">
           <div className="section-card p-4">
             <h3 className="text-sm font-medium text-stone-900 dark:text-stone-100">Directory</h3>
-            <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">Search collaborations from the list below.</p>
           </div>
           {activeCollaborations.map((associate: Associate) => (
             <div 
