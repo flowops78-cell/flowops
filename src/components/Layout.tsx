@@ -38,7 +38,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
         { to: '/channels', icon: <Circle size={18} />, label: 'Channels', hint: 'Channel tracking and settings overview' },
         { to: '/collaborations', icon: <Handshake size={18} />, label: 'Collaborations', hint: 'Collaboration network and relationship tracking' },
-        { to: '/team-teamMembers', icon: <UserCog size={18} />, label: 'Team TeamMembers', hint: 'Team management and operator coverage' },
+        { to: '/team-members', icon: <UserCog size={18} />, label: 'Team Members', hint: 'Team management and operator coverage' },
         { to: '/settings', icon: <Settings size={18} />, label: 'Settings', hint: 'System preferences and access control' },
 
       ],
@@ -54,7 +54,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { to: '/entities', icon: <Users size={18} />, label: 'Entities' },
         { to: '/channels', icon: <Circle size={18} />, label: 'Channels' },
         { to: '/collaborations', icon: <Handshake size={18} />, label: 'Collaborations' },
-        { to: '/team-teamMembers', icon: <UserCog size={18} />, label: 'Team TeamMembers' },
+        { to: '/team-members', icon: <UserCog size={18} />, label: 'Team Members' },
       ],
 
     },
@@ -142,7 +142,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           a: '/activity',
           c: '/collaborations',
           v: '/channels',
-          t: '/team-teamMembers',
+          t: '/team-members',
           s: canAccessAdminUi ? '/settings' : '/activity',
 
         };
@@ -198,7 +198,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           if (normalizedKey === 'm') {
             event.preventDefault();
             clearShortcutPrefix();
-            navigate('/team-teamMembers?action=add-team-teamMember');
+            navigate('/team-members?action=add-member');
             return;
           }
 

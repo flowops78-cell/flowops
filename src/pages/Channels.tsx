@@ -535,11 +535,11 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     const unitTotals = new Map<string, number>();
     activeAdjustments.forEach(adjustment => {
       const current = unitTotals.get(adjustment.entity_id) || 0;
-      const next = current + (adjustment.type === 'input' ? adjustment.amount : -adjustment.amount);
+      const next = current + ((adjustment as any).direction === 'increase' ? (adjustment as any).unit_amount : -(adjustment as any).unit_amount);
       unitTotals.set(adjustment.entity_id, next);
     });
     const settledUnits = new Set(
-      Array.from(unitTotals.records())
+      Array.from(unitTotals.entries())
         .filter(([, total]) => Math.abs(total) < 0.01)
         .map(([unitId]) => unitId)
     );
@@ -626,19 +626,21 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   }, [channelCardData]);
 
   const historyData = useMemo(() => {
-    const sorted = [...channelEntries].sort((a, b) => a.date.localeCompare(b.date));
+    const sorted = [...channelEntries].sort((a, b) =>
+      (a.created_at ?? '').localeCompare(b.created_at ?? ''));
     const points: { date: string; total: number; fullDate: string }[] = [];
     let runningTotal = 0;
-    
+
     // Group by date to avoid plot saturation
     const dailyTotals: Record<string, number> = {};
     sorted.forEach(tx => {
-      const multiplier = tx.type === 'increment' ? 1 : -1;
-      runningTotal += tx.amount * multiplier;
-      dailyTotals[tx.date] = runningTotal;
+      const multiplier = tx.direction === 'increase' ? 1 : -1;
+      const dateKey = (tx.created_at ?? '').slice(0, 10);
+      runningTotal += (tx.unit_amount ?? 0) * multiplier;
+      dailyTotals[dateKey] = runningTotal;
     });
 
-    Object.records(dailyTotals)
+    Object.entries(dailyTotals)
       .sort(([a], [b]) => a.localeCompare(b))
       .forEach(([date, total]) => {
         points.push({
@@ -1723,9 +1725,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                   right={(
                     <p className={cn(
                       "font-mono font-medium text-sm",
-                      t.type === 'increment' ? "amount-positive" : "amount-negative"
+                      t.direction === 'increase' ? "amount-positive" : "amount-negative"
                     )}>
-                      {t.type === 'increment' ? '+' : '-'}{formatValue(t.amount)}
+                      {t.direction === 'increase' ? '+' : '-'}{formatValue(t.amount)}
                     </p>
                   )}
                   meta={(
@@ -1735,7 +1737,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                           TransferAmount
                         </span>
                       )}
-                      <span>{t.type === 'increment' ? 'Inflow' : 'Outflow'} • {formatMethodLabel(t.method)}</span>
+                      <span>{t.direction === 'increase' ? 'Inflow' : 'Outflow'} • {formatMethodLabel(t.method)}</span>
                     </span>
                   )}
                 >
@@ -1788,9 +1790,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                         right={(
                           <p className={cn(
                             "font-mono font-medium text-sm",
-                            t.type === 'increment' ? "amount-positive" : "amount-negative"
+                            t.direction === 'increase' ? "amount-positive" : "amount-negative"
                           )}>
-                            {t.type === 'increment' ? '+' : '-'}{formatValue(t.amount)}
+                            {t.direction === 'increase' ? '+' : '-'}{formatValue(t.amount)}
                           </p>
                         )}
                         meta={<span className="capitalize">{t.type} • {formatMethodLabel(t.method)}</span>}
@@ -1861,12 +1863,12 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                           )}
                           <span className={cn(
                             "inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium",
-                            t.type === 'increment' 
+                            t.direction === 'increase' 
                               ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400" 
                               : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
                           )}>
-                            {t.type === 'increment' ? <ArrowUpRight size={12} /> : <ArrowDownLeft size={12} />}
-                            {t.type === 'increment' ? 'Inflow' : 'Outflow'}
+                            {t.direction === 'increase' ? <ArrowUpRight size={12} /> : <ArrowDownLeft size={12} />}
+                            {t.direction === 'increase' ? 'Inflow' : 'Outflow'}
                           </span>
                         </div>
                       </td>
@@ -1875,9 +1877,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                       </td>
                       <td className={cn(
                         "px-6 py-2.5 text-right font-mono font-medium",
-                        t.type === 'increment' ? "amount-positive" : "amount-negative"
+                        t.direction === 'increase' ? "amount-positive" : "amount-negative"
                       )}>
-                        {t.type === 'increment' ? '+' : '-'}{formatValue(t.amount)}
+                        {t.direction === 'increase' ? '+' : '-'}{formatValue(t.amount)}
                       </td>
                       <td className="sticky-col-right px-6 py-2.5 text-right">
                         {canOperateValue && (
@@ -1950,15 +1952,15 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                         {filteredArchivedChannelEntries.map(t => (
                           <tr key={t.id} className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors">
                             <td className="sticky-col px-6 py-2.5 text-stone-500 dark:text-stone-400">{formatDate(t.date)}</td>
-                            <td className="px-6 py-2.5">{t.type === 'increment' ? 'Inflow' : 'Outflow'}</td>
+                            <td className="px-6 py-2.5">{t.direction === 'increase' ? 'Inflow' : 'Outflow'}</td>
                             <td className="px-6 py-2.5 text-stone-900 dark:text-stone-100">{formatMethodLabel(t.method)}</td>
                             <td className="px-6 py-2.5 text-stone-500 dark:text-stone-400">
                             </td>
                             <td className={cn(
                               "px-6 py-2.5 text-right font-mono font-medium",
-                              t.type === 'increment' ? "amount-positive" : "amount-negative"
+                              t.direction === 'increase' ? "amount-positive" : "amount-negative"
                             )}>
-                              {t.type === 'increment' ? '+' : '-'}{formatValue(t.amount)}
+                              {t.direction === 'increase' ? '+' : '-'}{formatValue(t.amount)}
                             </td>
                             <td className="sticky-col-right px-6 py-2.5 text-right">
                               {canOperateValue && (
