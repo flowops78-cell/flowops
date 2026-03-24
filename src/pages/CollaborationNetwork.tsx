@@ -23,19 +23,26 @@ const getCollaborationDisplayName = (name?: string) => name || 'Unnamed Collabor
 export default function CollaborationNetwork({ embedded = false }: { embedded?: boolean }) {
   const { notify } = useNotification();
   const { role: appRole, canManageImpact } = useAppRole();
-  const { 
-    collaborations, 
-    entities: entities, 
-    collaborationAllocations: collaborationParticipations, 
-    records, 
-    activities,
-    addCollaboration, 
-    deleteCollaboration, 
-    updateCollaboration,
-    addCollaborationAllocation: addCollaborationParticipation,
-    deleteCollaborationAllocation: deleteCollaborationParticipation,
-    recordSystemEvent
+  // Canonical DataContext properties
+  const {
+    collaborations: rawCollaborations,
+    entities: rawEntities,
+    records: rawRecords,
+    activities: rawActivities,
   } = useData();
+  const collaborations = rawCollaborations ?? [];
+  const entities = rawEntities ?? [];
+  const records = rawRecords ?? [];
+  const activities = rawActivities ?? [];
+
+  // Removed APIs — stubbed until CollaborationNetwork is fully migrated
+  const collaborationParticipations: any[] = [];
+  const addCollaboration = async (_data: any) => '';
+  const deleteCollaboration = async (_id: string) => {};
+  const updateCollaboration = async (_data: any) => {};
+  const addCollaborationParticipation = async (_data: any) => {};
+  const deleteCollaborationParticipation = async (_id: string) => {};
+  const recordSystemEvent = async (_data: any) => {};
 
   const [selectedCollaborationId, setSelectedCollaborationId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);

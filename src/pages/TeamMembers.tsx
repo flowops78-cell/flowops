@@ -338,7 +338,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
         <div className="section-card p-5 lg:p-6 flex flex-col gap-4">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center justify-between">
             <div>
-              <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Team TeamMembers</h2>
+              <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Team Members</h2>
               <p className="text-stone-500 dark:text-stone-400 text-sm">Team roster and operational roles.</p>
             </div>
             <div className="flex flex-col items-start lg:items-end gap-3">
@@ -356,10 +356,10 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
                   <button
                     onClick={() => setIsAddingTeamMember(true)}
                     className="action-btn-primary"
-                    title="Add Team TeamMember"
+                    title="Add Team Member"
                   >
                     <Plus size={16} />
-                    Add Team TeamMember
+                    Add Team Member
                   </button>
                 )}
               </div>
@@ -394,7 +394,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
               className="action-btn-primary"
             >
               <Plus size={16} />
-              Add Team TeamMember
+              Add Team Member
             </button>
           )}
         </div>
@@ -449,7 +449,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
               disabled={isSavingTeamMember}
               className="px-4 py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-md text-sm hover:bg-stone-800 dark:hover:bg-stone-200 disabled:opacity-70"
             >
-              {isSavingTeamMember ? 'Saving…' : 'Add Team TeamMember'}
+              {isSavingTeamMember ? 'Saving…' : 'Add Team Member'}
             </button>
           </div>
         </form>
@@ -458,9 +458,9 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
       {teamMembers.length === 0 ? (
         <div className="section-card">
           <EmptyState
-            title="No team teamMembers yet"
+            title="No team members yet"
             description="Add a team teamMember to include them in operational tracking."
-            actionLabel="Add Team TeamMember"
+            actionLabel="Add Team Member"
             onAction={() => setIsAddingTeamMember(true)}
           />
         </div>
@@ -514,7 +514,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
       ) : (
         <div className="section-card overflow-hidden">
           <CollapsibleActivitySection
-            title="Team TeamMembers"
+            title="Team Members"
             summary={formatTeamMemberCount(teamMembers.length)}
             defaultExpanded
             onContentScroll={event => setTeamMemberActivityScrollTop(event.currentTarget.scrollTop)}

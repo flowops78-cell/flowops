@@ -370,18 +370,20 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     const nextChannelTotals: Record<string, number> = {};
 
     channelEntries.forEach(record => {
-      const multiplier = record.type === 'increment' ? 1 : -1;
-      const amount = record.amount * multiplier;
-      nextChannelTotals[record.method] = (nextChannelTotals[record.method] || 0) + amount;
+      // canonical: direction=increase → inflow, decrease/transfer → outflow
+      const multiplier = record.direction === 'increase' ? 1 : -1;
+      const amount = (record.unit_amount ?? 0) * multiplier;
+      const label = record.notes ?? record.direction ?? 'other';
+      nextChannelTotals[label] = (nextChannelTotals[label] || 0) + amount;
     });
 
     const nextTotalChannel = Object.values(nextChannelTotals).reduce((sum, value) => sum + value, 0);
-    const nextUnresolvedOutflowMethods = Object.records(nextChannelTotals)
+    const nextUnresolvedOutflowMethods = Object.entries(nextChannelTotals)
       .filter(([, value]) => value < 0)
       .map(([method, value]) => ({ method, amount: Math.abs(value) }));
     const nextUnresolvedOutflowAmount = nextUnresolvedOutflowMethods.reduce((sum, item) => sum + item.amount, 0);
 
-    const nextChannelCardData = Object.records(nextChannelTotals)
+    const nextChannelCardData = Object.entries(nextChannelTotals)
       .map(([method, amount]) => ({
         method,
         amount,
@@ -445,24 +447,26 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
   const normalizedOrgSearch = orgSearchQuery.trim().toLowerCase();
   const filteredActiveChannelEntries = useMemo(() => activeChannelEntries.filter(record => {
-    if (orgTypeFilter !== 'all' && record.type !== orgTypeFilter) return false;
-    if (orgDateStart && record.date < orgDateStart) return false;
-    if (orgDateEnd && record.date > orgDateEnd) return false;
+    if (orgTypeFilter !== 'all' && record.direction !== orgTypeFilter) return false;
+    const recDate = (record.created_at ?? '').slice(0, 10);
+    if (orgDateStart && recDate < orgDateStart) return false;
+    if (orgDateEnd && recDate > orgDateEnd) return false;
     if (!normalizedOrgSearch) return true;
     return (
-      record.method.toLowerCase().includes(normalizedOrgSearch)
-      || record.date.toLowerCase().includes(normalizedOrgSearch)
+      (record.notes ?? '').toLowerCase().includes(normalizedOrgSearch)
+      || recDate.toLowerCase().includes(normalizedOrgSearch)
     );
   }), [activeChannelEntries, orgTypeFilter, orgDateStart, orgDateEnd, normalizedOrgSearch]);
 
   const filteredArchivedChannelEntries = useMemo(() => archivedChannelEntries.filter(record => {
-    if (orgTypeFilter !== 'all' && record.type !== orgTypeFilter) return false;
-    if (orgDateStart && record.date < orgDateStart) return false;
-    if (orgDateEnd && record.date > orgDateEnd) return false;
+    if (orgTypeFilter !== 'all' && record.direction !== orgTypeFilter) return false;
+    const recDate = (record.created_at ?? '').slice(0, 10);
+    if (orgDateStart && recDate < orgDateStart) return false;
+    if (orgDateEnd && recDate > orgDateEnd) return false;
     if (!normalizedOrgSearch) return true;
     return (
-      record.method.toLowerCase().includes(normalizedOrgSearch)
-      || record.date.toLowerCase().includes(normalizedOrgSearch)
+      (record.notes ?? '').toLowerCase().includes(normalizedOrgSearch)
+      || recDate.toLowerCase().includes(normalizedOrgSearch)
     );
   }), [archivedChannelEntries, orgTypeFilter, orgDateStart, orgDateEnd, normalizedOrgSearch]);
 
@@ -473,7 +477,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     const thresholdTime = threshold.getTime();
     return activeChannelEntries
       .filter(record => {
-        const date = new Date(record.date);
+        const date = new Date(record.created_at ?? '');
         return Number.isFinite(date.getTime()) && date.getTime() < thresholdTime;
       })
       .map(record => record.id);
