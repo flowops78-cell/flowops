@@ -19,11 +19,12 @@ do $$
 declare
   t text;
 begin
-  for t in select table_name 
-           from information_schema.columns 
-           where column_name = 'updated_at' 
-             and table_schema = 'public'
-             and table_type = 'BASE TABLE'
+  for t in select c.table_name 
+           from information_schema.columns c
+           join information_schema.tables t on c.table_name = t.table_name and c.table_schema = t.table_schema
+           where c.column_name = 'updated_at' 
+             and c.table_schema = 'public'
+             and t.table_type = 'BASE TABLE'
   loop
     execute format('drop trigger if exists set_updated_at on %I', t);
     execute format('create trigger set_updated_at before update on %I for each row execute function update_updated_at_column()', t);
