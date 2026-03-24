@@ -17,7 +17,7 @@ interface TelemetryEvent {
 interface TelemetrySidebarProps {
   workspace: Workspace;
   entries: Entry[];
-  entities: Entity[];
+  units: Entity[];
   isOpen: boolean;
   onClose: () => void;
 }
@@ -33,7 +33,7 @@ const eventToneClass: Record<TelemetryEvent['type'], string> = {
   level_up: 'bg-stone-400',
 };
 
-export default function TelemetrySidebar({ workspace, entries, entities, isOpen, onClose }: TelemetrySidebarProps) {
+export default function TelemetrySidebar({ workspace, entries, units, isOpen, onClose }: TelemetrySidebarProps) {
   const [now, setNow] = useState(new Date());
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
     const saved = localStorage.getItem('telemetry_notifications');
@@ -123,7 +123,7 @@ export default function TelemetrySidebar({ workspace, entries, entities, isOpen,
 
   // Entries Events
   entries.forEach(entry => {
-    const entity = entities.find(p => p.id === entry.entity_id);
+    const entity = units.find(p => p.id === entry.unit_id);
     if (!entity) return;
 
     // Join / Entry value
@@ -203,7 +203,7 @@ export default function TelemetrySidebar({ workspace, entries, entities, isOpen,
   const discrepancy = totalOutflow - totalInflow;
   const statCards = [
     {
-      key: 'active-entities',
+      key: 'active-units',
       label: 'Entities',
       value: activeEntitiesCount,
       icon: <Users size={12} />,

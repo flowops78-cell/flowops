@@ -479,7 +479,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     void recordSystemEvent({
       action: 'role_updated',
       entity: 'member',
-      entity_id: account.user_id,
+      unit_id: account.user_id,
       details: `Role updated for ${account.login_id}: ${nextRole}`,
     });
     notify({ type: 'success', message: `Updated ${account.login_id ?? 'account'} to ${nextRole}.` });
@@ -523,7 +523,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     void recordSystemEvent({
       action: 'member_removed',
       entity: 'member',
-      entity_id: account.user_id,
+      unit_id: account.user_id,
       details: `Permanently deleted account: ${account.login_id}`,
     });
     notify({ type: 'success', message: `Permanently removed ${account.login_id ?? 'account'}.` });

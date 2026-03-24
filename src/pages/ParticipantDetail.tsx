@@ -7,26 +7,26 @@ import { useNotification } from '../context/NotificationContext';
 import { formatValue, formatDate } from '../lib/utils';
 import { cn } from '../lib/utils';
 import { OutputRequest } from '../types';
-import EntitySnapshot from '../components/EntitySnapshot';
+import ParticipantSnapshot from '../components/ParticipantSnapshot';
 import { useLabels } from '../lib/labels';
 
-type EntityAccountEntryType = 'increment' | 'adjustment' | 'decrement';
+type UnitAccountEntryType = 'increment' | 'adjustment' | 'decrement';
 
 const isoToday = () => new Date().toISOString().split('T')[0];
 
-export default function EntityDetail() {
+export default function ParticipantDetail() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const {
-    entities,
-    updateEntity,
+    units,
+    updateUnit,
     entries,
     workspaces,
     addChannelEntry,
     recordSystemEvent,
-    entityAccountEntries,
+    unitAccountEntries,
     outputRequests,
-    addEntityAccountEntry,
+    addUnitAccountEntry,
     requestOutput,
     resolveOutputRequest,
     transferAccounts,
@@ -37,9 +37,9 @@ export default function EntityDetail() {
   const canManageEntityTx = canManageValue;
   const { notify } = useNotification();
 
-  const unit = useMemo(() => entities.find(item => item.id === id), [entities, id]);
+  const unit = useMemo(() => units.find(item => item.id === id), [units, id]);
 
-  const [entryType, setEntryType] = useState<EntityAccountEntryType>('increment');
+  const [entryType, setEntryType] = useState<UnitAccountEntryType>('increment');
   const [entryAmount, setEntryAmount] = useState('');
   const [entryMethod, setEntryMethod] = useState('');
 
@@ -53,12 +53,12 @@ export default function EntityDetail() {
   const [isOverrideExpanded, setIsOverrideExpanded] = useState(false);
 
   const entityEntries = useMemo(
-    () => entityAccountEntries.filter(item => item.entity_id === id).sort((a, b) => b.date.localeCompare(a.date)),
-    [entityAccountEntries, id],
+    () => unitAccountEntries.filter(item => item.unit_id === id).sort((a, b) => b.date.localeCompare(a.date)),
+    [unitAccountEntries, id],
   );
 
   const entityRequests = useMemo(
-    () => outputRequests.filter(item => item.entity_id === id).sort((a, b) => b.requested_at.localeCompare(a.requested_at)),
+    () => outputRequests.filter(item => item.unit_id === id).sort((a, b) => b.requested_at.localeCompare(a.requested_at)),
     [outputRequests, id],
   );
 
@@ -87,7 +87,7 @@ export default function EntityDetail() {
   }, [entityEntries, entityRequests]);
 
   const performanceDelta = useMemo(
-    () => entries.filter(item => item.entity_id === id).reduce((sum, item) => sum + item.net, 0),
+    () => entries.filter(item => item.unit_id === id).reduce((sum, item) => sum + item.net, 0),
     [entries, id],
   );
 
@@ -113,7 +113,7 @@ export default function EntityDetail() {
 
     const unitWorkspaceIds = new Set(
       entries
-        .filter(entry => entry.entity_id === id)
+        .filter(entry => entry.unit_id === id)
         .map(entry => entry.workspace_id),
     );
 
@@ -134,25 +134,25 @@ export default function EntityDetail() {
     return (
       <div className="page-shell">
         <div className="section-card p-6 space-y-4">
-          <p className="text-sm text-stone-500 dark:text-stone-400">Entity not found.</p>
-          <button type="button" onClick={() => navigate('/entities')} className="action-btn-secondary">
+          <p className="text-sm text-stone-500 dark:text-stone-400">Participant not found.</p>
+          <button type="button" onClick={() => navigate('/participants')} className="action-btn-secondary">
             <ArrowLeft size={14} />
-            Back to Entities
+            Back to Participants
           </button>
         </div>
       </div>
     );
   }
 
-  const handleUpdateEntityTags = async (entityId: string, tags: string[]) => {
+  const handleUpdateEntityTags = async (unitId: string, tags: string[]) => {
     if (!isAdmin) {
       notify({ type: 'error', message: 'Only admin can edit unit tags.' });
       return;
     }
-    if (unit.id !== entityId) return;
+    if (unit.id !== unitId) return;
 
     try {
-      await updateEntity({ ...unit, tags });
+      await updateUnit({ ...unit, tags });
       notify({ type: 'success', message: 'Unit tags updated.' });
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to update unit tags.' });
@@ -175,8 +175,8 @@ export default function EntityDetail() {
       return;
     }
 
-    await addEntityAccountEntry({
-      entity_id: unit.id,
+    await addUnitAccountEntry({
+      unit_id: unit.id,
       type: entryType,
       amount,
       date: isoToday(),
@@ -215,7 +215,7 @@ export default function EntityDetail() {
     }
 
     await requestOutput({
-      entity_id: unit.id,
+      unit_id: unit.id,
       amount,
       requested_at: new Date().toISOString(),
     });
@@ -269,8 +269,8 @@ export default function EntityDetail() {
       return;
     }
 
-    await addEntityAccountEntry({
-      entity_id: unit.id,
+    await addUnitAccountEntry({
+      unit_id: unit.id,
       type: 'adjustment',
       amount: Number(adjustmentAmount.toFixed(2)),
       date: isoToday(),
@@ -302,8 +302,8 @@ export default function EntityDetail() {
     if (!confirmed) return;
 
     if (delta > 0) {
-      await addEntityAccountEntry({
-        entity_id: unit.id,
+      await addUnitAccountEntry({
+        unit_id: unit.id,
         type: 'increment',
         amount: Math.abs(delta),
         date: isoToday(),
@@ -321,8 +321,8 @@ export default function EntityDetail() {
         notify({ type: 'warning', message: 'Override recorded but channel sync failed. Record manually.' });
       }
     } else {
-      await addEntityAccountEntry({
-        entity_id: unit.id,
+      await addUnitAccountEntry({
+        unit_id: unit.id,
         type: 'decrement',
         amount: Math.abs(delta),
         date: isoToday(),
@@ -343,9 +343,9 @@ export default function EntityDetail() {
     }
 
     await recordSystemEvent({
-      action: 'entity_total_manual_override',
-      entity: 'entity',
-      entity_id: unit.id,
+      action: 'participant_total_manual_override',
+      entity: 'unit',
+      unit_id: unit.id,
       amount: delta,
       details: `Total override ${formatValue(computedTotal)} -> ${formatValue(target)}`,
     });
@@ -358,8 +358,8 @@ export default function EntityDetail() {
     <div className="page-shell space-y-6">
       <div className="section-card p-5 lg:p-6 flex items-center justify-between gap-4">
         <div>
-          <p className="text-xs text-stone-500 dark:text-stone-400">Entity Detail</p>
-          <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">{unit.name || 'Unnamed Entity'}</h2>
+          <p className="text-xs text-stone-500 dark:text-stone-400">Participant Detail</p>
+          <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">{unit.name || 'Unnamed Participant'}</h2>
           {unit.tags && unit.tags.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {unit.tags.map(tag => (
@@ -372,11 +372,11 @@ export default function EntityDetail() {
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => setIsSnapshotOpen(true)} className="action-btn-secondary">
-            Entity Snapshot
+            Participant Snapshot
           </button>
-          <button type="button" onClick={() => navigate('/entities')} className="action-btn-secondary">
+          <button type="button" onClick={() => navigate('/participants')} className="action-btn-secondary">
             <ArrowLeft size={14} />
-            Back to Entities
+            Back to Participants
           </button>
         </div>
       </div>
@@ -415,7 +415,7 @@ export default function EntityDetail() {
         <div className="section-card p-5 lg:p-6 space-y-4">
           <h3 className="text-base font-medium text-stone-900 dark:text-stone-100">{tx('Post Entry')}</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <select className="control-input" value={entryType} onChange={e => setEntryType(e.target.value as EntityAccountEntryType)}>
+            <select className="control-input" value={entryType} onChange={e => setEntryType(e.target.value as UnitAccountEntryType)}>
               <option value="increment">{tx('Increase')}</option>
               <option value="adjustment">Adjustment</option>
             </select>
@@ -630,11 +630,11 @@ export default function EntityDetail() {
       )}
 
       {isSnapshotOpen && (
-        <EntitySnapshot
+        <ParticipantSnapshot
           entity={unit}
           type="entity"
           onClose={() => setIsSnapshotOpen(false)}
-          onUpdateTags={(entityId, tags) => { void handleUpdateEntityTags(entityId, tags); }}
+          onUpdateTags={(unitId, tags) => { void handleUpdateEntityTags(unitId, tags); }}
           workspaceNet={performanceDelta}
           variant="modal"
         />

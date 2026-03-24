@@ -21,7 +21,7 @@ export default function WorkspaceDetail() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { workspaces, entries, entities, members: members, activityLogs, loading, loadingProgress, addEntity, requestAdjustment, addEntry, addActivityLog, endActivityLog, updateEntry, deleteEntry, updateWorkspace, updateEntity, recordOutputRequest, transferAccounts, addChannelEntry } = useData();
+  const { workspaces, entries, units, members: members, activityLogs, loading, loadingProgress, addUnit, requestAdjustment, addEntry, addActivityLog, endActivityLog, updateEntry, deleteEntry, updateWorkspace, updateUnit, recordOutputRequest, transferAccounts, addChannelEntry } = useData();
   const { role, canOperateLog, canManageValue, canAlign } = useAppRole();
   const { notify } = useNotification();
   const { getActionText, tx } = useLabels();
@@ -42,11 +42,11 @@ export default function WorkspaceDetail() {
   const [isMobileViewport, setIsMobileViewport] = useState(() => (
     typeof window !== 'undefined' ? window.innerWidth < 640 : false
   ));
-  const [viewingEntityId, setViewingUnitId] = useState<string | null>(null);
+  const [viewingUnitId, setViewingUnitId] = useState<string | null>(null);
 
   // Form state
-  const [selectedEntityId, setSelectedUnitId] = useState('');
-  const [quickEntityName, setQuickUnitName] = useState('');
+  const [selectedUnitId, setSelectedUnitId] = useState('');
+  const [quickUnitName, setQuickUnitName] = useState('');
   const [entryValueingType, setEntryValueingType] = useState<'value' | 'deferred'>('value');
   const [entryTransferMethod, setEntryTransferMethod] = useState('');
   const [showValueingOptions, setShowValueingOptions] = useState(false);
@@ -72,9 +72,9 @@ export default function WorkspaceDetail() {
   const [isActivityTransitioning, setIsActivityTransitioning] = useState(false);
   const [recentTransitionStatus, setRecentTransitionStatus] = useState<'active' | 'completed' | 'archived' | null>(null);
   const addEntrySectionRef = useRef<HTMLDivElement | null>(null);
-  const addEntitySelectRef = useRef<HTMLSelectElement | null>(null);
+  const addUnitSelectRef = useRef<HTMLSelectElement | null>(null);
   const recordEntryInputRef = useRef<HTMLInputElement | null>(null);
-  const addEntitySuccessTimerRef = useRef<number | null>(null);
+  const addUnitSuccessTimerRef = useRef<number | null>(null);
   const activityTransitionSuccessTimerRef = useRef<number | null>(null);
 
   // Workspace Operations State
@@ -88,10 +88,10 @@ export default function WorkspaceDetail() {
   const [intensityLevel, setIntensityLevel] = useState(1);
   const [levelTimeRemaining, setLevelTimeRemaining] = useState('15:00');
 
-  const viewingEntity = entities.find(p => p.id === viewingEntityId);
-  const viewingEntityEntry = viewingEntityId
+  const viewingEntity = units.find(p => p.id === viewingUnitId);
+  const viewingEntityEntry = viewingUnitId
     ? [...workspaceEntries]
-        .filter(entry => entry.entity_id === viewingEntityId)
+        .filter(entry => entry.unit_id === viewingUnitId)
         .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0]
     : undefined;
 
@@ -163,9 +163,9 @@ export default function WorkspaceDetail() {
   }, [isMobileViewport, isTelemetryOpen]);
 
   useEffect(() => () => {
-    if (addEntitySuccessTimerRef.current !== null) {
-      window.clearTimeout(addEntitySuccessTimerRef.current);
-      addEntitySuccessTimerRef.current = null;
+    if (addUnitSuccessTimerRef.current !== null) {
+      window.clearTimeout(addUnitSuccessTimerRef.current);
+      addUnitSuccessTimerRef.current = null;
     }
     if (activityTransitionSuccessTimerRef.current !== null) {
       window.clearTimeout(activityTransitionSuccessTimerRef.current);
@@ -176,7 +176,7 @@ export default function WorkspaceDetail() {
   const focusAddEntity = () => {
     addEntrySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     window.setTimeout(() => {
-      addEntitySelectRef.current?.focus();
+      addUnitSelectRef.current?.focus();
     }, 80);
   };
 
@@ -248,14 +248,14 @@ export default function WorkspaceDetail() {
     return () => window.removeEventListener('keydown', handleShortcut);
   }, [totalEntry, workspace?.status, isMobileViewport]);
 
-  const availableEntities = entities.filter(entity => !activeWorkspaceEntries.some(entry => entry.entity_id === entity.id));
+  const availableEntities = units.filter(entity => !activeWorkspaceEntries.some(entry => entry.unit_id === entity.id));
   const rosterPositionCandidates = availableEntities;
   const unpositionedActiveEntries = activeWorkspaceEntries.filter(entry => !entry.position_id || entry.position_id <= 0);
   const selectedPositionEntry = selectedPositionNumber !== null
     ? activeWorkspaceEntries.find(entry => entry.position_id === selectedPositionNumber) ?? null
     : null;
   const selectedPositionUnit = selectedPositionEntry
-    ? entities.find(unit => unit.id === selectedPositionEntry.entity_id) ?? null
+    ? units.find(unit => unit.id === selectedPositionEntry.unit_id) ?? null
     : null;
   const operators = members.filter(s => s.role === 'operator' || s.role === 'admin');
   const activityWorkActivitys = activityLogs.filter(activity => activity.workspace_id === workspace?.id);
@@ -273,9 +273,9 @@ export default function WorkspaceDetail() {
   const canManageEntries = canManageValue && !isCompleted && !isArchived;
   const positionFinderOptions = [
     ...unpositionedActiveEntries.map(entry => {
-      const unit = entities.find(candidate => candidate.id === entry.entity_id);
+      const unit = units.find(candidate => candidate.id === entry.unit_id);
       return {
-        unitId: entry.entity_id,
+        unitId: entry.unit_id,
         label: `${unit?.name || 'Unknown'} • waiting`,
         kind: 'waiting' as const,
       };
@@ -294,7 +294,7 @@ export default function WorkspaceDetail() {
     if (exactLabelMatch) return exactLabelMatch;
 
     const exactNameMatch = positionFinderOptions.find(option => {
-      const unitName = entities.find(unit => unit.id === option.unitId)?.name ?? '';
+      const unitName = units.find(unit => unit.id === option.unitId)?.name ?? '';
       return unitName.trim().toLowerCase() === normalized;
     });
     if (exactNameMatch) return exactNameMatch;
@@ -308,7 +308,7 @@ export default function WorkspaceDetail() {
     ? positionFinderOptions.find(option => option.unitId === positionPanelEntityId) ?? null
     : findPositionFinderOption(positionPanelEntityQuery);
   const selectedPositionPanelUnitId = positionPanelEntityId || selectedPositionFinderOption?.unitId || '';
-  const isSelectedPositionPanelUnitWaiting = !!selectedPositionPanelUnitId && unpositionedActiveEntries.some(entry => entry.entity_id === selectedPositionPanelUnitId);
+  const isSelectedPositionPanelUnitWaiting = !!selectedPositionPanelUnitId && unpositionedActiveEntries.some(entry => entry.unit_id === selectedPositionPanelUnitId);
   const hasPositionPanelQuery = positionPanelEntityQuery.trim().length > 0;
   const requiresPositionPanelEntryValue = !isSelectedPositionPanelUnitWaiting && (Boolean(selectedPositionPanelUnitId) || hasPositionPanelQuery);
   const statusClasses: Record<string, string> = {
@@ -328,8 +328,8 @@ export default function WorkspaceDetail() {
     }
 
     if (selectedPositionEntry) {
-      setPositionPanelUnitId(selectedPositionEntry.entity_id);
-      const selectedUnit = entities.find(unit => unit.id === selectedPositionEntry.entity_id);
+      setPositionPanelUnitId(selectedPositionEntry.unit_id);
+      const selectedUnit = units.find(unit => unit.id === selectedPositionEntry.unit_id);
       setPositionPanelUnitQuery(selectedUnit?.name || '');
       setPositionPanelEntryValue('');
       setPositionPanelTotal(String(selectedPositionEntry.output_amount ?? 0));
@@ -342,7 +342,7 @@ export default function WorkspaceDetail() {
     setPositionPanelEntryValue('');
     setPositionPanelTotal('');
     setPositionPanelPlace('');
-  }, [entities, selectedPositionEntry, selectedPositionNumber, unpositionedActiveEntries]);
+  }, [units, selectedPositionEntry, selectedPositionNumber, unpositionedActiveEntries]);
 
   useEffect(() => {
     if (viewMode !== 'workspace') {
@@ -368,7 +368,7 @@ export default function WorkspaceDetail() {
     e.preventDefault();
     if (isAddingEntity) return;
     if (!canAddUnits) {
-      notify({ type: 'error', message: 'Your current permissions do not allow adding entities to active activities.' });
+      notify({ type: 'error', message: 'Your current permissions do not allow adding units to active activities.' });
       return;
     }
 
@@ -385,9 +385,9 @@ export default function WorkspaceDetail() {
 
     try {
       setIsAddingEntity(true);
-      let unitId = selectedEntityId;
-      if (!unitId && quickEntityName.trim()) {
-        unitId = await addEntity({ name: quickEntityName.trim() });
+      let unitId = selectedUnitId;
+      if (!unitId && quickUnitName.trim()) {
+        unitId = await addUnit({ name: quickUnitName.trim() });
       }
 
       if (!unitId) {
@@ -402,7 +402,7 @@ export default function WorkspaceDetail() {
 
       await addEntry({
         workspace_id: workspace.id,
-        entity_id: unitId,
+        unit_id: unitId,
         input_amount: parsedEntryValue,
         output_amount: 0,
         position_id: undefined,
@@ -425,7 +425,7 @@ export default function WorkspaceDetail() {
 
       if (entryValueingType === 'deferred' && parsedEntryValue > 0) {
         await requestAdjustment({
-          entity_id: unitId,
+          unit_id: unitId,
           amount: parsedEntryValue,
           type: 'input',
           requested_at: new Date().toISOString(),
@@ -439,12 +439,12 @@ export default function WorkspaceDetail() {
       setShowValueingOptions(false);
       setEntryValue('');
       setDidAddEntity(true);
-      if (addEntitySuccessTimerRef.current !== null) {
-        window.clearTimeout(addEntitySuccessTimerRef.current);
+      if (addUnitSuccessTimerRef.current !== null) {
+        window.clearTimeout(addUnitSuccessTimerRef.current);
       }
-      addEntitySuccessTimerRef.current = window.setTimeout(() => {
+      addUnitSuccessTimerRef.current = window.setTimeout(() => {
         setDidAddEntity(false);
-        addEntitySuccessTimerRef.current = null;
+        addUnitSuccessTimerRef.current = null;
       }, 2000);
       notify({
         type: 'success',
@@ -616,9 +616,9 @@ export default function WorkspaceDetail() {
   };
 
   const handleUpdateEntityTags = async (id: string, tags: string[]) => {
-    const entity = entities.find(p => p.id === id);
-    if (entity && updateEntity) {
-      await updateEntity({ ...entity, tags });
+    const entity = units.find(p => p.id === id);
+    if (entity && updateUnit) {
+      await updateUnit({ ...entity, tags });
     }
   };
 
@@ -631,7 +631,7 @@ export default function WorkspaceDetail() {
     ];
 
     workspaceEntries.forEach(entry => {
-      const unit = entities.find(p => p.id === entry.entity_id);
+      const unit = units.find(p => p.id === entry.unit_id);
       const net = entry.net;
       const symbol = net > 0 ? '🟢' : net < 0 ? '🔴' : '⚪️';
       lines.push(`${symbol} ${unit?.name}: ${net > 0 ? '+' : ''}${formatValue(net)}`);
@@ -792,7 +792,7 @@ export default function WorkspaceDetail() {
     );
 
     if (conflictingEntry) {
-      const conflictingUnitName = entities.find(unit => unit.id === conflictingEntry.entity_id)?.name || 'Another entity';
+      const conflictingUnitName = units.find(unit => unit.id === conflictingEntry.unit_id)?.name || 'Another entity';
       notify({ type: 'error', message: `Position #${nextPosition} is already occupied by ${conflictingUnitName}.` });
       return;
     }
@@ -819,11 +819,11 @@ export default function WorkspaceDetail() {
 
     let targetUnitId = selectedPositionPanelUnitId;
     if (!targetUnitId && normalizedQuery) {
-      const exactNameMatches = entities.filter(entity => (entity.name || '').trim().toLowerCase() === normalizedQuery);
+      const exactNameMatches = units.filter(entity => (entity.name || '').trim().toLowerCase() === normalizedQuery);
       if (exactNameMatches.length === 1) {
         targetUnitId = exactNameMatches[0].id;
       } else if (exactNameMatches.length > 1) {
-        notify({ type: 'error', message: 'Multiple entities match that name. Choose a specific suggestion from the finder list.' });
+        notify({ type: 'error', message: 'Multiple units match that name. Choose a specific suggestion from the finder list.' });
         return;
       }
 
@@ -832,7 +832,7 @@ export default function WorkspaceDetail() {
         if (rosterContainsMatches.length === 1) {
           targetUnitId = rosterContainsMatches[0].id;
         } else if (rosterContainsMatches.length > 1) {
-          notify({ type: 'error', message: 'Multiple roster entities match that text. Choose a specific suggestion from the finder list.' });
+          notify({ type: 'error', message: 'Multiple roster units match that text. Choose a specific suggestion from the finder list.' });
           return;
         }
       }
@@ -845,29 +845,29 @@ export default function WorkspaceDetail() {
 
     const occupiedEntry = activeWorkspaceEntries.find(entry => entry.position_id === selectedPositionNumber);
     if (occupiedEntry) {
-      const occupiedBy = entities.find(unit => unit.id === occupiedEntry.entity_id)?.name || 'another entity';
+      const occupiedBy = units.find(unit => unit.id === occupiedEntry.unit_id)?.name || 'another entity';
       notify({ type: 'error', message: `Position #${selectedPositionNumber} is already occupied by ${occupiedBy}.` });
       return;
     }
 
-    const existingActiveEntry = activeWorkspaceEntries.find(entry => entry.entity_id === targetUnitId);
+    const existingActiveEntry = activeWorkspaceEntries.find(entry => entry.unit_id === targetUnitId);
     if (existingActiveEntry) {
       await handleAssignPosition(existingActiveEntry, selectedPositionNumber);
       setSelectedPositionNumber(null);
       return;
     }
 
-    const waitingEntry = unpositionedActiveEntries.find(entry => entry.entity_id === targetUnitId);
+    const waitingEntry = unpositionedActiveEntries.find(entry => entry.unit_id === targetUnitId);
     if (waitingEntry) {
       await handleAssignPosition(waitingEntry, selectedPositionNumber);
       setSelectedPositionNumber(null);
       return;
     }
 
-    const historicalEntry = workspaceEntries.find(entry => entry.entity_id === targetUnitId && !!entry.left_at);
+    const historicalEntry = workspaceEntries.find(entry => entry.unit_id === targetUnitId && !!entry.left_at);
     if (historicalEntry) {
       if (!canAddUnits) {
-        notify({ type: 'error', message: 'Activity must be active and permissions must allow adding/re-positioning entities.' });
+        notify({ type: 'error', message: 'Activity must be active and permissions must allow adding/re-positioning units.' });
         return;
       }
 
@@ -900,7 +900,7 @@ export default function WorkspaceDetail() {
 
     const rosterUnit = rosterPositionCandidates.find(unit => unit.id === targetUnitId);
     if (!rosterUnit) {
-      const hasHistoricalEntry = workspaceEntries.some(entry => entry.entity_id === targetUnitId);
+      const hasHistoricalEntry = workspaceEntries.some(entry => entry.unit_id === targetUnitId);
       if (hasHistoricalEntry) {
         notify({ type: 'error', message: 'This entity already has an entry row in this activity. Re-position the existing row instead of adding from roster.' });
       } else {
@@ -909,13 +909,13 @@ export default function WorkspaceDetail() {
       return;
     }
 
-    if (activeWorkspaceEntries.some(entry => entry.entity_id === targetUnitId)) {
+    if (activeWorkspaceEntries.some(entry => entry.unit_id === targetUnitId)) {
       notify({ type: 'error', message: 'Entity is already active in this activity.' });
       return;
     }
 
     if (!canAddUnits) {
-      notify({ type: 'error', message: 'Activity must be active and permissions must allow adding entities.' });
+      notify({ type: 'error', message: 'Activity must be active and permissions must allow adding units.' });
       return;
     }
 
@@ -929,7 +929,7 @@ export default function WorkspaceDetail() {
       setIsPositionActionPending(true);
       await addEntry({
         workspace_id: workspace.id,
-        entity_id: rosterUnit.id,
+        unit_id: rosterUnit.id,
         input_amount: parsedEntryVal,
         output_amount: 0,
         position_id: selectedPositionNumber,
@@ -1043,7 +1043,7 @@ export default function WorkspaceDetail() {
       let alignmentAlertCreated = false;
       if (totalMode === 'leave' && parsedAmount > 0) {
         try {
-          await recordOutputRequest(latestEntry.entity_id, parsedAmount, undefined, workspace.id, totalAlignmentSource || undefined);
+          await recordOutputRequest(latestEntry.unit_id, parsedAmount, undefined, workspace.id, totalAlignmentSource || undefined);
           alignmentAlertCreated = true;
         } catch {
           notify({
@@ -1080,20 +1080,20 @@ export default function WorkspaceDetail() {
           <TelemetrySidebar 
             workspace={workspace} 
             entries={workspaceEntries} 
-            entities={entities} 
+            units={units} 
             isOpen={isTelemetryOpen} 
             onClose={() => setIsTelemetryOpen(false)} 
           />
         )}
 
-        <ContextPanel isOpen={!!viewingEntityId} onClose={() => setViewingUnitId(null)}>
+        <ContextPanel isOpen={!!viewingUnitId} onClose={() => setViewingUnitId(null)}>
           {viewingEntity && (
             <EntitySnapshot 
               entity={viewingEntity} 
               type="entity" 
               onClose={() => setViewingUnitId(null)}
               onUpdateTags={handleUpdateEntityTags}
-              workspaceNet={workspaceEntries.filter(e => e.entity_id === viewingEntityId).reduce((sum, e) => sum + e.net, 0)}
+              workspaceNet={workspaceEntries.filter(e => e.unit_id === viewingUnitId).reduce((sum, e) => sum + e.net, 0)}
               variant="sidebar"
             />
           )}
@@ -1185,7 +1185,7 @@ export default function WorkspaceDetail() {
                   ? 'This form is locked until the activity is active. Use Activate activity in Operations.'
                   : (isCompleted || isArchived)
                     ? 'This form is locked because the activity is completed or archived.'
-                    : 'Your current permissions do not allow adding entities to this activity.'}
+                    : 'Your current permissions do not allow adding units to this activity.'}
               </p>
             )}
 
@@ -1193,9 +1193,9 @@ export default function WorkspaceDetail() {
               <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_0.9fr_auto] gap-3 items-start">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <select
-                    ref={addEntitySelectRef}
+                    ref={addUnitSelectRef}
                     className="control-input"
-                    value={selectedEntityId}
+                    value={selectedUnitId}
                     onChange={e => {
                       setSelectedUnitId(e.target.value);
                       if (e.target.value) setQuickUnitName('');
@@ -1211,7 +1211,7 @@ export default function WorkspaceDetail() {
                     type="text"
                     className="control-input"
                     placeholder="username"
-                    value={quickEntityName}
+                    value={quickUnitName}
                     onChange={e => {
                       setQuickUnitName(e.target.value);
                       if (e.target.value.trim()) setSelectedUnitId('');
@@ -1236,7 +1236,7 @@ export default function WorkspaceDetail() {
                 <button
                   type="submit"
                   className="action-btn-primary justify-center min-h-[42px] w-full lg:w-auto"
-                  disabled={isAddingEntity || (!selectedEntityId && !quickEntityName.trim()) || !canAddUnits || !entryValue.trim()}
+                  disabled={isAddingEntity || (!selectedUnitId && !quickUnitName.trim()) || !canAddUnits || !entryValue.trim()}
                   title="Record Entry (E)"
                 >
                   {isAddingEntity ? 'Recording…' : didAddEntity ? 'Recorded ✓' : 'Record Entry'}
@@ -1402,7 +1402,7 @@ export default function WorkspaceDetail() {
                   <EntriesRow 
                     key={entry.id} 
                     entry={entry} 
-                    entity={entities.find(p => p.id === entry.entity_id)!}
+                    entity={units.find(p => p.id === entry.unit_id)!}
                     updateEntry={guardedUpdateEntry}
                     deleteEntry={guardedDeleteEntry}
                     isHighIntensity={workspaceMode === 'high_intensity'}
@@ -1527,7 +1527,7 @@ export default function WorkspaceDetail() {
             <div className="p-5 border-b border-stone-200 dark:border-stone-800">
               <h3 className="font-medium text-stone-900 dark:text-stone-100">{totalMode === 'sitout' ? 'Move To Standby' : totalMode === 'leave' ? tx('Mark Activity Exit') : 'Update Position Total'}</h3>
               <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">
-                {entities.find(p => p.id === totalEntry.entity_id)?.name || 'Entity'}
+                {units.find(p => p.id === totalEntry.unit_id)?.name || 'Entity'}
               </p>
             </div>
             <div className="p-5 space-y-4">

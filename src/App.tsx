@@ -16,11 +16,11 @@ import { useData } from './context/DataContext';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const BriefFlowOverview = lazy(() => import('./pages/BriefFlowOverview'));
-const AssociateNetwork = lazy(() => import('./pages/AssociateNetwork'));
+const Collaborations = lazy(() => import('./pages/CollaborationNetwork'));
 const ActivityMonitor = lazy(() => import('./pages/ActivityMonitor'));
 const WorkspaceDetail = lazy(() => import('./pages/WorkspaceDetail'));
-const Entities = lazy(() => import('./pages/Entities'));
-const EntityDetail = lazy(() => import('./pages/EntityDetail'));
+const Participants = lazy(() => import('./pages/Participants'));
+const ParticipantDetail = lazy(() => import('./pages/ParticipantDetail'));
 const Team = lazy(() => import('./pages/Team'));
 const Channels = lazy(() => import('./pages/Channels'));
 const Settings = lazy(() => import('./pages/Settings'));
@@ -74,13 +74,13 @@ function AppRoutes() {
           <Route path="/channels" element={canAccessAdminUi ? <Channels /> : <Navigate to="/activity" replace />} />
           <Route path="/channels-fallback" element={<Navigate to="/channels" replace />} />
           <Route path="/brief-flow" element={canAccessAdminUi ? <BriefFlowOverview /> : <Navigate to="/activity" replace />} />
-          <Route path="/contacts" element={canAccessAdminUi ? <AssociateNetwork /> : <Navigate to="/activity" replace />} />
+          <Route path="/collaborations" element={canAccessAdminUi ? <Collaborations /> : <Navigate to="/activity" replace />} />
           <Route path="/team" element={<Team />} />
           <Route path="/settings" element={canAccessAdminUi ? <Settings /> : <Navigate to="/activity" replace />} />
           <Route path="/distribution" element={<Navigate to="/dashboard" replace />} />
           <Route path="/leaderboard" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/entities" element={canAccessAdminUi ? <Entities /> : <Navigate to="/activity" replace />} />
-          <Route path="/entities/:id" element={canAccessAdminUi ? <EntityDetail /> : <Navigate to="/activity" replace />} />
+          <Route path="/participants" element={canAccessAdminUi ? <Participants /> : <Navigate to="/activity" replace />} />
+          <Route path="/participants/:id" element={canAccessAdminUi ? <ParticipantDetail /> : <Navigate to="/activity" replace />} />
           <Route path="/accounting" element={<Navigate to={canAccessAdminUi ? '/channels' : '/activity'} replace />} />
           <Route path="/admin/diagnostics" element={<Navigate to="/settings" replace />} />
           <Route path="/workspaces/:id" element={<ActivityDetailRedirect />} />

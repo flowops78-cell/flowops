@@ -987,7 +987,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     void recordSystemEvent({
       action: 'channel_entry_archived',
       entity: 'channel',
-      entity_id: id,
+      unit_id: id,
       details: 'Channel entry moved to archive list',
     });
     notify({ type: 'success', message: 'Entry archived.' });
@@ -998,7 +998,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     void recordSystemEvent({
       action: 'channel_entry_unarchived',
       entity: 'channel',
-      entity_id: id,
+      unit_id: id,
       details: 'Channel entry restored from archive list',
     });
     notify({ type: 'success', message: 'Entry restored from archive.' });
@@ -1115,7 +1115,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     void recordSystemEvent({
       action: 'deferred_entry_archived',
       entity: 'adjustment',
-      entity_id: id,
+      unit_id: id,
       details: 'Deferred entry moved to archive',
     });
     notify({ type: 'success', message: 'Deferred entry archived.' });
@@ -1126,7 +1126,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     void recordSystemEvent({
       action: 'deferred_entry_unarchived',
       entity: 'adjustment',
-      entity_id: id,
+      unit_id: id,
       details: 'Deferred entry restored from archive',
     });
     notify({ type: 'success', message: 'Deferred entry restored.' });

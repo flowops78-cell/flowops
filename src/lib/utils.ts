@@ -10,7 +10,7 @@ export const formatValue = (amount: number) => {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(amount);
-  return `${formatted} entities`;
+  return formatted;
 };
 
 export const formatCompactNumber = (value: number) => {
@@ -28,7 +28,7 @@ export const formatCompactValue = (amount: number) => {
     maximumFractionDigits: 1,
   }).format(Math.abs(amount));
 
-  return `${sign}${compact} entities`;
+  return `${sign}${compact}`;
 };
 
 export const formatDate = (date: string | Date) => {
@@ -44,3 +44,8 @@ export const APP_MIN_DATE = '2000-01-01';
 export const isValidIsoDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(new Date(`${value}T00:00:00`).getTime());
 
 export const isDateOnOrAfter = (value: string, minDate: string) => value >= minDate;
+
+export const parseNonNegativeNumber = (value: string | number) => {
+  const parsed = typeof value === 'string' ? parseFloat(value) : value;
+  return isNaN(parsed) || parsed < 0 ? 0 : parsed;
+};

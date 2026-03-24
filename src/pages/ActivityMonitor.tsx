@@ -20,13 +20,13 @@ export default function ActivityMonitor() {
     [canAccessAdminUi],
   );
   const [activeTab, setActiveTab] = useState<'workspaces' | 'crm'>(
-    (canAccessAdminUi && location.pathname === '/entities')
+    (canAccessAdminUi && location.pathname === '/units')
       ? 'crm'
       : 'workspaces'
   );
 
   useEffect(() => {
-    const nextTab = (canAccessAdminUi && location.pathname === '/entities')
+    const nextTab = (canAccessAdminUi && location.pathname === '/units')
       ? 'crm'
       : 'workspaces';
     setActiveTab(nextTab);
