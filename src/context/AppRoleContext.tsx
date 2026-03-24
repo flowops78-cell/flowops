@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import { getUserAuthorityContext, isSupabaseConfigured, supabase } from '../lib/supabase';
+import { getUserAuthorityContext, isSupabaseConfigured, supabase, type ClusterMeta, type OrgMeta } from '../lib/supabase';
 import { AppRole, normalizeAppRole } from '../lib/roles';
 import { useAuth } from './AuthContext';
 
@@ -19,6 +19,8 @@ type AppRoleContextType = {
   clusterId: string | null;
   managedOrgIds: string[];
   refreshAuthority: () => Promise<void>;
+  manageableClusters: ClusterMeta[];
+  manageableOrgsByCluster: Record<string, OrgMeta[]>;
 };
 
 
@@ -34,6 +36,8 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [isClusterAdminState, setIsClusterAdminState] = useState(false);
   const [clusterIdState, setClusterIdState] = useState<string | null>(null);
   const [managedOrgIdsState, setManagedOrgIdsState] = useState<string[]>([]);
+  const [manageableClustersState, setManageableClustersState] = useState<ClusterMeta[]>([]);
+  const [manageableOrgsByClusterState, setManageableOrgsByClusterState] = useState<Record<string, OrgMeta[]>>({});
   const [profileRoleLoading, setProfileRoleLoading] = useState(false);
 
   const roleFromMetadata = user?.user_metadata?.app_role;
@@ -74,6 +78,8 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setIsClusterAdminState(authority.isPlatformAdmin);
       setClusterIdState(authority.clusterId);
       setManagedOrgIdsState(authority.managedOrgIds);
+      setManageableClustersState(authority.manageableClusters);
+      setManageableOrgsByClusterState(authority.manageableOrgsByCluster);
       setProfileRoleLoading(false);
 
     };
@@ -92,6 +98,8 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setIsClusterAdminState(authority.isPlatformAdmin);
     setClusterIdState(authority.clusterId);
     setManagedOrgIdsState(authority.managedOrgIds);
+    setManageableClustersState(authority.manageableClusters);
+    setManageableOrgsByClusterState(authority.manageableOrgsByCluster);
     const roleFromProfile = normalizeAppRole(authority.role);
     setProfileRole(roleFromProfile);
   };
@@ -128,8 +136,10 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
        clusterId: clusterIdState,
        managedOrgIds: managedOrgIdsState,
        refreshAuthority,
+       manageableClusters: manageableClustersState,
+       manageableOrgsByCluster: manageableOrgsByClusterState,
      };
-   }, [loading, role, roleLocked, clusterRoleState, isClusterAdminState, clusterIdState, managedOrgIdsState]);
+   }, [loading, role, roleLocked, clusterRoleState, isClusterAdminState, clusterIdState, managedOrgIdsState, manageableClustersState, manageableOrgsByClusterState]);
 
 
   return <AppRoleContext.Provider value={value}>{children}</AppRoleContext.Provider>;

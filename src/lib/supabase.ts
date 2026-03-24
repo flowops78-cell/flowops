@@ -41,6 +41,21 @@ export const supabase = isSupabaseConfigured
     })
   : null;
 
+export type ClusterMeta = {
+  id: string;
+  name: string | null;
+  tag: string | null;
+  slug: string | null;
+};
+
+export type OrgMeta = {
+  id: string;
+  name: string | null;
+  tag: string | null;
+  slug: string | null;
+  cluster_id: string | null;
+};
+
 export type UserAuthorityContext = {
   source: 'teamMemberships' | 'legacy' | 'none';
   role: AppRole | null;
@@ -49,6 +64,8 @@ export type UserAuthorityContext = {
   clusterId: string | null;
   clusterRole: 'cluster_admin' | 'cluster_operator' | 'viewer' | null;
   isPlatformAdmin: boolean;
+  manageableClusters: ClusterMeta[];
+  manageableOrgsByCluster: Record<string, OrgMeta[]>;
 };
 
 
@@ -88,9 +105,11 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
       clusterId: null,
       clusterRole: null,
       isPlatformAdmin: false,
+      manageableClusters: [],
+      manageableOrgsByCluster: {},
     };
-
   }
+
 
   // 1. Fetch teamMemberships and profile context
   const [{ data: orgTeamMemberships, error: orgError }, { data: clusterTeamMemberships, error: clusterError }, { data: profile, error: profileError }] = await Promise.all([
@@ -123,19 +142,36 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
     const activeOrgId = profile?.active_org_id ?? typedOrgTeamMemberships.find(m => m.is_default_org)?.org_id ?? typedOrgTeamMemberships[0]?.org_id ?? null;
     let clusterId = profile?.active_cluster_id || typedClusterTeamMemberships[0]?.cluster_id || null;
 
-    // If cluster admin, fetch ALL organizations in ALL clusters they admin (not just the active one)
+    // If cluster admin, fetch ALL clusters they admin + orgs grouped by cluster
     let allClusterOrgIds: string[] = [];
+    let manageableClusters: ClusterMeta[] = [];
+    let manageableOrgsByCluster: Record<string, OrgMeta[]> = {};
     if (isClusterAdmin) {
       const adminClusterIds = typedClusterTeamMemberships
         .filter(m => m.role === 'cluster_admin')
         .map(m => m.cluster_id);
       if (adminClusterIds.length > 0) {
+        // Fetch cluster metadata
+        const { data: clusterRows } = await supabase
+          .from('clusters')
+          .select('id, name, tag, slug')
+          .in('id', adminClusterIds);
+        if (clusterRows) {
+          manageableClusters = clusterRows as ClusterMeta[];
+        }
+        // Fetch all orgs across those clusters
         const { data: clusterOrgs } = await supabase
           .from('organizations')
-          .select('id, name, tag, slug')
+          .select('id, name, tag, slug, cluster_id')
           .in('cluster_id', adminClusterIds);
         if (clusterOrgs) {
-          allClusterOrgIds = clusterOrgs.map(o => o.id);
+          allClusterOrgIds = (clusterOrgs as OrgMeta[]).map(o => o.id);
+          // Group by cluster
+          for (const org of clusterOrgs as OrgMeta[]) {
+            const key = org.cluster_id ?? 'unknown';
+            if (!manageableOrgsByCluster[key]) manageableOrgsByCluster[key] = [];
+            manageableOrgsByCluster[key].push(org);
+          }
         }
       }
     }
@@ -160,6 +196,8 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
       clusterId,
       clusterRole: (typedClusterTeamMemberships.find(m => m.cluster_id === clusterId)?.role as any) || null,
       isPlatformAdmin: isClusterAdmin,
+      manageableClusters,
+      manageableOrgsByCluster,
     };
   }
 
@@ -171,19 +209,9 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
     clusterId: null,
     clusterRole: null,
     isPlatformAdmin: false,
+    manageableClusters: [],
+    manageableOrgsByCluster: {},
   };
-
-
-  return {
-    source: 'none',
-    role: null,
-    activeOrgId: null,
-    managedOrgIds: [],
-    clusterId: null,
-    clusterRole: null,
-    isPlatformAdmin: false,
-  };
-
 }
 
 export async function getSupabaseAccessToken() {

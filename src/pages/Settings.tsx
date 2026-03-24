@@ -131,7 +131,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   };
   // NOTE: these are wired to real state below after useState declarations
   // clusterId and managedOrgIds are declared after the useState block
-  const { role, clusterRole, isClusterAdmin, canAccessAdminUi, clusterId: contextClusterId, refreshAuthority } = useAppRole();
+  const { role, clusterRole, isClusterAdmin, canAccessAdminUi, clusterId: contextClusterId, refreshAuthority, manageableClusters, manageableOrgsByCluster } = useAppRole();
 
   const { notify } = useNotification();
   const { user, updatePassword: supabaseUpdatePassword } = useAuth();
@@ -176,6 +176,8 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [pendingClusterRoles, setPendingClusterRoles] = React.useState<Record<string, 'cluster_admin' | 'cluster_operator'>>({});
   const [busyClusterUserId, setBusyClusterUserId] = React.useState<string | null>(null);
   const [clusterSearch, setClusterSearch] = React.useState('');
+  // Two-level switcher state: which cluster is selected in the scope switcher
+  const [scopeClusterId, setScopeClusterId] = React.useState<string | null>(null);
 
   const canManageGlobalData = canAccessAdminUi;
   const profileId = user?.id ?? '';
@@ -645,8 +647,8 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       : 'Not configured';
   
   const roleLabel = React.useMemo(() => {
-    if (isClusterAdmin) return 'Cluster Admin';
-    if (clusterRole === 'cluster_admin') return 'Cluster Admin';
+    // Priority: explicit cluster admin state overrides org-level role
+    if (isClusterAdmin || clusterRole === 'cluster_admin') return 'Cluster Admin';
     if (clusterRole === 'cluster_operator') return 'Cluster Operator';
     if (role === 'admin') return 'Org Admin';
     return role.charAt(0).toUpperCase() + role.slice(1);
@@ -914,33 +916,92 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         <div className="section border-t border-stone-200 dark:border-stone-800 pt-6">
           <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Scoped Context Switcher</h3>
           <div className="space-y-4">
-            <div className="flex flex-wrap gap-2">
-              {Object.keys(availableOrgs).length === 0 && <p className="text-xs text-stone-400 italic">No organizations available in your administrative scope.</p>}
-              {Object.entries(availableOrgs).map(([id, org]) => (
-                <button
-                  key={id}
-                  onClick={() => typeof switchOrg === 'function' && switchOrg(id)}
-                  className={cn(
-                    "px-4 py-2 rounded-xl border-2 transition-all flex flex-col items-start gap-1 group",
-                    activeOrgId === id 
-                      ? "bg-white dark:bg-stone-900 border-stone-900 dark:border-white shadow-lg scale-[1.02]" 
-                      : "bg-white dark:bg-stone-800 text-stone-600 border-stone-100 dark:border-stone-700 hover:border-stone-300"
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <Globe size={12} className={activeOrgId === id ? "text-stone-900 dark:text-white" : "text-stone-400"} />
-                    <IdentityBadge 
-                      type="org"
-                      size="sm"
-                      id={id}
-                      name={org.name}
-                      tag={org.tag}
-                      slug={org.slug}
-                    />
+
+            {/* Step 1: Cluster selector (global admin with multiple clusters) */}
+            {isClusterAdmin && manageableClusters.length > 1 && (
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400 mb-2">1. Select Cluster</p>
+                <div className="flex flex-wrap gap-2">
+                  {manageableClusters.map(cluster => (
+                    <button
+                      key={cluster.id}
+                      onClick={() => setScopeClusterId(cluster.id)}
+                      className={cn(
+                        "px-3 py-1.5 rounded-lg border-2 transition-all text-left",
+                        scopeClusterId === cluster.id
+                          ? "bg-stone-900 dark:bg-white border-stone-900 dark:border-white text-white dark:text-stone-900 shadow-md"
+                          : "bg-white dark:bg-stone-800 border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-300 hover:border-stone-400"
+                      )}
+                    >
+                      <IdentityBadge
+                        type="cluster"
+                        size="sm"
+                        id={cluster.id}
+                        name={cluster.name ?? undefined}
+                        tag={cluster.tag ?? undefined}
+                        slug={cluster.slug ?? undefined}
+                      />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Step 2: Org selector, filtered by selected cluster (or show all if single cluster) */}
+            <div>
+              {isClusterAdmin && manageableClusters.length > 1 && (
+                <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400 mb-2">2. Select Organization</p>
+              )}
+              {(() => {
+                // Resolve which cluster to filter by
+                const effectiveScopeClusterId = scopeClusterId
+                  ?? (manageableClusters.length === 1 ? manageableClusters[0]?.id : null)
+                  ?? contextClusterId;
+
+                // If cluster admin: use manageableOrgsByCluster (server-resolved, no RLS block)
+                // Otherwise: fall back to availableOrgs from DataContext
+                const orgsToShow: Array<{ id: string; name?: string | null; tag?: string | null; slug?: string | null }> =
+                  isClusterAdmin && effectiveScopeClusterId
+                    ? (manageableOrgsByCluster[effectiveScopeClusterId] ?? [])
+                    : Object.values(availableOrgs);
+
+                if (isClusterAdmin && manageableClusters.length > 1 && !scopeClusterId) {
+                  return <p className="text-xs text-stone-400 italic">Select a cluster to view available organizations.</p>;
+                }
+                if (orgsToShow.length === 0) {
+                  return <p className="text-xs text-stone-400 italic">No organizations found in this cluster.</p>;
+                }
+                return (
+                  <div className="flex flex-wrap gap-2">
+                    {orgsToShow.map(org => (
+                      <button
+                        key={org.id}
+                        onClick={() => typeof switchOrg === 'function' && switchOrg(org.id)}
+                        className={cn(
+                          "px-4 py-2 rounded-xl border-2 transition-all flex flex-col items-start gap-1",
+                          activeOrgId === org.id
+                            ? "bg-white dark:bg-stone-900 border-stone-900 dark:border-white shadow-lg scale-[1.02]"
+                            : "bg-white dark:bg-stone-800 text-stone-600 border-stone-100 dark:border-stone-700 hover:border-stone-300"
+                        )}
+                      >
+                        <div className="flex items-center gap-2">
+                          <Globe size={12} className={activeOrgId === org.id ? "text-stone-900 dark:text-white" : "text-stone-400"} />
+                          <IdentityBadge
+                            type="org"
+                            size="sm"
+                            id={org.id}
+                            name={org.name ?? undefined}
+                            tag={org.tag ?? undefined}
+                            slug={org.slug ?? undefined}
+                          />
+                        </div>
+                      </button>
+                    ))}
                   </div>
-                </button>
-              ))}
+                );
+              })()}
             </div>
+
             <p className="text-[10px] text-stone-400 italic">
               Switching organization updates your RLS scope instantly.
             </p>
