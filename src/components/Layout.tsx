@@ -32,7 +32,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       items: [
         { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Brief', hint: 'Operational overview and key metrics' },
         { to: '/activity', icon: <History size={18} />, label: 'Activities', hint: 'Activity records and management' },
-        { to: '/participants', icon: <Users size={18} />, label: 'Participants', hint: 'Entity list and detailed profiles' },
+        { to: '/participants', icon: <Users size={18} />, label: 'Participants', hint: 'Participant list and detailed profiles' },
         { to: '/channels', icon: <Circle size={18} />, label: 'Channels', hint: 'Channel tracking and settings overview' },
         { to: '/collaborations', icon: <Handshake size={18} />, label: 'Collaborations', hint: 'Associate network and relationship tracking' },
         { to: '/team', icon: <UserCog size={18} />, label: 'Team', hint: 'Team management and operator coverage' },
