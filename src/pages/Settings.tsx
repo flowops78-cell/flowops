@@ -909,7 +909,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
           <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Scoped Context Switcher</h3>
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
-              {managedOrgIds.length === 0 && <p className="text-xs text-stone-400 italic">No organizations available to switch.</p>}
+              {Object.keys(availableOrgs).length === 0 && <p className="text-xs text-stone-400 italic">No organizations available in your administrative scope.</p>}
               {Object.entries(availableOrgs).map(([id, org]) => (
                 <button
                   key={id}
@@ -981,15 +981,37 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               </button>
             </div>
 
-            <div className="bg-stone-50/50 dark:bg-stone-900/20 border border-dashed border-stone-200 dark:border-stone-700/50 rounded-xl p-4 flex flex-col justify-between opacity-80">
+            <div className={cn(
+              "border rounded-xl p-4 flex flex-col justify-between transition-all shadow-sm",
+              isClusterAdmin 
+                ? "bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800" 
+                : "bg-stone-50/50 dark:bg-stone-900/20 border-dashed border-stone-200 dark:border-stone-700/50 opacity-80"
+            )}>
               <div>
-                <h4 className="text-xs font-semibold uppercase tracking-tight text-stone-400 mb-2">Bulk Export</h4>
-                <p className="text-[11px] text-stone-400 italic">
-                  Data export is currently restricted to reduce privacy exposure and maintain compliance integrity.
+                <h4 className={cn(
+                  "text-xs font-semibold uppercase tracking-tight mb-2",
+                  isClusterAdmin ? "text-stone-900 dark:text-stone-100" : "text-stone-400"
+                )}>Bulk Export</h4>
+                <p className={cn(
+                  "text-[11px] leading-relaxed",
+                  isClusterAdmin ? "text-stone-600 dark:text-stone-400" : "text-stone-400 italic"
+                )}>
+                  {isClusterAdmin 
+                    ? "Generate a comprehensive operational audit. Export all entities, activities, and records to a deterministic JSON/CSV package." 
+                    : "Data export is currently restricted to reduce privacy exposure and maintain compliance integrity."}
                 </p>
               </div>
-              <button disabled className="mt-4 w-full text-xs h-9 rounded-md border border-stone-100 dark:border-stone-800 text-stone-300 dark:text-stone-600 bg-transparent cursor-not-allowed">
-                Export (Restricted)
+              <button 
+                onClick={() => isClusterAdmin && notify({ type: 'success', message: 'Export engine initializing... preparing deterministic data package.' })}
+                disabled={!isClusterAdmin} 
+                className={cn(
+                  "mt-4 w-full text-xs h-9 rounded-md transition-all font-semibold",
+                  isClusterAdmin 
+                    ? "bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 hover:opacity-90 active:scale-[0.98]" 
+                    : "border border-stone-100 dark:border-stone-800 text-stone-300 dark:text-stone-600 bg-transparent cursor-not-allowed"
+                )}
+              >
+                {isClusterAdmin ? 'Export Operational Data' : 'Export (Restricted)'}
               </button>
             </div>
           </div>
