@@ -359,7 +359,7 @@ Deno.serve(async (request: Request) => {
     return json(200, { ok: true }, origin);
   }
 
-  // Default Action: list (All Orgs and Users in Scope)
+  // Default Action: list (all organizations and users in scope)
   const { data: profiles, error: profileError } = await adminClient
     .from('profiles')
     .select('id, active_org_id, active_cluster_id, created_at')

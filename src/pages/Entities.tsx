@@ -2,64 +2,64 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { Search, Plus, Tag, X, TrendingUp, TrendingDown, Calendar, Award, Edit2, Save, Eye, Clock, Download, LayoutGrid, List, ArrowRightLeft, Trash2 } from 'lucide-react';
-import { Associate, Entity } from '../types';
-type Participant = Entity;
+import { Collaboration, Entity } from '../types';
+
 import { formatValue, formatDate } from '../lib/utils';
 import { cn } from '../lib/utils';
-import MobileRecordCard from '../components/MobileRecordCard';
-import CollapsibleWorkspaceSection from '../components/CollapsibleWorkspaceSection';
+import MobileActivityRecordCard from '../components/MobileActivityRecordCard';
+import CollapsibleActivitySection from '../components/CollapsibleActivitySection';
 import { useAppRole } from '../context/AppRoleContext';
 import DataActionMenu from '../components/DataActionMenu';
-import ParticipantSnapshot from '../components/ParticipantSnapshot';
+import EntitySnapshot from '../components/EntitySnapshot';
 import { useLabels } from '../lib/labels';
 
-const getParticipantDisplayName = (name?: string | null) => {
+const getEntityDisplayName = (name?: string | null) => {
   const trimmed = name?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : 'Unnamed Participant';
+  return trimmed && trimmed.length > 0 ? trimmed : 'Unnamed Entity';
 };
 
-export default function Participants({ embedded = false }: { embedded?: boolean }) {
+export default function Entities({ embedded = false }: { embedded?: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { units: units, addUnit, requestAdjustment, importUnits, updateUnit, deleteUnit, transferUnitTotal, recordOutputRequest, entries, workspaces, associates } = useData();
-  const { canAccessAdminUi, canOperateLog, canManageValue } = useAppRole();
+  const { entities, addUnit, requestAdjustment, importUnits, updateUnit, deleteUnit, transferUnits, records, activities, collaborations } = useData();
+  const { canAccessAdminUi, canOperateLog, canManageImpact } = useAppRole();
   const { getActionText, tx } = useLabels();
-  const canRecordDeferred = canOperateLog;
+  const canActivityRecordDeferred = canOperateLog;
   const [searchTerm, setSearchTerm] = useState('');
   const [isAdding, setIsAdding] = useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
-  const [isRecordingOutputRequest, setIsRecordingOutputRequest] = useState(false);
-  const [isRecordingDeferred, setIsRecordingDeferred] = useState(false);
-  const [viewMode, setViewMode] = useState<'grid' | 'workspace'>('grid');
-  const [quickViewParticipant, setQuickViewParticipant] = useState<Participant | null>(null);
-  const [entriesViewParticipant, setEntriesViewParticipant] = useState<Participant | null>(null);
-  const [participantsWorkspaceScrollTop, setParticipantsWorkspaceScrollTop] = useState(0);
-  const participantsWorkspaceContainerRef = useRef<HTMLDivElement | null>(null);
-  const [deletingParticipantId, setDeletingParticipantId] = useState<string | null>(null);
+  const [isActivityRecordingOutputRequest, setIsActivityRecordingOutputRequest] = useState(false);
+  const [isActivityRecordingDeferred, setIsActivityRecordingDeferred] = useState(false);
+  const [viewMode, setViewMode] = useState<'grid' | 'activity'>('grid');
+  const [quickViewEntity, setQuickViewEntity] = useState<Entity | null>(null);
+  const [entriesViewEntity, setEntriesViewEntity] = useState<Entity | null>(null);
+  const [entitysActivityScrollTop, setEntitysActivityScrollTop] = useState(0);
+  const entitysActivityContainerRef = useRef<HTMLDivElement | null>(null);
+  const [deletingEntityId, setDeletingEntityId] = useState<string | null>(null);
   const [importStatus, setImportStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // New Participant Form
+  // New Entity Form
   const [name, setName] = useState('');
   const [profileTotal, setProfileTotal] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [currentTag, setCurrentTag] = useState('');
-  const [attributedAssociateId, setAttributedAssociateId] = useState('');
-  const [transferFromParticipantId, setTransferFromParticipantId] = useState('');
-  const [transferToParticipantId, setTransferToParticipantId] = useState('');
-  const [transferAmount, setTransferAmount] = useState('');
-  const [outputRequestParticipantId, setOutputRequestParticipantId] = useState('');
+  const [attributedCollaborationId, setAttributedCollaborationId] = useState('');
+  const [transferFromEntityId, setTransferFromEntityId] = useState('');
+  const [transferToEntityId, setTransferToEntityId] = useState('');
+  const [transferAmount, settransferAmount] = useState('');
+  const [outputRequestEntityId, setOutputRequestEntityId] = useState('');
   const [outputRequestAmount, setOutputRequestAmount] = useState('');
-  const [deferredParticipantId, setDeferredParticipantId] = useState('');
+  const [deferredEntityId, setDeferredEntityId] = useState('');
   const [deferredAmount, setDeferredAmount] = useState('');
   const [deferredDirection, setDeferredDirection] = useState<'inbound' | 'outbound'>('outbound');
 
-  const openTransferForm = (fromParticipantId?: string) => {
+  const openTransferForm = (fromEntityId?: string) => {
     setIsTransferring(true);
-    if (fromParticipantId) {
-      setTransferFromParticipantId(fromParticipantId);
-      if (transferToParticipantId === fromParticipantId) {
-        setTransferToParticipantId('');
+    if (fromEntityId) {
+      setTransferFromEntityId(fromEntityId);
+      if (transferToEntityId === fromEntityId) {
+        setTransferToEntityId('');
       }
     }
     if (typeof window !== 'undefined') {
@@ -67,9 +67,9 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
     }
   };
 
-  const openDeferredForm = (participantId?: string) => {
-    setIsRecordingDeferred(true);
-    setDeferredParticipantId(participantId || '');
+  const openDeferredForm = (entityId?: string) => {
+    setIsActivityRecordingDeferred(true);
+    setDeferredEntityId(entityId || '');
     setDeferredAmount('');
     setDeferredDirection('outbound');
     if (typeof window !== 'undefined') {
@@ -77,8 +77,8 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
     }
   };
 
-  const openParticipantProfile = (participantId: string) => {
-    navigate(`/participants/${participantId}`);
+  const openEntityProfile = (entityId: string) => {
+    navigate(`/entities/${entityId}`);
   };
 
   const normalizeValueInput = (value: string, setValue: (next: string) => void) => {
@@ -90,20 +90,20 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
   };
 
   // --- Smart Stats Calculation ---
-  const participantStats = useMemo(() => {
+  const entityStats = useMemo(() => {
     const stats = new Map<string, { net: number; activitys: number; lastActive: string | null; surpluses: number; totalInflow: number; avgActivity: number }>();
 
-    units.forEach(p => {
-      const participantEntries = entries.filter(l => l.unit_id === p.id);
-      const net = participantEntries.reduce((sum, e) => sum + e.net, 0);
-      const totalInflow = participantEntries.reduce((sum, e) => sum + e.input_amount, 0);
-      const activitys = participantEntries.length;
-      const surpluses = participantEntries.filter(e => e.net > 0).length;
+    entities.forEach(p => {
+      const entityEntries = records.filter(l => l.entity_id === p.id);
+      const net = entityEntries.reduce((sum, e) => sum + e.net, 0);
+      const totalInflow = entityEntries.reduce((sum, e) => sum + e.unit_amount, 0);
+      const activitys = entityEntries.length;
+      const surpluses = entityEntries.filter(e => e.net > 0).length;
       
       // Calculate average activity duration
       let totalDuration = 0;
       let durationCount = 0;
-      participantEntries.forEach(e => {
+      entityEntries.forEach(e => {
         if (e.joined_at && e.left_at) {
           totalDuration += (new Date(e.left_at).getTime() - new Date(e.joined_at).getTime()) / (1000 * 60 * 60);
           durationCount++;
@@ -113,11 +113,11 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
       
       // Find last played date
       let lastActive = null;
-      if (participantEntries.length > 0) {
-        // Get workspace dates
-        const dates = participantEntries.map(e => {
-          const workspace = workspaces.find(g => g.id === e.workspace_id);
-          return workspace ? workspace.date : '';
+      if (entityEntries.length > 0) {
+        // Get activity dates
+        const dates = entityEntries.map(e => {
+          const activity = activities.find(g => g.id === e.activity_id);
+          return activity ? activity.date : '';
         }).filter(d => d).sort();
         lastActive = dates.length > 0 ? dates[dates.length - 1] : null;
       }
@@ -126,77 +126,77 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
     });
 
     return stats;
-  }, [units, entries, workspaces]);
+  }, [entities, records, activities]);
 
-  const workspaceById = useMemo(() => {
-    return new Map(workspaces.map(workspace => [workspace.id, workspace]));
-  }, [workspaces]);
+  const activityById = useMemo(() => {
+    return new Map(activities.map(activity => [activity.id, activity]));
+  }, [activities]);
 
-  const activeProfileParticipant = quickViewParticipant ?? entriesViewParticipant;
+  const activeProfileEntity = quickViewEntity ?? entriesViewEntity;
 
   const quickViewEntries = useMemo(() => {
-    if (!activeProfileParticipant) return [];
+    if (!activeProfileEntity) return [];
 
-    return entries
-      .filter(entry => entry.unit_id === activeProfileParticipant.id)
-      .map(entry => {
-        const workspace = workspaceById.get(entry.workspace_id);
+    return records
+      .filter(record => record.entity_id === activeProfileEntity.id)
+      .map(record => {
+        const activity = activityById.get(record.activity_id);
         const sortTimestamp =
-          entry.left_at ||
-          entry.joined_at ||
-          entry.created_at ||
-          (workspace?.date ? `${workspace.date}T00:00:00.000Z` : '');
+          record.left_at ||
+          record.joined_at ||
+          record.created_at ||
+          (activity?.date ? `${activity.date}T00:00:00.000Z` : '');
 
         return {
-          id: entry.id,
-          date: workspace?.date || (entry.created_at ? entry.created_at.split('T')[0] : ''),
-          location: workspace?.location || 'Activity',
-          workspaceStatus: workspace?.status || null,
-          inflow: entry.input_amount || 0,
-          outflow: entry.output_amount || 0,
-          net: entry.net || 0,
-          isActive: !entry.left_at,
+          id: record.id,
+          date: activity?.date || (record.created_at ? record.created_at.split('T')[0] : ''),
+          location: activity?.location || 'Activity',
+          activityStatus: activity?.status || null,
+          inflow: record.unit_amount || 0,
+          outflow: record.unit_amount || 0,
+          net: (record.direction === 'increase' ? record.unit_amount : -record.unit_amount) || 0,
+          isActive: !record.left_at,
           sortTimestamp,
         };
       })
       .sort((a, b) => new Date(b.sortTimestamp || 0).getTime() - new Date(a.sortTimestamp || 0).getTime());
-  }, [activeProfileParticipant, entries, workspaceById]);
+  }, [activeProfileEntity, records, activityById]);
 
-  const filteredParticipants = units.filter(participant => 
-    participant.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    participant.tags?.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
+  const filteredEntitys = entities.filter(entity => 
+    entity.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    entity.tags?.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   const PARTICIPANT_ROW_HEIGHT = 58;
   const PARTICIPANT_OVERSCAN = 10;
   const PARTICIPANT_VIEWPORT_HEIGHT = 560;
-  const shouldWindowParticipantsWorkspace = viewMode === 'workspace' && filteredParticipants.length > 120;
-  const participantVisibleCount = Math.ceil(PARTICIPANT_VIEWPORT_HEIGHT / PARTICIPANT_ROW_HEIGHT) + PARTICIPANT_OVERSCAN * 2;
-  const participantStartIndex = shouldWindowParticipantsWorkspace
-    ? Math.max(0, Math.floor(participantsWorkspaceScrollTop / PARTICIPANT_ROW_HEIGHT) - PARTICIPANT_OVERSCAN)
+  const shouldWindowEntitysActivity = viewMode === 'activity' && filteredEntitys.length > 120;
+  const entityVisibleCount = Math.ceil(PARTICIPANT_VIEWPORT_HEIGHT / PARTICIPANT_ROW_HEIGHT) + PARTICIPANT_OVERSCAN * 2;
+  const entityStartIndex = shouldWindowEntitysActivity
+    ? Math.max(0, Math.floor(entitysActivityScrollTop / PARTICIPANT_ROW_HEIGHT) - PARTICIPANT_OVERSCAN)
     : 0;
-  const participantEndIndex = shouldWindowParticipantsWorkspace
-    ? Math.min(filteredParticipants.length, participantStartIndex + participantVisibleCount)
-    : filteredParticipants.length;
-  const visibleParticipants = shouldWindowParticipantsWorkspace
-    ? filteredParticipants.slice(participantStartIndex, participantEndIndex)
-    : filteredParticipants;
-  const participantTopSpacerHeight = shouldWindowParticipantsWorkspace ? participantStartIndex * PARTICIPANT_ROW_HEIGHT : 0;
-  const participantBottomSpacerHeight = shouldWindowParticipantsWorkspace
-    ? Math.max(0, (filteredParticipants.length - participantEndIndex) * PARTICIPANT_ROW_HEIGHT)
+  const entityEndIndex = shouldWindowEntitysActivity
+    ? Math.min(filteredEntitys.length, entityStartIndex + entityVisibleCount)
+    : filteredEntitys.length;
+  const visibleEntitys = shouldWindowEntitysActivity
+    ? filteredEntitys.slice(entityStartIndex, entityEndIndex)
+    : filteredEntitys;
+  const entityTopSpacerHeight = shouldWindowEntitysActivity ? entityStartIndex * PARTICIPANT_ROW_HEIGHT : 0;
+  const entityBottomSpacerHeight = shouldWindowEntitysActivity
+    ? Math.max(0, (filteredEntitys.length - entityEndIndex) * PARTICIPANT_ROW_HEIGHT)
     : 0;
 
   useEffect(() => {
-    setParticipantsWorkspaceScrollTop(0);
-    if (participantsWorkspaceContainerRef.current) {
-      participantsWorkspaceContainerRef.current.scrollTop = 0;
+    setEntitysActivityScrollTop(0);
+    if (entitysActivityContainerRef.current) {
+      entitysActivityContainerRef.current.scrollTop = 0;
     }
   }, [searchTerm, viewMode]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const action = params.get('action');
-    if (action !== 'add-participant' && action !== 'add-deferred') return;
+    if (action !== 'add-entity' && action !== 'add-deferred') return;
 
     if (action === 'add-deferred') {
       openDeferredForm();
@@ -208,7 +208,7 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
     navigate({ pathname: location.pathname, search: next.toString() ? `?${next.toString()}` : '' }, { replace: true });
   }, [location.pathname, location.search, navigate]);
 
-  const handleAddParticipant = async (e: React.FormEvent) => {
+  const handleAddEntity = async (e: React.FormEvent) => {
     e.preventDefault();
     const displayName = name.trim();
     if (displayName.length === 0) {
@@ -223,12 +223,12 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
         name: displayName,
         tags,
         total: Number.isFinite(parsedTotal as number) ? parsedTotal : undefined,
-        attributed_associate_id: attributedAssociateId || undefined
+        collaboration_id: attributedCollaborationId || undefined
       });
       setIsAdding(false);
       resetForm();
     } catch (error: any) {
-      const message = error?.message || 'Unable to save participant.';
+      const message = error?.message || 'Unable to save entity.';
       setImportStatus({ type: 'error', message });
     }
   };
@@ -238,7 +238,7 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
     setProfileTotal('');
     setTags([]);
     setCurrentTag('');
-    setAttributedAssociateId('');
+    setAttributedCollaborationId('');
   };
 
   const handleAddTag = (e: React.KeyboardEvent) => {
@@ -261,33 +261,33 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
 
 
 
-  const handleTransferBetweenParticipants = async (e: React.FormEvent) => {
+  const handleTransferBetweenEntitys = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canManageValue) {
-      setImportStatus({ type: 'error', message: 'Only admin can transfer participant totals.' });
+    if (!canManageImpact) {
+      setImportStatus({ type: 'error', message: 'Only admin can transfer entity totals.' });
       return;
     }
     try {
       const parsedAmount = Number(transferAmount);
       if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-        setImportStatus({ type: 'error', message: 'Transfer amount must be greater than 0.' });
+        setImportStatus({ type: 'error', message: 'TransferAmount amount must be greater than 0.' });
         return;
       }
 
-      await transferUnitTotal(transferFromParticipantId, transferToParticipantId, parsedAmount);
-      setImportStatus({ type: 'success', message: 'Participant transfer completed.' });
+      await transferUnits(transferFromEntityId, transferToEntityId, parsedAmount);
+      setImportStatus({ type: 'success', message: 'Entity transfer completed.' });
       setIsTransferring(false);
-      setTransferFromParticipantId('');
-      setTransferToParticipantId('');
-      setTransferAmount('');
+      setTransferFromEntityId('');
+      setTransferToEntityId('');
+      settransferAmount('');
     } catch (error: any) {
       setImportStatus({ type: 'error', message: error?.message || 'Unable to transfer total.' });
     }
   };
 
-  const handleRecordAlignmentRequest = async (e: React.FormEvent) => {
+  const handleActivityRecordAlignmentRequest = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canManageValue) {
+    if (!canManageImpact) {
       setImportStatus({ type: 'error', message: 'Only admin can record alignment requests.' });
       return;
     }
@@ -299,133 +299,133 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
         return;
       }
 
-      await recordOutputRequest(outputRequestParticipantId, parsedAmount);
+      await requestAdjustment(outputRequestEntityId, parsedAmount);
       setImportStatus({ type: 'success', message: 'Outflow request submitted and marked pending for admin approval.' });
-      setIsRecordingOutputRequest(false);
-      setOutputRequestParticipantId('');
+      setIsActivityRecordingOutputRequest(false);
+      setOutputRequestEntityId('');
       setOutputRequestAmount('');
     } catch (error: any) {
       setImportStatus({ type: 'error', message: error?.message || 'Unable to record alignment request.' });
     }
   };
 
-  const handleRecordDeferredEntry = async (e: React.FormEvent) => {
+  const handleActivityRecordDeferredActivityRecord = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canRecordDeferred) {
-      setImportStatus({ type: 'error', message: 'Only admin or operator can record deferred entries.' });
+    if (!canActivityRecordDeferred) {
+      setImportStatus({ type: 'error', message: 'Only admin or operator can record deferred records.' });
       return;
     }
 
     try {
       const parsedAmount = Number(deferredAmount);
-      if (!deferredParticipantId) {
-        setImportStatus({ type: 'error', message: 'Select a participant first.' });
+      if (!deferredEntityId) {
+        setImportStatus({ type: 'error', message: 'Select a entity first.' });
         return;
       }
       if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-        setImportStatus({ type: 'error', message: 'Deferred entry amount must be greater than 0.' });
+        setImportStatus({ type: 'error', message: 'Deferred record amount must be greater than 0.' });
         return;
       }
 
       await requestAdjustment({
-        unit_id: deferredParticipantId,
+        entity_id: deferredEntityId,
         amount: parsedAmount,
         type: deferredDirection === 'outbound' ? 'input' : 'output',
         requested_at: new Date().toISOString(),
       });
 
-      setImportStatus({ type: 'success', message: 'Deferred entry submitted and marked pending for admin approval.' });
-      setIsRecordingDeferred(false);
-      setDeferredParticipantId('');
+      setImportStatus({ type: 'success', message: 'Deferred record submitted and marked pending for admin approval.' });
+      setIsActivityRecordingDeferred(false);
+      setDeferredEntityId('');
       setDeferredAmount('');
       setDeferredDirection('outbound');
     } catch (error: any) {
-      setImportStatus({ type: 'error', message: error?.message || 'Unable to add pending entry.' });
+      setImportStatus({ type: 'error', message: error?.message || 'Unable to add pending record.' });
     }
   };
 
-  const handleDeleteParticipantProfile = async (participant: Participant) => {
-    if (deletingParticipantId === participant.id) return;
-    if (!canManageValue) {
-      setImportStatus({ type: 'error', message: 'Only admin can delete participant profiles.' });
+  const handleDeleteEntityProfile = async (entity: Entity) => {
+    if (deletingEntityId === entity.id) return;
+    if (!canManageImpact) {
+      setImportStatus({ type: 'error', message: 'Only admin can delete entity profiles.' });
       return;
     }
 
-    const confirmed = window.confirm(`Delete ${getParticipantDisplayName(participant.name)} profile? This cannot be undone.`);
+    const confirmed = window.confirm(`Delete ${getEntityDisplayName(entity.name)} profile? This cannot be undone.`);
     if (!confirmed) return;
 
     try {
-      setDeletingParticipantId(participant.id);
-      await deleteUnit(participant.id);
-      setImportStatus({ type: 'success', message: 'Participant profile deleted.' });
-      setQuickViewParticipant(current => (current?.id === participant.id ? null : current));
+      setDeletingEntityId(entity.id);
+      await deleteUnit(entity.id);
+      setImportStatus({ type: 'success', message: 'Entity profile deleted.' });
+      setQuickViewEntity(current => (current?.id === entity.id ? null : current));
     } catch (error: any) {
-      setImportStatus({ type: 'error', message: error?.message || 'Unable to delete participant profile.' });
+      setImportStatus({ type: 'error', message: error?.message || 'Unable to delete entity profile.' });
     } finally {
-      setDeletingParticipantId(current => (current === participant.id ? null : current));
+      setDeletingEntityId(current => (current === entity.id ? null : current));
     }
   };
 
-  const handleUpdateParticipantTags = async (participantId: string, tags: string[]) => {
-    const existing = units.find(entity => entity.id === participantId);
+  const handleUpdateEntityTags = async (entityId: string, tags: string[]) => {
+    const existing = entities.find(entity => entity.id === entityId);
     if (!existing) return;
 
     try {
       await updateUnit({ ...existing, tags });
-      setImportStatus({ type: 'success', message: 'Participant tags updated.' });
+      setImportStatus({ type: 'success', message: 'Entity tags updated.' });
     } catch (error: any) {
-      setImportStatus({ type: 'error', message: error?.message || 'Unable to update participant tags.' });
+      setImportStatus({ type: 'error', message: error?.message || 'Unable to update entity tags.' });
     }
   };
 
-  const activeParticipantsCount = units.filter(p => (p.total || 0) !== 0).length;
-  const positiveDeltaParticipants = units.filter(p => (participantStats.get(p.id)?.net || 0) > 0).length;
-  const participantDataMenuItems = [
-    { key: 'add-entity-profile', label: getActionText('addParticipant'), onClick: () => setIsAdding(true) },
+  const activeEntitysCount = entities.filter(p => (p.total || 0) !== 0).length;
+  const positiveDeltaEntitys = entities.filter(p => (entityStats.get(p.id)?.net || 0) > 0).length;
+  const entityDataMenuItems = [
+    { key: 'add-entity-profile', label: getActionText('addEntity'), onClick: () => setIsAdding(true) },
 
     {
       key: 'transfer-totals',
-      label: 'Transfer Totals',
+      label: 'TransferAmount Totals',
       onClick: () => {
-        if (!canManageValue) {
-          setImportStatus({ type: 'error', message: 'Only admin can transfer participant totals.' });
+        if (!canManageImpact) {
+          setImportStatus({ type: 'error', message: 'Only admin can transfer entity totals.' });
           return;
         }
         openTransferForm();
       },
-      disabled: !canManageValue,
+      disabled: !canManageImpact,
     },
     {
       key: 'alignment-request',
-      label: 'Record Alignment Request',
+      label: 'ActivityRecord Alignment Request',
       onClick: () => {
-        if (!canManageValue) {
+        if (!canManageImpact) {
           setImportStatus({ type: 'error', message: 'Only admin can record alignment requests.' });
           return;
         }
-        setIsRecordingOutputRequest(true);
+        setIsActivityRecordingOutputRequest(true);
       },
-      disabled: !canManageValue,
+      disabled: !canManageImpact,
     },
     {
-      key: 'record-deferred-entry',
-      label: getActionText('recordDeferredEntry'),
+      key: 'record-deferred-record',
+      label: getActionText('recordDeferredActivityRecord'),
       onClick: () => {
-        if (!canRecordDeferred) {
-          setImportStatus({ type: 'error', message: 'Only admin or operator can record deferred entries.' });
+        if (!canActivityRecordDeferred) {
+          setImportStatus({ type: 'error', message: 'Only admin or operator can record deferred records.' });
           return;
         }
         openDeferredForm();
       },
-      disabled: !canRecordDeferred,
+      disabled: !canActivityRecordDeferred,
     },
   ];
 
   return (
     <div className="page-shell relative">
-      {!canManageValue && (
+      {!canManageImpact && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400 px-4 py-2 text-sm">
-          Admin-only actions: transfer totals, alignment requests, and deferred alignment. Activity operators can still record deferred entries.
+          Admin-only actions: transfer totals, alignment requests, and deferred alignment. Activity operators can still record deferred records.
         </div>
       )}
       <div
@@ -439,11 +439,11 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
         <div>
           {embedded ? (
             <>
-              <h3 className="text-base font-medium text-stone-900 dark:text-stone-100">Participants</h3>
+              <h3 className="text-base font-medium text-stone-900 dark:text-stone-100">Entities</h3>
             </>
           ) : (
             <>
-              <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Participants</h2>
+              <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Entities</h2>
             </>
           )}
         </div>
@@ -451,15 +451,15 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
           {!embedded && (
             <div className="hidden lg:flex items-center gap-2 text-xs">
               <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
-                <span className="font-mono text-stone-900 dark:text-stone-100">{units.length}</span> participants
+                <span className="font-mono text-stone-900 dark:text-stone-100">{entities.length}</span> entities
               </span>
               <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
-                <span className="font-mono text-stone-900 dark:text-stone-100">{activeParticipantsCount}</span> active
+                <span className="font-mono text-stone-900 dark:text-stone-100">{activeEntitysCount}</span> active
               </span>
             </div>
           )}
           <div className="flex gap-2 flex-wrap">
-            <DataActionMenu items={participantDataMenuItems} />
+            <DataActionMenu items={entityDataMenuItems} />
           </div>
         </div>
       </div>
@@ -490,7 +490,7 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
 
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm text-stone-500 dark:text-stone-400">
-            <span className="font-medium text-stone-900 dark:text-stone-100">{filteredParticipants.length}</span> participants
+            <span className="font-medium text-stone-900 dark:text-stone-100">{filteredEntitys.length}</span> entities
           </p>
           <div className="toggle-indirect-track toggle-compact-track">
             <button
@@ -506,10 +506,10 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
               Grid
             </button>
             <button
-              onClick={() => setViewMode('workspace')}
+              onClick={() => setViewMode('activity')}
               className={cn(
                 "toggle-compact-button",
-                viewMode === 'workspace'
+                viewMode === 'activity'
                   ? "toggle-indirect-active"
                   : "toggle-indirect-idle"
               )}
@@ -522,8 +522,8 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
       </div>
 
       {isAdding && (
-        <form onSubmit={handleAddParticipant} className="section-card p-6 animate-in fade-in slide-in-from-top-4">
-          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">New Participant</h3>
+        <form onSubmit={handleAddEntity} className="section-card p-6 animate-in fade-in slide-in-from-top-4">
+          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">New Entity</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div className="space-y-1">
               <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Name</label>
@@ -534,7 +534,7 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
                 onChange={e => setName(e.target.value)}
                 required
               />
-              <p className="text-[11px] text-stone-500 dark:text-stone-400">Used to identify this participant.</p>
+              <p className="text-[11px] text-stone-500 dark:text-stone-400">Used to identify this entity.</p>
             </div>
             <input
               type="number"
@@ -546,11 +546,11 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
             />
             <select
               className="control-input"
-              value={attributedAssociateId}
-              onChange={e => setAttributedAssociateId(e.target.value)}
+              value={attributedCollaborationId}
+              onChange={e => setAttributedCollaborationId(e.target.value)}
             >
               <option value="">Collaboration attribution (optional)</option>
-              {associates.map(a => (
+              {collaborations.map(a => (
                 <option key={a.id} value={a.id}>{a.name} ({a.role})</option>
               ))}
             </select>
@@ -586,7 +586,7 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
               type="submit" 
               className="action-btn-primary"
             >
-              {getActionText('addParticipant')}
+              {getActionText('addEntity')}
             </button>
           </div>
         </form>
@@ -594,31 +594,31 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
 
       {isTransferring && (
         <div className="fixed inset-0 z-40 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <form onSubmit={handleTransferBetweenParticipants} className="section-card w-full max-w-3xl p-6 animate-in fade-in zoom-in-95">
-            <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Transfer Between Participants</h3>
+          <form onSubmit={handleTransferBetweenEntitys} className="section-card w-full max-w-3xl p-6 animate-in fade-in zoom-in-95">
+            <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">TransferAmount Between Entities</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <select
                 className="control-input"
-                value={transferFromParticipantId}
-                onChange={e => setTransferFromParticipantId(e.target.value)}
-                disabled={!canManageValue}
+                value={transferFromEntityId}
+                onChange={e => setTransferFromEntityId(e.target.value)}
+                disabled={!canManageImpact}
                 required
               >
-                <option value="">From Participant</option>
-                {units.map(entity => (
-                  <option key={entity.id} value={entity.id}>{getParticipantDisplayName(entity.name)} ({formatValue(entity.total || 0)})</option>
+                <option value="">From Entity</option>
+                {entities.map(entity => (
+                  <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(entity.total || 0)})</option>
                 ))}
               </select>
               <select
                 className="control-input"
-                value={transferToParticipantId}
-                onChange={e => setTransferToParticipantId(e.target.value)}
-                disabled={!canManageValue}
+                value={transferToEntityId}
+                onChange={e => setTransferToEntityId(e.target.value)}
+                disabled={!canManageImpact}
                 required
               >
-                <option value="">To Participant</option>
-                {units.map(entity => (
-                  <option key={entity.id} value={entity.id}>{getParticipantDisplayName(entity.name)} ({formatValue(entity.total || 0)})</option>
+                <option value="">To Entity</option>
+                {entities.map(entity => (
+                  <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(entity.total || 0)})</option>
                 ))}
               </select>
               <input
@@ -628,9 +628,9 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
                 className="control-input"
                 placeholder="Amount"
                 value={transferAmount}
-                onChange={e => setTransferAmount(e.target.value)}
-                onBlur={() => normalizeValueInput(transferAmount, setTransferAmount)}
-                disabled={!canManageValue}
+                onChange={e => settransferAmount(e.target.value)}
+                onBlur={() => normalizeValueInput(transferAmount, settransferAmount)}
+                disabled={!canManageImpact}
                 required
               />
             </div>
@@ -639,37 +639,37 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
                 type="button"
                 onClick={() => {
                   setIsTransferring(false);
-                  setTransferFromParticipantId('');
-                  setTransferToParticipantId('');
-                  setTransferAmount('');
+                  setTransferFromEntityId('');
+                  setTransferToEntityId('');
+                  settransferAmount('');
                 }}
                 className="action-btn-secondary"
               >
                 Cancel
               </button>
-              <button type="submit" disabled={!canManageValue} className="action-btn-primary disabled:opacity-50">
-                Transfer Total
+              <button type="submit" disabled={!canManageImpact} className="action-btn-primary disabled:opacity-50">
+                TransferAmount Total
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {isRecordingDeferred && (
+      {isActivityRecordingDeferred && (
         <div className="fixed inset-0 z-40 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <form onSubmit={handleRecordDeferredEntry} className="section-card w-full max-w-3xl p-6 animate-in fade-in zoom-in-95">
-            <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">{getActionText('recordDeferredEntry')}</h3>
+          <form onSubmit={handleActivityRecordDeferredActivityRecord} className="section-card w-full max-w-3xl p-6 animate-in fade-in zoom-in-95">
+            <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">{getActionText('recordDeferredActivityRecord')}</h3>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
               <select
                 className="control-input"
-                value={deferredParticipantId}
-                onChange={e => setDeferredParticipantId(e.target.value)}
-                disabled={!canRecordDeferred}
+                value={deferredEntityId}
+                onChange={e => setDeferredEntityId(e.target.value)}
+                disabled={!canActivityRecordDeferred}
                 required
               >
-                <option value="">Select Participant</option>
-                {units.map(entity => (
-                  <option key={entity.id} value={entity.id}>{getParticipantDisplayName(entity.name)} ({formatValue(entity.total || 0)})</option>
+                <option value="">Select Entity</option>
+                {entities.map(entity => (
+                  <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(entity.total || 0)})</option>
                 ))}
               </select>
               <input
@@ -681,14 +681,14 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
                 value={deferredAmount}
                 onChange={e => setDeferredAmount(e.target.value)}
                 onBlur={() => normalizeValueInput(deferredAmount, setDeferredAmount)}
-                disabled={!canRecordDeferred}
+                disabled={!canActivityRecordDeferred}
                 required
               />
               <select
                 className="control-input"
                 value={deferredDirection}
                 onChange={e => setDeferredDirection(e.target.value as 'inbound' | 'outbound')}
-                disabled={!canRecordDeferred}
+                disabled={!canActivityRecordDeferred}
               >
                 <option value="outbound">Outbound</option>
                 <option value="inbound">Inbound</option>
@@ -698,8 +698,8 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
               <button
                 type="button"
                 onClick={() => {
-                  setIsRecordingDeferred(false);
-                  setDeferredParticipantId('');
+                  setIsActivityRecordingDeferred(false);
+                  setDeferredEntityId('');
                   setDeferredAmount('');
                   setDeferredDirection('outbound');
                 }}
@@ -707,29 +707,29 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
               >
                 Cancel
               </button>
-              <button type="submit" disabled={!canRecordDeferred} className="action-btn-primary disabled:opacity-50">
-                {getActionText('recordDeferredEntry')}
+              <button type="submit" disabled={!canActivityRecordDeferred} className="action-btn-primary disabled:opacity-50">
+                {getActionText('recordDeferredActivityRecord')}
               </button>
             </div>
           </form>
         </div>
       )}
 
-      {isRecordingOutputRequest && (
+      {isActivityRecordingOutputRequest && (
         <div className="fixed inset-0 z-40 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <form onSubmit={handleRecordAlignmentRequest} className="section-card w-full max-w-3xl p-6 animate-in fade-in zoom-in-95">
-            <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Record Participant Alignment Request</h3>
+          <form onSubmit={handleActivityRecordAlignmentRequest} className="section-card w-full max-w-3xl p-6 animate-in fade-in zoom-in-95">
+            <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">ActivityRecord Entity Alignment Request</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <select
                 className="control-input"
-                value={outputRequestParticipantId}
-                onChange={e => setOutputRequestParticipantId(e.target.value)}
-                disabled={!canManageValue}
+                value={outputRequestEntityId}
+                onChange={e => setOutputRequestEntityId(e.target.value)}
+                disabled={!canManageImpact}
                 required
               >
-                <option value="">Select Participant</option>
-                {units.map(entity => (
-                  <option key={entity.id} value={entity.id}>{getParticipantDisplayName(entity.name)} ({formatValue(entity.total || 0)})</option>
+                <option value="">Select Entity</option>
+                {entities.map(entity => (
+                  <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(entity.total || 0)})</option>
                 ))}
               </select>
               <input
@@ -741,7 +741,7 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
                 value={outputRequestAmount}
                 onChange={e => setOutputRequestAmount(e.target.value)}
                 onBlur={() => normalizeValueInput(outputRequestAmount, setOutputRequestAmount)}
-                disabled={!canManageValue}
+                disabled={!canManageImpact}
                 required
               />
             </div>
@@ -749,15 +749,15 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
               <button
                 type="button"
                 onClick={() => {
-                  setIsRecordingOutputRequest(false);
-                  setOutputRequestParticipantId('');
+                  setIsActivityRecordingOutputRequest(false);
+                  setOutputRequestEntityId('');
                   setOutputRequestAmount('');
                 }}
                 className="action-btn-secondary"
               >
                 Cancel
               </button>
-              <button type="submit" disabled={!canManageValue} className="action-btn-primary disabled:opacity-50">
+              <button type="submit" disabled={!canManageImpact} className="action-btn-primary disabled:opacity-50">
                 Save Alignment Request
               </button>
             </div>
@@ -767,32 +767,32 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
 
       {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filteredParticipants.map(entity => {
-            const stats = participantStats.get(entity.id) || { net: 0, activitys: 0, lastActive: null, surpluses: 0, totalInflow: 0, avgActivity: 0 };
+          {filteredEntitys.map(entity => {
+            const stats = entityStats.get(entity.id) || { net: 0, activitys: 0, lastActive: null, surpluses: 0, totalInflow: 0, avgActivity: 0 };
             return (
-              <ParticipantGridCard
+              <EntityGridCard
                 key={entity.id}
                 entity={entity}
                 stats={stats}
-                onOpenProfile={() => openParticipantProfile(entity.id)}
-                onOpenSnapshot={() => setQuickViewParticipant(entity)}
-                canManageValue={canManageValue}
-                canRecordDeferred={canRecordDeferred}
+                onOpenProfile={() => openEntityProfile(entity.id)}
+                onOpenSnapshot={() => setQuickViewEntity(entity)}
+                canManageImpact={canManageImpact}
+                canActivityRecordDeferred={canActivityRecordDeferred}
                 onTransferFromEntity={() => openTransferForm(entity.id)}
-                onRecordDeferred={() => openDeferredForm(entity.id)}
-                onDelete={() => { void handleDeleteParticipantProfile(entity); }}
+                onActivityRecordDeferred={() => openDeferredForm(entity.id)}
+                onDelete={() => { void handleDeleteEntityProfile(entity); }}
               />
             );
           })}
-          {filteredParticipants.length === 0 && (
+          {filteredEntitys.length === 0 && (
             <div className="section-card p-8 text-center text-stone-400 sm:col-span-2 xl:col-span-3">
-              <p>No participants found.</p>
+              <p>No entities found.</p>
               <button
                 type="button"
                 onClick={() => setIsAdding(true)}
                 className="action-btn-primary text-xs px-3 py-1.5 mt-3"
               >
-                Add first participant
+                Add first entity
               </button>
             </div>
           )}
@@ -800,12 +800,12 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
       ) : (
         <div className="section-card overflow-hidden">
           <div className="md:hidden divide-y divide-stone-100 dark:divide-stone-800">
-            {filteredParticipants.map(entity => {
-              const stats = participantStats.get(entity.id) || { net: 0, activitys: 0, lastActive: null, surpluses: 0, totalInflow: 0, avgActivity: 0 };
+            {filteredEntitys.map(entity => {
+              const stats = entityStats.get(entity.id) || { net: 0, activitys: 0, lastActive: null, surpluses: 0, totalInflow: 0, avgActivity: 0 };
               return (
-                <MobileRecordCard
+                <MobileActivityRecordCard
                   key={entity.id}
-                  title={getParticipantDisplayName(entity.name)}
+                  title={getEntityDisplayName(entity.name)}
                   right={
                     <span className={cn(
                       "font-mono text-sm font-medium",
@@ -824,75 +824,75 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
                       Net: {formatValue(stats.net)}
                     </p>
                     <div className="flex items-center gap-1.5">
-                      {canManageValue && (
+                      {canManageImpact && (
                         <button
                           onClick={() => openTransferForm(entity.id)}
                           className="p-1.5 text-stone-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition-colors"
-                          title="Transfer from this participant"
+                          title="TransferAmount from this entity"
                         >
                           <ArrowRightLeft size={16} />
                         </button>
                       )}
-                      {canRecordDeferred && (
+                      {canActivityRecordDeferred && (
                         <button
                           onClick={() => openDeferredForm(entity.id)}
                           className="p-1.5 text-stone-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 rounded-md transition-colors"
-                          title="Add pending entry"
+                          title="Add Pending ActivityRecord"
                         >
                           <Clock size={16} />
                         </button>
                       )}
                       <button
-                        onClick={() => openParticipantProfile(entity.id)}
+                        onClick={() => openEntityProfile(entity.id)}
                         className="action-btn-secondary text-xs px-2.5 py-1"
                       >
                         Open Profile
                       </button>
                       <button
-                        onClick={() => setQuickViewParticipant(entity)}
+                        onClick={() => setQuickViewEntity(entity)}
                         className="action-btn-secondary text-xs px-2.5 py-1"
                       >
                         Quick Snapshot
                       </button>
-                      {canManageValue && (
+                      {canManageImpact && (
                         <button
-                          onClick={() => { void handleDeleteParticipantProfile(entity); }}
+                          onClick={() => { void handleDeleteEntityProfile(entity); }}
                           className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-                          title="Delete participant"
+                          title="Delete entity"
                         >
                           <Trash2 size={16} />
                         </button>
                       )}
                     </div>
                   </div>
-                </MobileRecordCard>
+                </MobileActivityRecordCard>
               );
             })}
-            {filteredParticipants.length === 0 && (
+            {filteredEntitys.length === 0 && (
               <div className="px-6 py-10 text-center text-stone-400 text-sm">
-                <p>No participants found.</p>
+                <p>No entities found.</p>
                 <button
                   type="button"
                   onClick={() => setIsAdding(true)}
                   className="action-btn-primary text-xs px-3 py-1.5 mt-3"
                 >
-                  Add first participant
+                  Add first entity
                 </button>
               </div>
             )}
           </div>
 
-          <CollapsibleWorkspaceSection
-            title="Participants"
-            summary={`${filteredParticipants.length} participants`}
+          <CollapsibleActivitySection
+            title="Entities"
+            summary={`${filteredEntitys.length} entities`}
             className="hidden md:block"
             defaultExpanded={false}
             maxExpandedHeightClass="max-h-[560px]"
             maxCollapsedHeightClass="max-h-[96px]"
-            contentRef={participantsWorkspaceContainerRef}
-            onContentScroll={event => setParticipantsWorkspaceScrollTop(event.currentTarget.scrollTop)}
+            contentRef={entitysActivityContainerRef}
+            onContentScroll={event => setEntitysActivityScrollTop(event.currentTarget.scrollTop)}
           >
-          <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[980px] workspace-fixed text-left text-[13px]">
+          <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[980px] activity-fixed text-left text-[13px]">
             <thead className="sticky top-0 z-10 bg-stone-50/95 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-700">
               <tr>
                 <th className="sticky-col px-6 py-2.5 w-[270px] text-[11px] font-semibold uppercase tracking-wide">Name</th>
@@ -904,50 +904,50 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-              {participantTopSpacerHeight > 0 && (
+              {entityTopSpacerHeight > 0 && (
                 <tr>
-                  <td colSpan={6} style={{ height: `${participantTopSpacerHeight}px`, padding: 0, border: 0 }} />
+                  <td colSpan={6} style={{ height: `${entityTopSpacerHeight}px`, padding: 0, border: 0 }} />
                 </tr>
               )}
 
-              {visibleParticipants.map(entity => {
-                const stats = participantStats.get(entity.id) || { net: 0, activitys: 0, lastActive: null, surpluses: 0, totalInflow: 0, avgActivity: 0 };
+              {visibleEntitys.map(entity => {
+                const stats = entityStats.get(entity.id) || { net: 0, activitys: 0, lastActive: null, surpluses: 0, totalInflow: 0, avgActivity: 0 };
                 
                 return (
-                  <ParticipantRow 
+                  <EntityRow 
                     key={entity.id} 
                     entity={entity} 
                     stats={stats} 
                     updateUnit={updateUnit}
-                    onOpenProfile={() => openParticipantProfile(entity.id)}
-                    onOpenSnapshot={() => setQuickViewParticipant(entity)}
-                    associates={associates}
-                    canManageValue={canManageValue}
-                    canRecordDeferred={canRecordDeferred}
+                    onOpenProfile={() => openEntityProfile(entity.id)}
+                    onOpenSnapshot={() => setQuickViewEntity(entity)}
+                    collaborations={collaborations}
+                    canManageImpact={canManageImpact}
+                    canActivityRecordDeferred={canActivityRecordDeferred}
                     onTransferFromEntity={() => openTransferForm(entity.id)}
-                    onRecordDeferred={() => openDeferredForm(entity.id)}
-                    onDelete={() => { void handleDeleteParticipantProfile(entity); }}
+                    onActivityRecordDeferred={() => openDeferredForm(entity.id)}
+                    onDelete={() => { void handleDeleteEntityProfile(entity); }}
                   />
                 );
               })}
 
-              {participantBottomSpacerHeight > 0 && (
+              {entityBottomSpacerHeight > 0 && (
                 <tr>
-                  <td colSpan={6} style={{ height: `${participantBottomSpacerHeight}px`, padding: 0, border: 0 }} />
+                  <td colSpan={6} style={{ height: `${entityBottomSpacerHeight}px`, padding: 0, border: 0 }} />
                 </tr>
               )}
 
-              {filteredParticipants.length === 0 && (
+              {filteredEntitys.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-stone-400">
                     <div className="flex flex-col items-center gap-2">
-                      <span>No participants found.</span>
+                      <span>No entities found.</span>
                       <button
                         type="button"
                         onClick={() => setIsAdding(true)}
                         className="action-btn-primary text-xs px-3 py-1.5"
                       >
-                        Add first participant
+                        Add first entity
                       </button>
                     </div>
                   </td>
@@ -955,36 +955,36 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
               )}
             </tbody>
           </table>
-          </CollapsibleWorkspaceSection>
+          </CollapsibleActivitySection>
         </div>
       )}
 
-      {quickViewParticipant && (
-        <ParticipantSnapshot
-          entity={quickViewParticipant}
+      {quickViewEntity && (
+        <EntitySnapshot
+          entity={quickViewEntity}
           type="entity"
-          onClose={() => setQuickViewParticipant(null)}
-          onUpdateTags={(participantId, tags) => { void handleUpdateParticipantTags(participantId, tags); }}
-          workspaceNet={participantStats.get(quickViewParticipant.id)?.net || 0}
+          onClose={() => setQuickViewEntity(null)}
+          onUpdateTags={(entityId, tags) => { void handleUpdateEntityTags(entityId, tags); }}
+          activityNet={entityStats.get(quickViewEntity.id)?.net || 0}
           variant="modal"
         />
       )}
 
-      {entriesViewParticipant && (
+      {entriesViewEntity && (
         <div className="fixed inset-0 z-50 p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
           <div className="section-card rounded-2xl shadow-xl w-full max-w-6xl mx-auto h-[92vh] overflow-hidden flex flex-col">
             <div className="p-5 border-b border-stone-200 dark:border-stone-800 flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">{getParticipantDisplayName(entriesViewParticipant.name)} • Entries</h3>
-                <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">{quickViewEntries.length} entries</p>
+                <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">{getEntityDisplayName(entriesViewEntity.name)} • Entries</h3>
+                <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">{quickViewEntries.length} records</p>
               </div>
               <div className="flex items-center gap-2">
 
                 <button
                   type="button"
                   onClick={() => {
-                    setQuickViewParticipant(entriesViewParticipant);
-                    setEntriesViewParticipant(null);
+                    setQuickViewEntity(entriesViewEntity);
+                    setEntriesViewEntity(null);
                   }}
                   className="action-btn-secondary"
                 >
@@ -997,7 +997,7 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
               <div className="rounded-xl border border-stone-200 dark:border-stone-700 overflow-hidden">
                 {quickViewEntries.length === 0 ? (
                   <div className="px-4 py-8 text-center text-sm text-stone-500 dark:text-stone-400">
-                    No participant entries yet.
+                    No entity records yet.
                   </div>
                 ) : (
                   <table className="w-full text-sm">
@@ -1005,21 +1005,21 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
                       <tr>
                         <th className="text-left font-medium px-4 py-2.5">Date</th>
                         <th className="text-left font-medium px-4 py-2.5">Activity</th>
-                        <th className="text-right font-medium px-4 py-2.5">Entry Value</th>
+                        <th className="text-right font-medium px-4 py-2.5">Entity Input</th>
                         <th className="text-right font-medium px-4 py-2.5">Total</th>
-                        <th className="text-right font-medium px-4 py-2.5">Net</th>
+                        <th className="text-right font-medium px-4 py-2.5">Total Units</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                      {quickViewEntries.map(entry => (
-                        <tr key={entry.id} className="bg-white dark:bg-stone-900">
+                      {quickViewEntries.map(record => (
+                        <tr key={record.id} className="bg-white dark:bg-stone-900">
                           <td className="px-4 py-2.5 text-stone-600 dark:text-stone-300 whitespace-nowrap">
-                            {entry.date ? formatDate(entry.date) : '—'}
+                            {record.date ? formatDate(record.date) : '—'}
                           </td>
                           <td className="px-4 py-2.5 text-stone-600 dark:text-stone-300">
                             <div className="flex items-center gap-2">
-                              <span className="truncate">{entry.location}</span>
-                              {entry.isActive && (
+                              <span className="truncate">{record.location}</span>
+                              {record.isActive && (
                                 <span className="inline-flex rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 px-1.5 py-0.5 text-[10px]">
                                   Active
                                 </span>
@@ -1027,22 +1027,22 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
                             </div>
                           </td>
                           <td className="px-4 py-2.5 text-right font-mono text-stone-600 dark:text-stone-300 whitespace-nowrap">
-                            {formatValue(entry.inflow)}
+                            {formatValue(record.inflow)}
                           </td>
                           <td className="px-4 py-2.5 text-right font-mono text-stone-600 dark:text-stone-300 whitespace-nowrap">
-                            {formatValue(entry.outflow)}
+                            {formatValue(record.outflow)}
                           </td>
                           <td
                             className={cn(
                               'px-4 py-2.5 text-right font-mono whitespace-nowrap',
-                              entry.net > 0
+                              (record.direction === 'increase' ? record.unit_amount : -record.unit_amount) > 0
                                 ? 'text-emerald-600 dark:text-emerald-400'
-                                : entry.net < 0
+                                : (record.direction === 'increase' ? record.unit_amount : -record.unit_amount) < 0
                                   ? 'text-red-600 dark:text-red-400'
                                   : 'text-stone-500 dark:text-stone-400',
                             )}
                           >
-                            {formatValue(entry.net)}
+                            {formatValue((record.direction === 'increase' ? record.unit_amount : -record.unit_amount))}
                           </td>
                         </tr>
                       ))}
@@ -1058,32 +1058,32 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
   );
 }
 
-function ParticipantGridCard({
+function EntityGridCard({
   entity,
   stats,
   onOpenProfile,
   onOpenSnapshot,
-  canManageValue,
-  canRecordDeferred,
+  canManageImpact,
+  canActivityRecordDeferred,
   onTransferFromEntity,
-  onRecordDeferred,
+  onActivityRecordDeferred,
   onDelete,
 }: {
   entity: Entity;
   stats: { net: number; activitys: number; lastActive: string | null; surpluses: number; totalInflow: number; avgActivity: number };
   onOpenProfile: () => void;
   onOpenSnapshot: () => void;
-  canManageValue: boolean;
-  canRecordDeferred: boolean;
+  canManageImpact: boolean;
+  canActivityRecordDeferred: boolean;
   onTransferFromEntity: () => void;
-  onRecordDeferred: () => void;
+  onActivityRecordDeferred: () => void;
   onDelete: () => void;
 }) {
   return (
     <div className="section-card-hover p-5 min-w-0 cursor-pointer" onClick={onOpenProfile}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-            <p className="font-medium text-stone-900 dark:text-stone-100 truncate" title={getParticipantDisplayName(entity.name)}>{getParticipantDisplayName(entity.name)}</p>
+            <p className="font-medium text-stone-900 dark:text-stone-100 truncate" title={getEntityDisplayName(entity.name)}>{getEntityDisplayName(entity.name)}</p>
           <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">{stats.activitys} activities • {stats.lastActive ? formatDate(stats.lastActive) : 'Never'}</p>
         </div>
         <span className={cn(
@@ -1102,26 +1102,26 @@ function ParticipantGridCard({
           Net {formatValue(stats.net)}
         </p>
         <div className="flex items-center gap-1.5">
-          {canManageValue && (
+          {canManageImpact && (
             <button
               onClick={event => {
                 event.stopPropagation();
                 onTransferFromEntity();
               }}
               className="p-1.5 text-stone-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition-colors"
-              title="Transfer from this entity"
+              title="TransferAmount from this entity"
             >
               <ArrowRightLeft size={16} />
             </button>
           )}
-          {canRecordDeferred && (
+          {canActivityRecordDeferred && (
             <button
               onClick={event => {
                 event.stopPropagation();
-                onRecordDeferred();
+                onActivityRecordDeferred();
               }}
               className="p-1.5 text-stone-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 rounded-md transition-colors"
-              title="Add pending entry"
+              title="Add Pending ActivityRecord"
             >
               <Clock size={16} />
             </button>
@@ -1136,14 +1136,14 @@ function ParticipantGridCard({
           >
             Quick Snapshot
           </button>
-          {canManageValue && (
+          {canManageImpact && (
             <button
               onClick={event => {
                 event.stopPropagation();
                 onDelete();
               }}
               className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-              title="Delete participant"
+              title="Delete entity"
             >
               <Trash2 size={16} />
             </button>
@@ -1154,7 +1154,7 @@ function ParticipantGridCard({
   );
 }
 
-function ParticipantRow({ entity, stats, updateUnit, onOpenProfile, onOpenSnapshot, associates, canManageValue, canRecordDeferred, onTransferFromEntity, onRecordDeferred, onDelete }: { entity: Entity, stats: any, updateUnit: (p: Entity) => Promise<void>, onOpenProfile: () => void, onOpenSnapshot: () => void, associates: Associate[], canManageValue: boolean, canRecordDeferred: boolean, onTransferFromEntity: () => void, onRecordDeferred: () => void, onDelete: () => void }) {
+function EntityRow({ entity, stats, updateUnit, onOpenProfile, onOpenSnapshot, collaborations, canManageImpact, canActivityRecordDeferred, onTransferFromEntity, onActivityRecordDeferred, onDelete }: { entity: Entity, stats: any, updateUnit: (p: Entity) => Promise<void>, onOpenProfile: () => void, onOpenSnapshot: () => void, collaborations: Collaboration[], canManageImpact: boolean, canActivityRecordDeferred: boolean, onTransferFromEntity: () => void, onActivityRecordDeferred: () => void, onDelete: () => void }) {
   const [isEditing, setIsEditing] = useState(false);
   const [data, setData] = useState(entity);
 
@@ -1189,11 +1189,11 @@ function ParticipantRow({ entity, stats, updateUnit, onOpenProfile, onOpenSnapsh
         <td className="px-6 py-3" colSpan={2}>
           <select
             className="w-full p-1 border border-stone-300 dark:border-stone-600 rounded bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 text-xs mb-1"
-            value={data.attributed_associate_id || ''}
-            onChange={e => setData({...data, attributed_associate_id: e.target.value || undefined})}
+            value={data.collaboration_id || ''}
+            onChange={e => setData({...data, collaboration_id: e.target.value || undefined})}
           >
             <option value="">Collaboration attribution (optional)</option>
-            {associates.map(a => (
+            {collaborations.map(a => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
           </select>
@@ -1225,7 +1225,7 @@ function ParticipantRow({ entity, stats, updateUnit, onOpenProfile, onOpenSnapsh
     <tr className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors group">
       <td className="sticky-col px-6 py-2.5 cursor-pointer" onClick={onOpenProfile}>
         <div className="font-medium text-stone-900 dark:text-stone-100 flex items-center gap-2">
-          {getParticipantDisplayName(entity.name)}
+          {getEntityDisplayName(entity.name)}
           <Eye size={14} className="opacity-0 group-hover:opacity-50 transition-opacity" />
         </div>
       </td>
@@ -1279,20 +1279,20 @@ function ParticipantRow({ entity, stats, updateUnit, onOpenProfile, onOpenSnapsh
       </td>
       <td className="sticky-col-right px-6 py-2.5 text-right">
         <div className="flex justify-end gap-2 transition-opacity">
-          {canManageValue && (
+          {canManageImpact && (
             <button
               onClick={onTransferFromEntity}
               className="p-1.5 text-stone-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition-colors"
-              title="Transfer from this entity"
+              title="TransferAmount from this entity"
             >
               <ArrowRightLeft size={16} />
             </button>
           )}
-          {canRecordDeferred && (
+          {canActivityRecordDeferred && (
             <button
-              onClick={onRecordDeferred}
+              onClick={onActivityRecordDeferred}
               className="p-1.5 text-stone-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 rounded-md transition-colors"
-              title="Add pending entry"
+              title="Add Pending ActivityRecord"
             >
               <Clock size={16} />
             </button>
@@ -1311,11 +1311,11 @@ function ParticipantRow({ entity, stats, updateUnit, onOpenProfile, onOpenSnapsh
           >
             <Edit2 size={16} />
           </button>
-          {canManageValue && (
+          {canManageImpact && (
             <button
               onClick={onDelete}
               className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-              title="Delete participant"
+              title="Delete entity"
             >
               <Trash2 size={16} />
             </button>

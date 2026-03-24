@@ -150,7 +150,7 @@ export const getCallerAuthorityContext = async (
   if (administeredClusterIds.length > 0 || typedMembershipRows.length > 0) {
     let managedOrgIds = dedupeStrings(typedMembershipRows.map((row) => row.org_id));
     
-    // Resolve all orgs in clusters where the user is an admin
+    // Resolve all organizations in clusters where the user is an admin
     if (administeredClusterIds.length > 0) {
       const { data: clusterOrgRows, error: clusterOrgError } = await adminClient
         .from('organizations')

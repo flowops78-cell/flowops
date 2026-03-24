@@ -23,43 +23,43 @@ const formatTime = (value?: string) => {
 
 export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetryPanelProps) {
   const navigate = useNavigate();
-  const { workspaces, entries, systemEvents } = useData();
-  const { canManageValue } = useAppRole();
+  const { activities, records, systemEvents } = useData();
+  const { canManageImpact } = useAppRole();
   const { getEventLabel, getMetricLabel, getActionText } = useLabels();
 
-  const activeWorkspaceIds = useMemo(
-    () => new Set(workspaces.filter(workspace => workspace.status === 'active').map(workspace => workspace.id)),
-    [workspaces],
+  const activeActivityIds = useMemo(
+    () => new Set(activities.filter(activity => activity.status === 'active').map(activity => activity.id)),
+    [activities],
   );
 
   const activeEntries = useMemo(
-    () => entries.filter(entry => activeWorkspaceIds.has(entry.workspace_id) && !entry.left_at),
-    [activeWorkspaceIds, entries],
+    () => records.filter(record => activeActivityIds.has(record.activity_id) && !record.left_at),
+    [activeActivityIds, records],
   );
 
 
 
   const discrepancyWarnings = useMemo(() => {
-    const warningList: Array<{ workspaceId: string; date?: string; discrepancy: number }> = [];
+    const warningList: Array<{ activityId: string; date?: string; discrepancy: number }> = [];
 
-    workspaces.forEach(workspace => {
-      if (workspace.status !== 'active') return;
-      const workspaceEntries = entries.filter(entry => entry.workspace_id === workspace.id);
-      const totalInflow = workspaceEntries.reduce((sum, entry) => sum + entry.input_amount, 0);
-      const totalOutflow = workspaceEntries.reduce((sum, entry) => sum + entry.output_amount, 0);
+    activities.forEach(activity => {
+      if (activity.status !== 'active') return;
+      const activityEntries = records.filter(record => record.activity_id === activity.id);
+      const totalInflow = activityEntries.reduce((sum, record) => sum + record.unit_amount, 0);
+      const totalOutflow = activityEntries.reduce((sum, record) => sum + record.unit_amount, 0);
       const discrepancy = totalOutflow - totalInflow;
       if (Math.abs(discrepancy) >= 0.01) {
-        warningList.push({ workspaceId: workspace.id, date: workspace.date, discrepancy });
+        warningList.push({ activityId: activity.id, date: activity.date, discrepancy });
       }
     });
 
     return warningList
       .sort((a, b) => Math.abs(b.discrepancy) - Math.abs(a.discrepancy))
       .slice(0, 6);
-  }, [workspaces, entries]);
+  }, [activities, records]);
 
   const activeTotalTotal = useMemo(
-    () => activeEntries.reduce((sum, entry) => sum + (entry.output_amount || 0), 0),
+    () => activeEntries.reduce((sum, record) => sum + (record.unit_amount || 0), 0),
     [activeEntries],
   );
 
@@ -78,7 +78,7 @@ export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetr
       priority: number;
     }> = [];
 
-    if (canManageValue) {
+    if (canManageImpact) {
       pendingAlignmentAlerts.slice(0, 3).forEach(alert => {
         items.push({
           id: `alignment-${alert.id}`,
@@ -92,10 +92,10 @@ export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetr
     }
 
     discrepancyWarnings.forEach(item => {
-      const shortId = item.workspaceId.slice(0, 8).toUpperCase();
+      const shortId = item.activityId.slice(0, 8).toUpperCase();
       items.push({
-        id: `imtotal-${item.workspaceId}`,
-        route: `/activity/${item.workspaceId}`,
+        id: `imtotal-${item.activityId}`,
+        route: `/activity/${item.activityId}`,
         tone: 'red',
         label: 'Activity variance',
         detail: `${item.date ? `${formatDate(item.date)} · ` : ''}Activity ${shortId} · ${formatCompactValue(item.discrepancy)}`,
@@ -104,7 +104,7 @@ export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetr
     });
 
     return items.sort((a, b) => a.priority - b.priority);
-  }, [canManageValue, discrepancyWarnings, pendingAlignmentAlerts]);
+  }, [canManageImpact, discrepancyWarnings, pendingAlignmentAlerts]);
 
   const recentActions = useMemo(
     () => [...systemEvents]
@@ -172,7 +172,7 @@ export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetr
             <div className="rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-2.5 space-y-1.5 text-xs">
               <div className="flex justify-between">
                 <span className="text-stone-500 dark:text-stone-400">{getMetricLabel('openActivities')}</span>
-                <span className="font-mono text-stone-900 dark:text-stone-100">{activeWorkspaceIds.size}</span>
+                <span className="font-mono text-stone-900 dark:text-stone-100">{activeActivityIds.size}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-stone-500 dark:text-stone-400">{getMetricLabel('activeEntities')}</span>

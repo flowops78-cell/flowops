@@ -42,15 +42,17 @@ export const supabase = isSupabaseConfigured
   : null;
 
 export type UserAuthorityContext = {
-  source: 'memberships' | 'legacy' | 'none';
+  source: 'teamMemberships' | 'legacy' | 'none';
   role: AppRole | null;
   activeOrgId: string | null;
   managedOrgIds: string[];
   clusterId: string | null;
+  clusterRole: 'cluster_admin' | 'cluster_operator' | 'viewer' | null;
   isPlatformAdmin: boolean;
 };
 
-type MembershipAuthorityRow = {
+
+type TeamMembershipAuthorityRow = {
   org_id: string;
   role: AppRole;
   status: 'active' | 'invited' | 'disabled';
@@ -84,19 +86,21 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
       activeOrgId: null,
       managedOrgIds: [],
       clusterId: null,
+      clusterRole: null,
       isPlatformAdmin: false,
     };
+
   }
 
-  // 1. Fetch memberships and profile context
-  const [{ data: orgMemberships, error: orgError }, { data: clusterMemberships, error: clusterError }, { data: profile, error: profileError }] = await Promise.all([
+  // 1. Fetch teamMemberships and profile context
+  const [{ data: orgTeamMemberships, error: orgError }, { data: clusterTeamMemberships, error: clusterError }, { data: profile, error: profileError }] = await Promise.all([
     supabase
-      .from('organization_memberships')
+      .from('organization_teamMemberships')
       .select('org_id, role, status, is_default_org')
       .eq('user_id', userId)
       .in('status', ['active', 'invited']),
     supabase
-      .from('cluster_memberships')
+      .from('cluster_teamMemberships')
       .select('cluster_id, role')
       .eq('user_id', userId),
     supabase
@@ -106,44 +110,46 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
       .maybeSingle(),
   ]);
 
-  if (orgError) console.error('Error fetching org memberships:', orgError);
-  if (clusterError) console.error('Error fetching cluster memberships:', clusterError);
+  if (orgError) console.error('Error fetching org teamMemberships:', orgError);
+  if (clusterError) console.error('Error fetching cluster teamMemberships:', clusterError);
   if (profileError) console.error('Error fetching profile:', profileError);
 
-  const typedOrgMemberships = (orgMemberships ?? []) as MembershipAuthorityRow[];
-  const typedClusterMemberships = (clusterMemberships ?? []) as Array<{ cluster_id: string; role: string }>;
+  const typedOrgTeamMemberships = (orgTeamMemberships ?? []) as TeamMembershipAuthorityRow[];
+  const typedClusterTeamMemberships = (clusterTeamMemberships ?? []) as Array<{ cluster_id: string; role: string }>;
 
-  const isClusterAdmin = typedClusterMemberships.some(m => m.role === 'cluster_admin');
+  const isClusterAdmin = typedClusterTeamMemberships.some(m => m.role === 'cluster_admin');
   
-  if (typedOrgMemberships.length > 0 || typedClusterMemberships.length > 0) {
-    const activeOrgId = profile?.active_org_id ?? typedOrgMemberships.find(m => m.is_default_org)?.org_id ?? typedOrgMemberships[0]?.org_id ?? null;
+  if (typedOrgTeamMemberships.length > 0 || typedClusterTeamMemberships.length > 0) {
+    const activeOrgId = profile?.active_org_id ?? typedOrgTeamMemberships.find(m => m.is_default_org)?.org_id ?? typedOrgTeamMemberships[0]?.org_id ?? null;
     let clusterId = profile?.active_cluster_id;
 
     if (!clusterId && activeOrgId) {
-      // Internal optimization: if we have org memberships, we might find the cluster_id from joined data if we select it
-      // But for simplicity here, we rely on the membership tables as source of truth.
+      // Internal optimization: if we have org teamMemberships, we might find the cluster_id from joined data if we select it
+      // But for simplicity here, we rely on the teamMembership tables as source of truth.
     }
 
-    const directMembership = typedOrgMemberships.find(m => m.org_id === activeOrgId);
-    let resolvedRole: AppRole | null = directMembership?.role ?? null;
+    const directTeamMembership = typedOrgTeamMemberships.find(m => m.org_id === activeOrgId);
+    let resolvedRole: AppRole | null = directTeamMembership?.role ?? null;
 
     if (!resolvedRole && clusterId) {
-      const clusterMember = typedClusterMemberships.find(cm => cm.cluster_id === clusterId);
-      if (clusterMember) {
-        if (clusterMember.role === 'cluster_admin') resolvedRole = 'admin';
-        else if (clusterMember.role === 'cluster_operator') resolvedRole = 'operator';
+      const clusterTeamMember = typedClusterTeamMemberships.find(cm => cm.cluster_id === clusterId);
+      if (clusterTeamMember) {
+        if (clusterTeamMember.role === 'cluster_admin') resolvedRole = 'admin';
+        else if (clusterTeamMember.role === 'cluster_operator') resolvedRole = 'operator';
         else resolvedRole = 'viewer';
       }
     }
 
     return {
-      source: 'memberships',
+      source: 'teamMemberships',
       role: resolvedRole || 'viewer',
       activeOrgId,
-      managedOrgIds: dedupeStrings(typedOrgMemberships.map(m => m.org_id)),
-      clusterId: clusterId || typedClusterMemberships[0]?.cluster_id || null,
+      managedOrgIds: dedupeStrings(typedOrgTeamMemberships.map(m => m.org_id)),
+      clusterId: clusterId || typedClusterTeamMemberships[0]?.cluster_id || null,
+      clusterRole: (typedClusterTeamMemberships.find(m => m.cluster_id === (clusterId || typedClusterTeamMemberships[0]?.cluster_id))?.role as any) || null,
       isPlatformAdmin: isClusterAdmin,
     };
+
   }
 
   return {
@@ -152,8 +158,10 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
     activeOrgId: null,
     managedOrgIds: [],
     clusterId: null,
+    clusterRole: null,
     isPlatformAdmin: false,
   };
+
 
   return {
     source: 'none',
@@ -161,8 +169,10 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
     activeOrgId: null,
     managedOrgIds: [],
     clusterId: null,
+    clusterRole: null,
     isPlatformAdmin: false,
   };
+
 }
 
 export async function getSupabaseAccessToken() {

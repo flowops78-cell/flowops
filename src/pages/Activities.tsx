@@ -12,7 +12,7 @@ import { useLabels } from '../lib/labels';
 import EmptyState from '../components/EmptyState';
 
 export default function Activities({ embedded = false }: { embedded?: boolean }) {
-  const { workspaces, addWorkspace, deleteWorkspace, entries, units, loading, loadingProgress } = useData();
+  const { activities, addActivity, deleteActivity, records, entities, loading, loadingProgress } = useData();
   const location = useLocation();
   const navigate = useNavigate();
   const { notify } = useNotification();
@@ -20,34 +20,34 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
   const { user } = useAuth();
   const { tx } = useLabels();
   const [isCreating, setIsCreating] = useState(false);
-  const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
-  const [saveWorkspaceProgress, setSaveWorkspaceProgress] = useState(0);
-  const [deletingWorkspaceId, setDeletingWorkspaceId] = useState<string | null>(null);
+  const [isSavingActivity, setIsSavingActivity] = useState(false);
+  const [saveActivityProgress, setSaveActivityProgress] = useState(0);
+  const [deletingActivityId, setDeletingActivityId] = useState<string | null>(null);
   const [isArchivedSectionExpanded, setIsArchivedSectionExpanded] = useState(false);
-  const saveWorkspaceProgressTimerRef = useRef<number | null>(null);
-  const saveWorkspaceProgressResetTimerRef = useRef<number | null>(null);
+  const saveActivityProgressTimerRef = useRef<number | null>(null);
+  const saveActivityProgressResetTimerRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   
-  // New Workspace Form
+  // New Activity Form
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [startTime, setStartTime] = useState(new Date().toTimeString().slice(0, 5));
 
   // New Fields
   const [channel, setChannel] = useState('Channel 1');
 
-  const clearSaveWorkspaceProgressTimers = () => {
-    if (saveWorkspaceProgressTimerRef.current !== null) {
-      window.clearInterval(saveWorkspaceProgressTimerRef.current);
-      saveWorkspaceProgressTimerRef.current = null;
+  const clearSaveActivityProgressTimers = () => {
+    if (saveActivityProgressTimerRef.current !== null) {
+      window.clearInterval(saveActivityProgressTimerRef.current);
+      saveActivityProgressTimerRef.current = null;
     }
-    if (saveWorkspaceProgressResetTimerRef.current !== null) {
-      window.clearTimeout(saveWorkspaceProgressResetTimerRef.current);
-      saveWorkspaceProgressResetTimerRef.current = null;
+    if (saveActivityProgressResetTimerRef.current !== null) {
+      window.clearTimeout(saveActivityProgressResetTimerRef.current);
+      saveActivityProgressResetTimerRef.current = null;
     }
   };
 
   useEffect(() => () => {
-    clearSaveWorkspaceProgressTimers();
+    clearSaveActivityProgressTimers();
   }, []);
 
   useEffect(() => {
@@ -66,113 +66,113 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
     navigate({ pathname: location.pathname, search: next ? `?${next}` : '' }, { replace: true });
   }, [canOperateLog, location.pathname, location.search, navigate, notify]);
 
-  const buildStartTime = (workspaceDate: string, workspaceTime: string) => {
-    if (!workspaceDate || !workspaceTime) return undefined;
-    const combined = new Date(`${workspaceDate}T${workspaceTime}:00`);
+  const buildStartTime = (activityDate: string, activityTime: string) => {
+    if (!activityDate || !activityTime) return undefined;
+    const combined = new Date(`${activityDate}T${activityTime}:00`);
     if (Number.isNaN(combined.getTime())) return undefined;
     return combined.toISOString();
   };
 
-  const handleCreateWorkspace = async (e: React.FormEvent) => {
+  const handleCreateActivity = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSavingWorkspace) return;
+    if (isSavingActivity) return;
     if (!canOperateLog) {
       notify({ type: 'error', message: 'Only admin/operator can create an activity.' });
       return;
     }
 
     let created = false;
-    clearSaveWorkspaceProgressTimers();
-    setIsSavingWorkspace(true);
+    clearSaveActivityProgressTimers();
+    setIsSavingActivity(true);
     let progress = 8;
-    setSaveWorkspaceProgress(progress);
-    saveWorkspaceProgressTimerRef.current = window.setInterval(() => {
+    setSaveActivityProgress(progress);
+    saveActivityProgressTimerRef.current = window.setInterval(() => {
       progress = Math.min(progress + (progress < 70 ? 10 : progress < 90 ? 4 : 1), 92);
-      setSaveWorkspaceProgress(progress);
+      setSaveActivityProgress(progress);
     }, 120);
 
     try {
-      await addWorkspace({
+      await addActivity({
         date,
         start_time: buildStartTime(date, startTime),
         status: 'active',
-        assigned_operator_id: user?.id,
+        assigned_user_id: user?.id,
         activity_category: 'Standard',
         channel,
         org_code: undefined,
       });
       created = true;
-      clearSaveWorkspaceProgressTimers();
-      setSaveWorkspaceProgress(100);
+      clearSaveActivityProgressTimers();
+      setSaveActivityProgress(100);
       // Reset form
       setDate(new Date().toISOString().split('T')[0]);
       setStartTime(new Date().toTimeString().slice(0, 5));
       setChannel('Channel 1');
       notify({ type: 'success', message: 'Activity created successfully.' });
     } catch (error: any) {
-      clearSaveWorkspaceProgressTimers();
-      setSaveWorkspaceProgress(100);
+      clearSaveActivityProgressTimers();
+      setSaveActivityProgress(100);
       notify({ type: 'error', message: error?.message || 'Unable to create activity.' });
     } finally {
-      saveWorkspaceProgressResetTimerRef.current = window.setTimeout(() => {
-        setIsSavingWorkspace(false);
-        setSaveWorkspaceProgress(0);
+      saveActivityProgressResetTimerRef.current = window.setTimeout(() => {
+        setIsSavingActivity(false);
+        setSaveActivityProgress(0);
         if (created) {
           setIsCreating(false);
         }
-        saveWorkspaceProgressResetTimerRef.current = null;
+        saveActivityProgressResetTimerRef.current = null;
       }, 360);
     }
   };
 
 
 
-  const handleDeleteWorkspace = async (event: React.MouseEvent, workspaceId: string) => {
+  const handleDeleteActivity = async (event: React.MouseEvent, activityId: string) => {
     event.preventDefault();
     event.stopPropagation();
 
-    if (deletingWorkspaceId === workspaceId) return;
+    if (deletingActivityId === activityId) return;
 
-    const confirmed = window.confirm('Delete this activity? This will remove related entries records for that activity.');
+    const confirmed = window.confirm('Delete this activity? This will remove related records records for that activity.');
     if (!confirmed) return;
 
     try {
-      setDeletingWorkspaceId(workspaceId);
-      await deleteWorkspace(workspaceId);
+      setDeletingActivityId(activityId);
+      await deleteActivity(activityId);
       notify({ type: 'success', message: 'Activity deleted successfully.' });
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to delete activity.' });
     } finally {
-      setDeletingWorkspaceId(current => (current === workspaceId ? null : current));
+      setDeletingActivityId(current => (current === activityId ? null : current));
     }
   };
 
-  const activeActivitys = workspaces
-    .filter(workspace => workspace.status === 'active')
-    .filter(workspace => {
+  const activeActivitys = activities
+    .filter(activity => activity.status === 'active')
+    .filter(activity => {
       if (role === 'admin' || role === 'viewer') return true;
       if (role === 'operator') {
         if (!user?.id) return false;
-        return workspace.assigned_operator_id === user.id;
+        return activity.assigned_user_id === user.id;
       }
       return false;
     });
 
-  const completedActivitys = workspaces
-    .filter(workspace => workspace.status === 'completed');
+  const completedActivitys = activities
+    .filter(activity => activity.status === 'completed');
 
-  const archivedActivitys = workspaces
-    .filter(workspace => workspace.status === 'archived');
+  const archivedActivitys = activities
+    .filter(activity => activity.status === 'archived');
 
-  const renderWorkspaceCard = (workspace: typeof workspaces[number]) => {
-    const workspaceEntries = entries.filter(l => l.workspace_id === workspace.id);
-    const totalEntryValue = workspaceEntries.reduce((sum, e) => sum + e.input_amount, 0);
-    const unitCount = new Set(workspaceEntries.map(e => e.unit_id)).size;
+  const renderActivityCard = (activity: typeof activities[number]) => {
+    const activityEntries = records.filter(l => l.activity_id === activity.id);
+    const totalrecordValue = activityEntries.reduce((sum, e) => sum + e.unit_amount, 0);
+    const unitCount = new Set(activityEntries.map(e => e.entity_id)).size;
 
     return (
       <Link
-        key={workspace.id}
-        to={`/activity/${workspace.id}`}
+        key={activity.id}
+        to={`/activity/${activity.id}`}
         className="block section-card-hover interactive-3d p-6 group"
       >
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -181,27 +181,27 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               <Calendar size={20} />
             </div>
             <div>
-              <h3 className="font-medium text-stone-900 dark:text-stone-100 text-lg">{formatDate(workspace.date)}</h3>
+              <h3 className="font-medium text-stone-900 dark:text-stone-100 text-lg">{formatDate(activity.date)}</h3>
 
               <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
                 <div className="flex items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400">
                   <Smartphone size={12} />
-                  {workspace.channel || 'Unknown'}
+                  {activity.channel_label || 'Unknown'}
                 </div>
                 <div className="flex items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400">
                   <Clock size={12} />
-                  {workspace.start_time
-                    ? new Date(workspace.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                  {activity.start_time
+                    ? new Date(activity.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
                     : 'Time N/A'}
                 </div>
                 <div className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
-                  workspace.status === 'active'
+                  activity.status === 'active'
                     ? 'badge-active'
-                    : workspace.status === 'completed'
+                    : activity.status === 'completed'
                       ? 'badge-completed'
                       : 'badge-archived'
                 }`}>
-                  {workspace.status}
+                  {activity.status}
                 </div>
               </div>
             </div>
@@ -209,21 +209,21 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
 
           <div className="flex items-center justify-between md:justify-end gap-8 border-t md:border-t-0 border-stone-100 dark:border-stone-800 pt-4 md:pt-0">
             <div className="text-left md:text-right">
-              <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Entry Value</p>
-              <p className="font-mono font-medium text-stone-900 dark:text-stone-100">{formatValue(totalEntryValue)}</p>
+              <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Entity Input</p>
+              <p className="font-mono font-medium text-stone-900 dark:text-stone-100">{formatValue(totalrecordValue)}</p>
             </div>
             <div className="text-left md:text-right">
-              <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Participants</p>
-              <p className="font-medium text-stone-900 dark:text-stone-100">{unitCount} participants</p>
+              <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Entities</p>
+              <p className="font-medium text-stone-900 dark:text-stone-100">{unitCount} entities</p>
             </div>
             <button
               type="button"
-              onClick={(event) => { void handleDeleteWorkspace(event, workspace.id); }}
-              disabled={deletingWorkspaceId === workspace.id}
+              onClick={(event) => { void handleDeleteActivity(event, activity.id); }}
+              disabled={deletingActivityId === activity.id}
               className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-400 shadow-sm transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-stone-700 dark:bg-stone-800 dark:hover:border-red-900 dark:hover:bg-red-900/20 disabled:cursor-not-allowed disabled:opacity-70"
-              title={deletingWorkspaceId === workspace.id ? tx('Deleting activity…') : tx('Delete Activity')}
+              title={deletingActivityId === activity.id ? tx('Deleting activity…') : tx('Delete Activity')}
             >
-              {deletingWorkspaceId === workspace.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+              {deletingActivityId === activity.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
             </button>
             <ChevronRight className="text-stone-300 dark:text-stone-700 group-hover:text-stone-600 dark:group-hover:text-stone-300 hidden md:block" />
           </div>
@@ -247,7 +247,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
           <div className="flex flex-col items-start lg:items-end gap-3">
             <div className="hidden lg:flex items-center gap-2 text-xs">
               <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
-                {tx('Activities')}: <span className="font-mono text-stone-900 dark:text-stone-100">{workspaces.length}</span>
+                {tx('Activities')}: <span className="font-mono text-stone-900 dark:text-stone-100">{activities.length}</span>
               </span>
             </div>
             <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-[minmax(0,1fr)_auto]">
@@ -291,7 +291,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
       )}
 
       {isCreating && (
-        <form onSubmit={handleCreateWorkspace} className="section-card p-6 animate-in fade-in slide-in-from-top-4">
+        <form onSubmit={handleCreateActivity} className="section-card p-6 animate-in fade-in slide-in-from-top-4">
           <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">{tx('Create Activity')}</h3>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
@@ -338,11 +338,11 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
           </div>
 
           <div className="flex justify-end gap-2">
-            {saveWorkspaceProgress > 0 && (
+            {saveActivityProgress > 0 && (
               <div className="w-full mr-auto max-w-sm">
                 <LoadingLine
                   compact
-                  progress={saveWorkspaceProgress}
+                  progress={saveActivityProgress}
                   label={tx('Saving activity...')}
                 />
               </div>
@@ -350,17 +350,17 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
             <button 
               type="button" 
               onClick={() => setIsCreating(false)}
-              disabled={isSavingWorkspace}
+              disabled={isSavingActivity}
               className="action-btn-secondary"
             >
               Cancel
             </button>
             <button 
               type="submit" 
-              disabled={isSavingWorkspace}
+              disabled={isSavingActivity}
               className="action-btn-primary"
             >
-              {isSavingWorkspace ? tx('Saving...') : tx('Create Activity')}
+              {isSavingActivity ? tx('Saving...') : tx('Create Activity')}
             </button>
           </div>
         </form>
@@ -381,7 +381,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
           <div className="space-y-3">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">{tx('Active Activities')}</h3>
             <div className="space-y-4">
-              {activeActivitys.map(renderWorkspaceCard)}
+              {activeActivitys.map(renderActivityCard)}
             </div>
           </div>
         )}
@@ -390,7 +390,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
           <div className="space-y-3">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">{tx('Completed Activities')}</h3>
             <div className="space-y-4">
-              {completedActivitys.map(renderWorkspaceCard)}
+              {completedActivitys.map(renderActivityCard)}
             </div>
           </div>
         )}
@@ -415,17 +415,17 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
             </div>
             {isArchivedSectionExpanded && (
               <div className="space-y-4">
-                {archivedActivitys.map(renderWorkspaceCard)}
+                {archivedActivitys.map(renderActivityCard)}
               </div>
             )}
           </div>
         )}
 
-        {workspaces.length === 0 && (
+        {activities.length === 0 && (
           <div className="rounded-xl border border-dashed border-stone-300 dark:border-stone-700 bg-stone-50/80 dark:bg-stone-900/70">
             <EmptyState
               title="No activities yet"
-              description="Create your first activity to start tracking entries and outcomes."
+              description="Create your first activity to start tracking records and outcomes."
               actionLabel="Create Activity"
               onAction={() => setIsCreating(true)}
             />

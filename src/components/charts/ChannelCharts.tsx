@@ -158,10 +158,10 @@ export default function ChannelCharts({ historyData, distributionData }: Channel
                         dataKey="value"
                         onClick={(_, index) => setSelectedSliceIndex(index)}
                       >
-                        {distributionData.map((entry, index) => (
+                        {distributionData.map((record, index) => (
                           <Cell
                             key={`cell-${index}`}
-                            fill={entry.color}
+                            fill={record.color}
                             stroke={index === selectedSliceIndex ? 'rgba(255,255,255,0.92)' : 'transparent'}
                             strokeWidth={index === selectedSliceIndex ? 2 : 0}
                             className="cursor-pointer"
@@ -180,7 +180,7 @@ export default function ChannelCharts({ historyData, distributionData }: Channel
               <div className="rounded-lg border border-stone-200 dark:border-stone-800 bg-stone-50/70 dark:bg-stone-800/50 px-3 py-2">
                 <div className="flex items-center justify-between gap-3 text-xs">
                   <span className="text-stone-500 dark:text-stone-400">Selected</span>
-                  <span className="font-mono text-stone-900 dark:text-stone-100">{selectedSlice ? formatValue(selectedSlice.value) : '0 units'}</span>
+                  <span className="font-mono text-stone-900 dark:text-stone-100">{selectedSlice ? formatValue(selectedSlice.value) : '0 entities'}</span>
                 </div>
                 <div className="mt-1 text-xs text-stone-600 dark:text-stone-300 truncate" title={selectedSlice?.name || ''}>
                   {selectedSlice?.name || '—'} · {selectedSliceShare}
@@ -188,13 +188,13 @@ export default function ChannelCharts({ historyData, distributionData }: Channel
               </div>
 
               <div className="min-h-0 overflow-y-auto space-y-1 pr-1">
-                {distributionData.map((entry, index) => {
-                  const share = totalDistribution > 0 ? (entry.value / totalDistribution) * 100 : 0;
+                {distributionData.map((record, index) => {
+                  const share = totalDistribution > 0 ? (record.value / totalDistribution) * 100 : 0;
                   const isActive = index === selectedSliceIndex;
 
                   return (
                     <button
-                      key={`${entry.name}-${index}`}
+                      key={`${record.name}-${index}`}
                       type="button"
                       onClick={() => setSelectedSliceIndex(index)}
                       className={
@@ -206,8 +206,8 @@ export default function ChannelCharts({ historyData, distributionData }: Channel
                     >
                       <span className="flex items-center justify-between gap-2">
                         <span className="inline-flex items-center gap-2 min-w-0">
-                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: entry.color }} />
-                          <span className="truncate" title={entry.name}>{entry.name}</span>
+                          <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: record.color }} />
+                          <span className="truncate" title={record.name}>{record.name}</span>
                         </span>
                         <span className="font-mono shrink-0">{share.toFixed(1)}%</span>
                       </span>

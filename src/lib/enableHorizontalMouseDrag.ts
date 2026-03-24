@@ -1,5 +1,5 @@
 const HORIZONTAL_SCROLL_SELECTOR = '.overflow-x-auto, .overflow-x-scroll';
-const INTERACTIVE_SELECTOR = 'a,button,input,select,textarea,label,[role="button"],[contentediworkspace="true"]';
+const INTERACTIVE_SELECTOR = 'a,button,input,select,textarea,label,[role="button"],[contentediactivity="true"]';
 
 export const enableHorizontalMouseDrag = () => {
   if (typeof window === 'undefined' || typeof document === 'undefined') {

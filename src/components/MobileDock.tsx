@@ -14,9 +14,9 @@ interface NavItem {
 const navItems: NavItem[] = [
   { to: "/dashboard", icon: <LayoutDashboard size={20} />, label: "Brief", hint: "Operational dashboard and value summary" },
   { to: "/activity", icon: <History size={20} />, label: "Activities", hint: "Activity records and management" },
-  { to: "/participants", icon: <Users size={20} />, label: "Participants", hint: "Participant profiles and status overview" },
+  { to: "/entities", icon: <Users size={20} />, label: "Entities", hint: "Entity profiles and status overview" },
   { to: "/channels", icon: <Circle size={20} />, label: "Channels", hint: "Channel tracking and settings overview" },
-  { to: "/collaborations", icon: <Handshake size={20} />, label: "Collaborations", hint: "Associate network and relationship tracking" },
+  { to: "/collaborations", icon: <Handshake size={20} />, label: "Collaborations", hint: "Collaboration network and relationship tracking" },
   { to: "/team", icon: <UserCog size={20} />, label: "Team", hint: "Team management and activity block operations" },
   { to: "/settings", icon: <Settings size={20} />, label: "Settings", hint: "System settings and data actions" },
 ];

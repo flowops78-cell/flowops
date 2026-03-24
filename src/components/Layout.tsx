@@ -15,8 +15,9 @@ import { preloadRoute } from '../lib/routePreloaders';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { theme, toggleTheme } = useTheme();
-  const { loading, loadingProgress, workspaces } = useData();
-  const { role, canAccessAdminUi, canOperateLog, canManageValue, canAlign } = useAppRole();
+  const { loading, loadingProgress, activities } = useData();
+
+  const { role, canAccessAdminUi, canOperateLog, canManageImpact, canAlign } = useAppRole();
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [isFocusFullscreen, setIsFocusFullscreen] = useState(false);
@@ -30,13 +31,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     {
       label: '',
       items: [
-        { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Brief', hint: 'Operational overview and key metrics' },
+        { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Overview', hint: 'Operational overview and key metrics' },
         { to: '/activity', icon: <History size={18} />, label: 'Activities', hint: 'Activity records and management' },
-        { to: '/participants', icon: <Users size={18} />, label: 'Participants', hint: 'Participant list and detailed profiles' },
+
+        { to: '/entities', icon: <Users size={18} />, label: 'Entities', hint: 'Entity list and detailed profiles' },
+
         { to: '/channels', icon: <Circle size={18} />, label: 'Channels', hint: 'Channel tracking and settings overview' },
-        { to: '/collaborations', icon: <Handshake size={18} />, label: 'Collaborations', hint: 'Associate network and relationship tracking' },
-        { to: '/team', icon: <UserCog size={18} />, label: 'Team', hint: 'Team management and operator coverage' },
-        { to: '/settings', icon: <Settings size={18} />, label: 'Config', hint: 'System preferences and access control' },
+        { to: '/collaborations', icon: <Handshake size={18} />, label: 'Collaborations', hint: 'Collaboration network and relationship tracking' },
+        { to: '/team-teamMembers', icon: <UserCog size={18} />, label: 'Team TeamMembers', hint: 'Team management and operator coverage' },
+        { to: '/settings', icon: <Settings size={18} />, label: 'Settings', hint: 'System preferences and access control' },
+
       ],
     },
   ];
@@ -45,13 +49,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     {
       label: '',
       items: [
-        { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Brief' },
+        { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Overview' },
         { to: '/activity', icon: <History size={18} />, label: 'Activities' },
-        { to: '/participants', icon: <Users size={18} />, label: 'Participants' },
+        { to: '/entities', icon: <Users size={18} />, label: 'Entities' },
         { to: '/channels', icon: <Circle size={18} />, label: 'Channels' },
         { to: '/collaborations', icon: <Handshake size={18} />, label: 'Collaborations' },
-        { to: '/team', icon: <UserCog size={18} />, label: 'Operations' },
+        { to: '/team-teamMembers', icon: <UserCog size={18} />, label: 'Team TeamMembers' },
       ],
+
     },
   ];
 
@@ -59,7 +64,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const showSyncProgress = loading || loadingProgress > 0;
   const roleLabel = role === 'admin' ? 'Admin' : role === 'operator' ? 'Operator' : 'Viewer';
-  const roleSummary = `Activities: ${canOperateLog ? 'Yes' : 'No'} • Value: ${canManageValue ? 'Yes' : 'No'} • Align: ${canAlign ? 'Yes' : 'No'}`;
+  const roleSummary = `Activities: ${canOperateLog ? 'Yes' : 'No'} • Value: ${canManageImpact ? 'Yes' : 'No'} • Align: ${canAlign ? 'Yes' : 'No'}`;
 
   const mobileRoleBadgeClass = role === 'admin'
     ? 'border-violet-700 bg-violet-900/50 text-violet-200'
@@ -135,11 +140,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         const goRouteMap: Record<string, string> = {
           b: '/dashboard',
           a: '/activity',
-          p: '/participants',
           c: '/collaborations',
           v: '/channels',
-          t: '/team',
+          t: '/team-teamMembers',
           s: canAccessAdminUi ? '/settings' : '/activity',
+
         };
         const route = goRouteMap[normalizedKey];
         if (route) {
@@ -166,9 +171,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           if (normalizedKey === 'e') {
             event.preventDefault();
             clearShortcutPrefix();
-            const activeWorkspace = workspaces.find(workspace => workspace.status === 'active');
-            if (activeWorkspace) {
-              navigate(`/activity/${activeWorkspace.id}?action=record-entry`);
+            const activeActivity = activities.find(activity => activity.status === 'active');
+            if (activeActivity) {
+              navigate(`/activity/${activeActivity.id}?action=record-record`);
+
             } else {
               navigate('/activity?action=create-activity');
             }
@@ -185,16 +191,17 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           if (normalizedKey === 'p') {
             event.preventDefault();
             clearShortcutPrefix();
-            navigate('/participants?action=add-participant');
+            navigate('/entities?action=add-entity');
             return;
           }
 
           if (normalizedKey === 'm') {
             event.preventDefault();
             clearShortcutPrefix();
-            navigate('/team?action=add-viewer');
+            navigate('/team-teamMembers?action=add-team-teamMember');
             return;
           }
+
         }
       }
 
@@ -241,8 +248,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, [
     armShortcutPrefix,
     clearShortcutPrefix,
-    workspaces,
+    activities,
     isFocusFullscreen,
+
     role === 'admin',
     isShortcutHelpOpen,
     navigate,

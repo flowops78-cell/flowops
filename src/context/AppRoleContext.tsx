@@ -12,9 +12,12 @@ type AppRoleContextType = {
   roleLocked: boolean;
   canAccessAdminUi: boolean;
   canOperateLog: boolean;
-  canManageValue: boolean;
+  canManageImpact: boolean;
   canAlign: boolean;
+  clusterRole: 'cluster_admin' | 'cluster_operator' | 'viewer' | null;
+  isClusterAdmin: boolean;
 };
+
 
 const APP_ROLE_STORAGE_KEY = 'flow_ops_role';
 
@@ -24,7 +27,10 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const { user, loading: authLoading } = useAuth();
   const [role, setRoleState] = useState<AppRole>('viewer');
   const [profileRole, setProfileRole] = useState<AppRole | null>(null);
+  const [clusterRoleState, setClusterRoleState] = useState<'cluster_admin' | 'cluster_operator' | 'viewer' | null>(null);
+  const [isClusterAdminState, setIsClusterAdminState] = useState(false);
   const [profileRoleLoading, setProfileRoleLoading] = useState(false);
+
   const roleFromMetadata = user?.user_metadata?.app_role;
   const metadataRole = normalizeAppRole(roleFromMetadata);
   const effectiveServerRole = metadataRole ?? profileRole;
@@ -59,7 +65,10 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       const roleFromProfile = normalizeAppRole(authority.role);
       setProfileRole(roleFromProfile);
+      setClusterRoleState(authority.clusterRole);
+      setIsClusterAdminState(authority.isPlatformAdmin);
       setProfileRoleLoading(false);
+
     };
 
     void loadProfileRole();
@@ -84,7 +93,7 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const value = useMemo<AppRoleContextType>(() => {
     const canAccessAdminUi = role === 'admin';
     const canOperateLog = role === 'admin' || role === 'operator';
-    const canManageValue = role === 'admin' || role === 'operator';
+    const canManageImpact = role === 'admin' || role === 'operator';
     const canAlign = role === 'admin';
     return {
       role,
@@ -93,10 +102,13 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
       roleLocked,
       canAccessAdminUi,
       canOperateLog,
-      canManageValue,
+      canManageImpact,
       canAlign,
+      clusterRole: clusterRoleState,
+      isClusterAdmin: isClusterAdminState,
     };
-  }, [loading, role, roleLocked]);
+  }, [loading, role, roleLocked, clusterRoleState, isClusterAdminState]);
+
 
   return <AppRoleContext.Provider value={value}>{children}</AppRoleContext.Provider>;
 };

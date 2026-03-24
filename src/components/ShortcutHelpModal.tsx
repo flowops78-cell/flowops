@@ -27,7 +27,7 @@ const shortcutGroups: Array<{ title: string; items: ShortcutItem[] }> = [
     items: [
       { keys: 'B', action: 'Go to Brief (Dashboard)' },
       { keys: 'A', action: 'Go to Activity' },
-      { keys: 'P', action: 'Go to Participants' },
+      { keys: 'P', action: 'Go to Entities' },
       { keys: 'C', action: 'Go to Collaborations' },
       { keys: 'V', action: 'Go to Channels' },
       { keys: 'T', action: 'Go to Team' },
@@ -38,16 +38,16 @@ const shortcutGroups: Array<{ title: string; items: ShortcutItem[] }> = [
     title: 'Global Create (N then …)',
     items: [
       { keys: 'N then A', action: 'Create activity' },
-      { keys: 'N then E', action: 'Record entry' },
+      { keys: 'N then E', action: 'ActivityRecord record' },
       { keys: 'N then V', action: 'Add account (Channels)' },
-      { keys: 'N then P', action: 'Add participant' },
+      { keys: 'N then P', action: 'Add entity' },
     ],
   },
   {
     title: 'Activity Page',
     items: [
       { keys: 'U', action: 'Add entity' },
-      { keys: 'E', action: 'Record entry' },
+      { keys: 'E', action: 'ActivityRecord record' },
       { keys: 'Shift + Enter', action: 'Complete activity' },
       { keys: 'M', action: 'Toggle activity monitor' },
     ],
@@ -55,15 +55,15 @@ const shortcutGroups: Array<{ title: string; items: ShortcutItem[] }> = [
   {
     title: 'Team Page',
     items: [
-      { keys: 'Delete', action: 'Remove selected team member' },
+      { keys: 'Delete', action: 'Remove selected team teamMember' },
       { keys: 'L', action: 'View team log' },
     ],
   },
   {
     title: 'Channels Page',
     items: [
-      { keys: 'I', action: 'Record inflow' },
-      { keys: 'O', action: 'Record outflow' },
+      { keys: 'I', action: 'ActivityRecord inflow' },
+      { keys: 'O', action: 'ActivityRecord outflow' },
       { keys: 'A', action: 'Add account' },
       { keys: 'F', action: 'Toggle filters' },
     ],

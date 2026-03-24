@@ -7,41 +7,41 @@ import { useNotification } from '../context/NotificationContext';
 import { formatValue, formatDate } from '../lib/utils';
 import { cn } from '../lib/utils';
 import { OutputRequest } from '../types';
-import ParticipantSnapshot from '../components/ParticipantSnapshot';
+import EntitySnapshot from '../components/EntitySnapshot';
 import { useLabels } from '../lib/labels';
 
-type UnitAccountEntryType = 'increment' | 'adjustment' | 'decrement';
+type UnitAccountActivityRecordType = 'increment' | 'adjustment' | 'decrement';
 
 const isoToday = () => new Date().toISOString().split('T')[0];
 
-export default function ParticipantDetail() {
+export default function EntityDetail() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const {
-    units,
+    entities,
     updateUnit,
-    entries,
-    workspaces,
-    addChannelEntry,
+    records,
+    activities,
+    addChannelRecord,
     recordSystemEvent,
     unitAccountEntries,
     outputRequests,
-    addUnitAccountEntry,
+    addUnitAccountActivityRecord,
     requestOutput,
     resolveOutputRequest,
     transferAccounts,
   } = useData();
-  const { canAccessAdminUi, canManageValue, canAlign } = useAppRole();
+  const { canAccessAdminUi, canManageImpact, canAlign } = useAppRole();
   const { tx } = useLabels();
   const isAdmin = canAccessAdminUi;
-  const canManageEntityTx = canManageValue;
+  const canManageEntityTx = canManageImpact;
   const { notify } = useNotification();
 
-  const unit = useMemo(() => units.find(item => item.id === id), [units, id]);
+  const unit = useMemo(() => entities.find(item => item.id === id), [entities, id]);
 
-  const [entryType, setEntryType] = useState<UnitAccountEntryType>('increment');
-  const [entryAmount, setEntryAmount] = useState('');
-  const [entryMethod, setEntryMethod] = useState('');
+  const [recordType, setRecordType] = useState<UnitAccountActivityRecordType>('increment');
+  const [recordAmount, setRecordAmount] = useState('');
+  const [recordMethod, setRecordMethod] = useState('');
 
   const [requestAmount, setRequestAmount] = useState('');
 
@@ -53,12 +53,12 @@ export default function ParticipantDetail() {
   const [isOverrideExpanded, setIsOverrideExpanded] = useState(false);
 
   const entityEntries = useMemo(
-    () => unitAccountEntries.filter(item => item.unit_id === id).sort((a, b) => b.date.localeCompare(a.date)),
+    () => unitAccountEntries.filter(item => item.entity_id === id).sort((a, b) => b.date.localeCompare(a.date)),
     [unitAccountEntries, id],
   );
 
   const entityRequests = useMemo(
-    () => outputRequests.filter(item => item.unit_id === id).sort((a, b) => b.requested_at.localeCompare(a.requested_at)),
+    () => outputRequests.filter(item => item.entity_id === id).sort((a, b) => b.requested_at.localeCompare(a.requested_at)),
     [outputRequests, id],
   );
 
@@ -87,8 +87,8 @@ export default function ParticipantDetail() {
   }, [entityEntries, entityRequests]);
 
   const performanceDelta = useMemo(
-    () => entries.filter(item => item.unit_id === id).reduce((sum, item) => sum + item.net, 0),
-    [entries, id],
+    () => records.filter(item => item.entity_id === id).reduce((sum, item) => sum + item.net, 0),
+    [records, id],
   );
 
   const inflowsAndAdjustments = useMemo(
@@ -106,38 +106,38 @@ export default function ParticipantDetail() {
     [inflowsAndAdjustments, performanceDelta, totalOutflows],
   );
 
-  const serviceFeeRangeTotal = useMemo(() => {
+  const operationalWeightRangeTotal = useMemo(() => {
     if (!id || !rangeStart || !rangeEnd || rangeStart > rangeEnd) {
-      return { serviceFee: 0, workspaces: 0 };
+      return { operationalWeight: 0, activities: 0 };
     }
 
-    const unitWorkspaceIds = new Set(
-      entries
-        .filter(entry => entry.unit_id === id)
-        .map(entry => entry.workspace_id),
+    const unitActivityIds = new Set(
+      records
+        .filter(record => record.entity_id === id)
+        .map(record => record.activity_id),
     );
 
-    let serviceFee = 0;
-    let workspacesCount = 0;
-    unitWorkspaceIds.forEach(workspaceId => {
-      const workspace = workspaces.find(item => item.id === workspaceId);
-      if (!workspace) return;
-      if (workspace.date < rangeStart || workspace.date > rangeEnd) return;
-      workspacesCount += 1;
-      serviceFee += workspace.operational_contribution || 0;
+    let operationalWeight = 0;
+    let activitysCount = 0;
+    unitActivityIds.forEach(activityId => {
+      const activity = activities.find(item => item.id === activityId);
+      if (!activity) return;
+      if (activity.date < rangeStart || activity.date > rangeEnd) return;
+      activitysCount += 1;
+      operationalWeight += activity.operational_weight || 0;
     });
 
-    return { surcharge: serviceFee, workspaces: workspacesCount };
-  }, [id, entries, workspaces, rangeStart, rangeEnd]);
+    return { surcharge: operationalWeight, activities: activitysCount };
+  }, [id, records, activities, rangeStart, rangeEnd]);
 
   if (!unit) {
     return (
       <div className="page-shell">
         <div className="section-card p-6 space-y-4">
-          <p className="text-sm text-stone-500 dark:text-stone-400">Participant not found.</p>
-          <button type="button" onClick={() => navigate('/participants')} className="action-btn-secondary">
+          <p className="text-sm text-stone-500 dark:text-stone-400">Entity not found.</p>
+          <button type="button" onClick={() => navigate('/entities')} className="action-btn-secondary">
             <ArrowLeft size={14} />
-            Back to Participants
+            Back to Entities
           </button>
         </div>
       </div>
@@ -153,53 +153,53 @@ export default function ParticipantDetail() {
 
     try {
       await updateUnit({ ...unit, tags });
-      notify({ type: 'success', message: 'Unit tags updated.' });
+      notify({ type: 'success', message: 'Entity tags updated.' });
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to update unit tags.' });
     }
   };
 
-  const handleAddManualEntry = async () => {
+  const handleAddManualActivityRecord = async () => {
     if (!canManageEntityTx) {
       notify({ type: 'error', message: 'Only admin or operator can post inputs or adjustments.' });
       return;
     }
-    const amount = Number(entryAmount);
+    const amount = Number(recordAmount);
     if (!Number.isFinite(amount) || amount <= 0) {
       notify({ type: 'error', message: 'Amount must be greater than 0.' });
       return;
     }
 
-    if (!entryMethod) {
+    if (!recordMethod) {
       notify({ type: 'error', message: 'Select a transfer source from Channels.' });
       return;
     }
 
-    await addUnitAccountEntry({
-      unit_id: unit.id,
-      type: entryType,
+    await addUnitAccountActivityRecord({
+      entity_id: unit.id,
+      type: recordType,
       amount,
       date: isoToday(),
-      transfer_method: entryMethod || undefined,
+      transfer_method: recordMethod || undefined,
     });
 
     // Sync with channel ONLY for increments and decrements (not adjustments)
-    if (entryType !== 'adjustment') {
+    if (recordType !== 'adjustment') {
       try {
-        await addChannelEntry({
-          type: entryType === 'increment' ? 'decrement' : 'increment',
+        await addChannelRecord({
+          type: recordType === 'increment' ? 'decrement' : 'increment',
           amount,
-          method: entryMethod,
+          method: recordMethod,
           date: isoToday(),
         });
       } catch (error) {
-        notify({ type: 'warning', message: 'Entry posted but channel sync failed. Record manually.' });
+        notify({ type: 'warning', message: 'ActivityRecord posted but channel sync failed. ActivityRecord manually.' });
       }
     }
 
-    setEntryAmount('');
-    setEntryMethod('');
-    notify({ type: 'success', message: `${entryType === 'adjustment' ? 'Adjustment' : entryType === 'increment' ? 'Increase' : 'Decrease'} posted.` });
+    setRecordAmount('');
+    setRecordMethod('');
+    notify({ type: 'success', message: `${recordType === 'adjustment' ? 'Adjustment' : recordType === 'increment' ? 'Increase' : 'Decrease'} posted.` });
   };
 
   const handleCreateOutputRequest = async () => {
@@ -215,7 +215,7 @@ export default function ParticipantDetail() {
     }
 
     await requestOutput({
-      unit_id: unit.id,
+      entity_id: unit.id,
       amount,
       requested_at: new Date().toISOString(),
     });
@@ -234,14 +234,14 @@ export default function ParticipantDetail() {
 
     if (nextStatus === 'approved') {
       try {
-        await addChannelEntry({
+        await addChannelRecord({
           type: 'decrement',
           amount: request.amount,
           method: 'value',
           date: isoToday(),
         });
       } catch {
-        notify({ type: 'warning', message: 'Request approved, but channel entry could not be recorded.' });
+        notify({ type: 'warning', message: 'Request approved, but channel record could not be recorded.' });
       }
     }
 
@@ -263,14 +263,14 @@ export default function ParticipantDetail() {
       return;
     }
 
-    const adjustmentAmount = (serviceFeeRangeTotal.surcharge || 0) * (percent / 100);
+    const adjustmentAmount = (operationalWeightRangeTotal.surcharge || 0) * (percent / 100);
     if (adjustmentAmount <= 0) {
       notify({ type: 'error', message: 'Calculated adjustment is 0 or negative.' });
       return;
     }
 
-    await addUnitAccountEntry({
-      unit_id: unit.id,
+    await addUnitAccountActivityRecord({
+      entity_id: unit.id,
       type: 'adjustment',
       amount: Number(adjustmentAmount.toFixed(2)),
       date: isoToday(),
@@ -302,8 +302,8 @@ export default function ParticipantDetail() {
     if (!confirmed) return;
 
     if (delta > 0) {
-      await addUnitAccountEntry({
-        unit_id: unit.id,
+      await addUnitAccountActivityRecord({
+        entity_id: unit.id,
         type: 'increment',
         amount: Math.abs(delta),
         date: isoToday(),
@@ -311,18 +311,18 @@ export default function ParticipantDetail() {
 
       // Sync with channel: override increase = decrement from source
       try {
-        await addChannelEntry({
+        await addChannelRecord({
           type: 'decrement',
           amount: Math.abs(delta),
           method: 'override_adjustment',
           date: isoToday(),
         });
       } catch (error) {
-        notify({ type: 'warning', message: 'Override recorded but channel sync failed. Record manually.' });
+        notify({ type: 'warning', message: 'Override recorded but channel sync failed. ActivityRecord manually.' });
       }
     } else {
-      await addUnitAccountEntry({
-        unit_id: unit.id,
+      await addUnitAccountActivityRecord({
+        entity_id: unit.id,
         type: 'decrement',
         amount: Math.abs(delta),
         date: isoToday(),
@@ -331,21 +331,21 @@ export default function ParticipantDetail() {
 
       // Sync with channel: override decrease = increment to source
       try {
-        await addChannelEntry({
+        await addChannelRecord({
           type: 'increment',
           amount: Math.abs(delta),
           method: 'override_adjustment',
           date: isoToday(),
         });
       } catch (error) {
-        notify({ type: 'warning', message: 'Override recorded but channel sync failed. Record manually.' });
+        notify({ type: 'warning', message: 'Override recorded but channel sync failed. ActivityRecord manually.' });
       }
     }
 
     await recordSystemEvent({
-      action: 'participant_total_manual_override',
+      action: 'entity_total_manual_override',
       entity: 'unit',
-      unit_id: unit.id,
+      entity_id: unit.id,
       amount: delta,
       details: `Total override ${formatValue(computedTotal)} -> ${formatValue(target)}`,
     });
@@ -358,8 +358,8 @@ export default function ParticipantDetail() {
     <div className="page-shell space-y-6">
       <div className="section-card p-5 lg:p-6 flex items-center justify-between gap-4">
         <div>
-          <p className="text-xs text-stone-500 dark:text-stone-400">Participant Detail</p>
-          <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">{unit.name || 'Unnamed Participant'}</h2>
+          <p className="text-xs text-stone-500 dark:text-stone-400">Entity Detail</p>
+          <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">{unit.name || 'Unnamed Entity'}</h2>
           {unit.tags && unit.tags.length > 0 && (
             <div className="mt-2 flex flex-wrap gap-1.5">
               {unit.tags.map(tag => (
@@ -372,11 +372,11 @@ export default function ParticipantDetail() {
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => setIsSnapshotOpen(true)} className="action-btn-secondary">
-            Participant Snapshot
+            Entity Snapshot
           </button>
-          <button type="button" onClick={() => navigate('/participants')} className="action-btn-secondary">
+          <button type="button" onClick={() => navigate('/entities')} className="action-btn-secondary">
             <ArrowLeft size={14} />
-            Back to Participants
+            Back to Entities
           </button>
         </div>
       </div>
@@ -413,24 +413,24 @@ export default function ParticipantDetail() {
 
       {canManageEntityTx && (
         <div className="section-card p-5 lg:p-6 space-y-4">
-          <h3 className="text-base font-medium text-stone-900 dark:text-stone-100">{tx('Post Entry')}</h3>
+          <h3 className="text-base font-medium text-stone-900 dark:text-stone-100">{tx('Post ActivityRecord')}</h3>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-            <select className="control-input" value={entryType} onChange={e => setEntryType(e.target.value as UnitAccountEntryType)}>
+            <select className="control-input" value={recordType} onChange={e => setRecordType(e.target.value as UnitAccountActivityRecordType)}>
               <option value="increment">{tx('Increase')}</option>
               <option value="adjustment">Adjustment</option>
             </select>
-            <input className="control-input" type="number" min="0.01" step="0.01" placeholder="Amount" value={entryAmount} onChange={e => setEntryAmount(e.target.value)} />
-            <button type="button" onClick={() => { void handleAddManualEntry(); }} className="action-btn-primary">
+            <input className="control-input" type="number" min="0.01" step="0.01" placeholder="Amount" value={recordAmount} onChange={e => setRecordAmount(e.target.value)} />
+            <button type="button" onClick={() => { void handleAddManualActivityRecord(); }} className="action-btn-primary">
               <PlusCircle size={14} />
               Post
             </button>
           </div>
           <div>
-            <label className="block text-xs text-stone-500 dark:text-stone-400 mb-1">Transfer Source (links to Channels)</label>
+            <label className="block text-xs text-stone-500 dark:text-stone-400 mb-1">TransferAmount Source (links to Channels)</label>
             <select
               className="control-input max-w-sm"
-              value={entryMethod}
-              onChange={e => setEntryMethod(e.target.value)}
+              value={recordMethod}
+              onChange={e => setRecordMethod(e.target.value)}
               required
             >
               <option value="">Select transfer source...</option>
@@ -458,7 +458,7 @@ export default function ParticipantDetail() {
             </button>
           </div>
           <p className="text-xs text-stone-500 dark:text-stone-400">
-            Eligible operational total in range: {formatValue(serviceFeeRangeTotal.surcharge || 0)} across {serviceFeeRangeTotal.workspaces} activities.
+            Eligible operational total in range: {formatValue(operationalWeightRangeTotal.surcharge || 0)} across {operationalWeightRangeTotal.activities} activities.
           </p>
         </div>
       )}
@@ -541,7 +541,7 @@ export default function ParticipantDetail() {
 
       <div className="section-card p-5 lg:p-6 space-y-3">
         <h3 className="text-base font-medium text-stone-900 dark:text-stone-100">Entity Account Entries</h3>
-        {entityEntries.length === 0 && <p className="text-sm text-stone-500 dark:text-stone-400">No entries posted yet.</p>}
+        {entityEntries.length === 0 && <p className="text-sm text-stone-500 dark:text-stone-400">No records posted yet.</p>}
         {entityEntries.length > 0 && (
           <div className="overflow-auto">
             <table className="w-full text-sm">
@@ -605,7 +605,7 @@ export default function ParticipantDetail() {
           {isOverrideExpanded && (
             <div className="relative z-10 ml-2 mt-2 space-y-3 rounded-md border border-red-200/70 bg-white/65 p-3 dark:border-red-900/40 dark:bg-stone-900/55">
               <p className="text-xs font-medium text-red-700 dark:text-red-300">
-                High-variance action. Use only for emergency alignment. This writes audited adjustment entrys instead of mutating profile total directly.
+                High-variance action. Use only for emergency alignment. This writes audited adjustment records instead of mutating profile total directly.
               </p>
               <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
                 <input
@@ -630,12 +630,12 @@ export default function ParticipantDetail() {
       )}
 
       {isSnapshotOpen && (
-        <ParticipantSnapshot
+        <EntitySnapshot
           entity={unit}
           type="entity"
           onClose={() => setIsSnapshotOpen(false)}
           onUpdateTags={handleUpdateEntityTags}
-          workspaceNet={performanceDelta}
+          activityNet={performanceDelta}
           variant="modal"
         />
       )}

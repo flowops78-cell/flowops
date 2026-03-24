@@ -1,57 +1,48 @@
--- Flow Ops Verification
--- Use this to verify a database created from supabase/migrations/20260322230000_flow_ops_schema.sql.
+-- Flow Ops Canonical Backend Verification
+-- Use this to verify a database created from supabase/migrations/20260327000000_baseline_schema.sql.
 
 -- 1) Schema sanity
 select table_name
 from information_schema.tables
 where table_schema = 'public'
   and table_name in (
-    'user_roles',
+    'clusters',
+    'organizations',
+    'platform_roles',
+    'cluster_memberships',
+    'organization_memberships',
     'profiles',
-    'workspaces',
-    'units',
-    'entries',
-    'activity_logs',
-    'allocations',
-    'adjustments',
-    'channel_entries',
-    'associates',
-    'associate_allocations',
-    'unit_account_entries',
-    'adjustment_requests',
-    'output_requests',
+    'collaborations',
+    'entities',
+    'activities',
+    'records',
+    'team_members',
+    'channels',
+    'channel_records',
     'operator_activities',
-    'members',
-    'expenses',
-    'transfer_accounts',
     'audit_events',
     'access_requests',
-    'access_invites',
-    'org_clusters',
-    'orgs',
-    'org_memberships',
-    'platform_roles'
+    'access_invites'
   )
 order by table_name;
 
--- 2) app_role enum values
-select e.enumlabel
+-- 2) enum values
+select t.typname, e.enumlabel
 from pg_type t
 join pg_enum e on e.enumtypid = t.oid
-where t.typname = 'app_role'
-order by e.enumsortorder;
+where t.typname in ('app_role', 'record_status', 'record_direction', 'collaboration_type')
+order by t.typname, e.enumsortorder;
 
 -- 3) key uniqueness guards
 select t.relname as table_name, c.conname, pg_get_constraintdef(c.oid) as definition
 from pg_constraint c
 join pg_class t on t.oid = c.conrelid
 where (
-  t.relname = 'user_roles'
+  t.relname = 'cluster_memberships'
   and c.contype = 'u'
-  and c.conname = 'uq_user_roles_user_id'
 )
 or (
-  t.relname = 'members'
+  t.relname = 'organization_memberships'
   and c.contype = 'u'
 )
 order by t.relname, c.conname;
@@ -59,14 +50,20 @@ order by t.relname, c.conname;
 select indexname, indexdef
 from pg_indexes
 where schemaname = 'public'
-  and tablename = 'members'
-  and indexname = 'idx_members_org_user_unique';
+  and indexname in (
+    'uq_team_members_org_user_id',
+    'idx_records_activity_id',
+    'idx_records_entity_id',
+    'idx_channel_records_record_id',
+    'idx_access_invites_org_id'
+  )
+order by indexname;
 
--- 4) lifecycle constraint checks on workspaces and queue tables
+-- 4) lifecycle constraint checks on canonical tables
 select t.relname as table_name, c.conname, pg_get_constraintdef(c.oid) as definition
 from pg_constraint c
 join pg_class t on t.oid = c.conrelid
-where t.relname in ('workspaces', 'adjustments', 'channel_entries', 'associate_allocations', 'unit_account_entries', 'adjustment_requests', 'output_requests', 'members')
+where t.relname in ('activities', 'records', 'collaborations', 'channels', 'access_requests', 'access_invites')
   and c.contype = 'c'
 order by t.relname, c.conname;
 
@@ -75,38 +72,36 @@ select table_name, column_name
 from information_schema.columns
 where table_schema = 'public'
   and (
-    (table_name = 'workspaces' and column_name in (
-      'org_id', 'activity_category', 'workspace_mode', 'assigned_operator_id', 'end_time',
-      'system_contribution', 'channel_value', 'activity_frequency'
+    (table_name = 'entities' and column_name in (
+      'org_id', 'name', 'collaboration_id', 'referred_by_entity_id', 'referring_collaboration_id', 'total_units'
     ))
     or
-    (table_name = 'units' and column_name in (
-      'org_id', 'tags', 'attributed_associate_id'
+    (table_name = 'activities' and column_name in (
+      'org_id', 'label', 'date', 'start_time', 'status', 'channel_label', 'assigned_user_id'
     ))
     or
-    (table_name = 'associates' and column_name in (
-      'org_id', 'contact_method', 'contact_value'
+    (table_name = 'records' and column_name in (
+      'org_id', 'activity_id', 'entity_id', 'direction', 'status', 'unit_amount', 'transfer_group_id', 'notes'
     ))
     or
-    (table_name = 'entries' and column_name in (
-      'unit_name', 'input_amount', 'output_amount', 'total_input', 'joined_at', 'left_at',
-      'position_id', 'activity_units', 'sort_order', 'source_method'
+    (table_name = 'collaborations' and column_name in (
+      'org_id', 'name', 'collaboration_type', 'participation_factor', 'overhead_weight_pct', 'rules'
     ))
     or
-    (table_name = 'members' and column_name in (
-      'user_id', 'member_id', 'incentive_type', 'overhead_weight', 'retainer_rate', 'tags'
+    (table_name = 'team_members' and column_name in (
+      'org_id', 'name', 'staff_role', 'user_id'
     ))
     or
-    (table_name = 'adjustment_requests' and column_name in (
-      'org_id', 'unit_id', 'amount', 'type', 'status', 'requested_at', 'resolved_at', 'resolved_by'
+    (table_name = 'channels' and column_name in (
+      'org_id', 'name', 'status', 'notes'
     ))
     or
-    (table_name = 'transfer_accounts' and column_name in (
-      'category', 'is_active', 'status'
+    (table_name = 'channel_records' and column_name in (
+      'org_id', 'activity_id', 'channel_id', 'record_id', 'created_at'
     ))
     or
     (table_name = 'audit_events' and column_name in (
-      'actor_user_id', 'actor_label', 'actor_role', 'operator_activity_id', 'details'
+      'org_id', 'entity_id', 'actor_user_id', 'actor_label', 'actor_role', 'operator_activity_id', 'details'
     ))
     or
     (table_name = 'access_requests' and column_name in (
@@ -119,16 +114,40 @@ where table_schema = 'public'
   )
 order by table_name, column_name;
 
--- 6) columns that should be absent
+-- 6) legacy tables and columns should be absent
 select table_name, column_name
 from information_schema.columns
 where table_schema = 'public'
   and (
-    (table_name = 'access_requests' and column_name in ('requested_name', 'requested_password'))
+    table_name in (
+      'workspaces',
+      'units',
+      'entries',
+      'associates',
+      'members',
+      'channel_entries',
+      'activity_logs',
+      'allocations',
+      'adjustments',
+      'associate_allocations',
+      'unit_account_entries',
+      'adjustment_requests',
+      'output_requests',
+      'expenses',
+      'transfer_accounts',
+      'user_roles',
+      'org_clusters',
+      'orgs',
+      'org_memberships'
+    )
     or
-    (table_name = 'associates' and column_name = 'contact')
+    (table_name = 'records' and column_name in ('workspace_id', 'unit_id', 'input_amount', 'output_amount'))
     or
-    (table_name = 'units' and column_name = 'phone')
+    (table_name = 'entities' and column_name in ('attributed_associate_id', 'referred_by_partner_id'))
+    or
+    (table_name = 'activities' and column_name in ('assigned_operator_id', 'channel'))
+    or
+    (table_name = 'team_members' and column_name in ('member_id', 'role'))
   )
 order by table_name, column_name;
 
@@ -139,144 +158,76 @@ where specific_schema = 'public'
   and routine_name in (
     'get_my_role',
     'get_my_org_id',
-    'get_my_org_role',
-    'get_my_meta_org_id',
     'get_my_platform_role',
-    'has_org_membership',
-    'can_access_org',
-    'can_manage_org',
-    'can_administer_org',
+    'user_has_org_access',
+    'user_has_cluster_access',
     'is_org_in_my_cluster',
-    'adjust_unit_balance',
-    'adjust_associate_total',
     'log_audit_event',
-    'channel_base_transfer'
+    'update_updated_at_column'
   )
 order by routine_name;
 
--- 8) function execute grants for privileged helpers
-select routine_name, grantee, privilege_type
-from information_schema.role_routine_grants
-where specific_schema = 'public'
-  and routine_name in (
-    'adjust_unit_balance',
-    'adjust_associate_total',
-    'log_audit_event',
-    'channel_base_transfer'
-  )
-order by routine_name, grantee, privilege_type;
-
--- 9) row level security should be enabled across all protected tables
+-- 8) row level security should be enabled across protected tables
 select c.relname as table_name, c.relrowsecurity as rls_enabled
 from pg_class c
 join pg_namespace n on n.oid = c.relnamespace
 where n.nspname = 'public'
   and c.relname in (
-    'user_roles',
+    'clusters',
+    'organizations',
+    'platform_roles',
+    'cluster_memberships',
+    'organization_memberships',
     'profiles',
-    'workspaces',
-    'units',
-    'entries',
-    'activity_logs',
-    'allocations',
-    'adjustments',
-    'channel_entries',
-    'associates',
-    'associate_allocations',
-    'unit_account_entries',
-    'adjustment_requests',
-    'output_requests',
+    'collaborations',
+    'entities',
+    'activities',
+    'records',
+    'team_members',
+    'channels',
+    'channel_records',
     'operator_activities',
-    'members',
-    'expenses',
-    'transfer_accounts',
     'audit_events',
     'access_requests',
-    'access_invites',
-    'org_clusters',
-    'orgs',
-    'org_memberships',
-    'platform_roles'
+    'access_invites'
   )
 order by c.relname;
 
--- 10) review policies that must exist on the access-control tables
+-- 9) policies that must exist on governance and org-scoped tables
 select tablename, policyname, cmd
 from pg_policies
 where schemaname = 'public'
   and (
-    (tablename = 'adjustments' and policyname in (
-      'adjustments_read', 'adjustments_write'
-    ))
+    (tablename = 'clusters' and policyname = 'clusters_read')
     or
-    (tablename = 'adjustment_requests' and policyname in (
-      'adjustment_requests_read', 'adjustment_requests_insert', 'adjustment_requests_update'
-    ))
+    (tablename = 'organizations' and policyname = 'organizations_read')
     or
-    (tablename = 'output_requests' and policyname in (
-      'output_requests_read', 'output_requests_insert', 'output_requests_update'
-    ))
+    (tablename = 'cluster_memberships' and policyname = 'cluster_memberships_read')
     or
-    (tablename = 'access_invites' and policyname in (
-      'access_invites_read', 'access_invites_insert', 'access_invites_update', 'access_invites_delete'
-    ))
+    (tablename = 'organization_memberships' and policyname = 'organization_memberships_read')
     or
-    (tablename = 'access_requests' and policyname in (
-      'access_requests_read', 'access_requests_update'
-    ))
+    (tablename = 'profiles' and policyname in ('profiles_read', 'profiles_update'))
     or
-    (tablename = 'audit_events' and policyname = 'audit_events_read')
+    (tablename = 'collaborations' and policyname in ('collaborations_read', 'collaborations_write'))
     or
-    (tablename = 'org_memberships' and policyname = 'org_memberships_read')
+    (tablename = 'entities' and policyname in ('entities_read', 'entities_write'))
     or
-    (tablename = 'orgs' and policyname = 'orgs_read')
+    (tablename = 'activities' and policyname in ('activities_read', 'activities_write'))
     or
-    (tablename = 'org_clusters' and policyname = 'org_clusters_read')
+    (tablename = 'records' and policyname in ('records_read', 'records_write'))
     or
-    (tablename = 'platform_roles' and policyname = 'platform_roles_read')
+    (tablename = 'team_members' and policyname in ('team_members_read', 'team_members_write'))
+    or
+    (tablename = 'channels' and policyname in ('channels_read', 'channels_write'))
+    or
+    (tablename = 'channel_records' and policyname in ('channel_records_read', 'channel_records_write'))
+    or
+    (tablename = 'operator_activities' and policyname in ('operator_activities_read', 'operator_activities_write'))
+    or
+    (tablename = 'audit_events' and policyname in ('audit_events_read', 'audit_events_write'))
+    or
+    (tablename = 'access_requests' and policyname in ('access_requests_read', 'access_requests_write'))
+    or
+    (tablename = 'access_invites' and policyname in ('access_invites_read', 'access_invites_write'))
   )
 order by tablename, policyname;
-
--- 11) direct client insert/write policies that should remain absent
-select tablename, policyname
-from pg_policies
-where schemaname = 'public'
-  and (
-    (tablename = 'audit_events' and policyname = 'audit_events_write')
-    or
-    (tablename = 'adjustment_requests' and policyname = 'adjustment_requests_write')
-    or
-    (tablename = 'output_requests' and policyname = 'output_requests_write')
-    or
-    (tablename = 'access_requests' and policyname in ('access_requests_insert', 'access_requests_write'))
-  )
-order by tablename, policyname;
-
--- 12) indexes that support org-scoped access and invite lookup
-select indexname, indexdef
-from pg_indexes
-where schemaname = 'public'
-  and indexname in (
-    'idx_profiles_org_id',
-    'idx_workspaces_org_id',
-    'idx_units_org_id',
-    'idx_entries_org_id',
-    'idx_activity_logs_org_id',
-    'idx_allocations_org_id',
-    'idx_adjustments_org_id',
-    'idx_channel_entries_org_id',
-    'idx_associates_org_id',
-    'idx_associate_allocations_org_id',
-    'idx_unit_account_entries_org_id',
-    'idx_adjustment_requests_org_id',
-    'idx_output_requests_org_id',
-    'idx_operator_activities_org_id',
-    'idx_members_org_id',
-    'idx_expenses_org_id',
-    'idx_transfer_accounts_org_id',
-    'idx_audit_events_org_id',
-    'idx_access_requests_org_id',
-    'idx_access_invites_org_id',
-    'idx_access_invites_active_lookup'
-  )
-order by indexname;

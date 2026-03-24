@@ -18,9 +18,9 @@ export default function DeferredRender({
     if (shouldRender) return;
 
     const observer = new IntersectionObserver(
-      entries => {
-        const entry = entries[0];
-        if (!entry?.isIntersecting) return;
+      records => {
+        const record = records[0];
+        if (!record?.isIntersecting) return;
         setShouldRender(true);
       },
       { rootMargin }

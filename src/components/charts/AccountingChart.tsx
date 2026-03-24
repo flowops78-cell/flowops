@@ -33,10 +33,10 @@ export default function AccountingChart({ chartData, theme }: AccountingChartPro
             }}
           />
           <Bar dataKey="amount" radius={[4, 4, 0, 0]}>
-            {chartData.map((entry, index) => (
+            {chartData.map((record, index) => (
               <Cell
                 key={`cell-${index}`}
-                fill={entry.name === 'Total_flow' ? '#10b981' : entry.name === 'Outflows' ? '#ef4444' : '#3b82f6'}
+                fill={record.name === 'Total_flow' ? '#10b981' : record.name === 'Outflows' ? '#ef4444' : '#3b82f6'}
               />
             ))}
           </Bar>

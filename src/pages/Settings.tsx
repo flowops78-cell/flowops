@@ -8,7 +8,7 @@ import { DbRole, dbRoleToAppRole } from '../lib/roles';
 import { getSupabaseAccessToken, isSupabaseConfigured, SUPABASE_ANON_KEY, supabase } from '../lib/supabase';
 import { useNotification } from '../context/NotificationContext';
 import LoadingLine from '../components/LoadingLine';
-import CollapsibleWorkspaceSection from '../components/CollapsibleWorkspaceSection';
+import CollapsibleActivitySection from '../components/CollapsibleActivitySection';
 import LiveOperatorsTracker from '../components/LiveOperatorsTracker';
 
 type AccessRequestRow = {
@@ -84,10 +84,10 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const {
     isDemoMode,
     activeOrgId,
-    units,
-    workspaces,
-    entries,
-    members: members,
+    entities,
+    activities,
+    records,
+    teamMembers: teamMembers,
     activityLogs,
     expenses,
     adjustments,
@@ -101,7 +101,8 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     managedOrgIds,
     clusterId,
   } = useData();
-  const { role, canAccessAdminUi } = useAppRole();
+  const { role, clusterRole, isClusterAdmin, canAccessAdminUi } = useAppRole();
+
   const { notify } = useNotification();
   const { user } = useAuth();
   const canViewOperatorLogs = canAccessAdminUi;
@@ -124,7 +125,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [requestsNoticeLoginValue, setRequestsNoticeLoginValue] = React.useState<string | null>(null);
   const [requestsNoticeCopied, setRequestsNoticeCopied] = React.useState<'login' | null>(null);
   const [busyRequestId, setBusyRequestId] = React.useState<string | null>(null);
-  const [pendingMemberIds, setPendingMemberIds] = React.useState<Record<string, string>>({});
+  const [pendingTeamMemberIds, setPendingTeamMemberIds] = React.useState<Record<string, string>>({});
   const [pendingPasswords, setPendingPasswords] = React.useState<Record<string, string>>({});
   const [pendingApprovedRoles, setPendingApprovedRoles] = React.useState<Record<string, DbRole>>({});
   const [clusterAdmins, setClusterAdmins] = React.useState<ManagedClusterAccount[]>([]);
@@ -141,7 +142,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const profileLookupSql = profileId
     ? `select id, org_id, meta_org_id\nfrom public.profiles\nwhere id = '${profileId}';`
     : `select id, org_id, meta_org_id\nfrom public.profiles\nwhere id = 'YOUR_AUTH_USER_ID';`;
-  const orgCandidatesSql = `select distinct org_id\nfrom public.workspaces\nwhere org_id is not null\norder by org_id;`;
+  const orgCandidatesSql = `select distinct org_id\nfrom public.activities\nwhere org_id is not null\norder by org_id;`;
   const profileUpdateSql = profileId
     ? `update public.profiles\nset org_id = 'YOUR_ORG_UUID'\nwhere id = '${profileId}';`
     : `update public.profiles\nset org_id = 'YOUR_ORG_UUID'\nwhere id = 'YOUR_AUTH_USER_ID';`;
@@ -153,7 +154,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     }
     if (isClearingGlobalData) return;
 
-    const confirmed = window.confirm('Clear all operational data? This removes workspaces, participants, entries, member records, member activities, expenses, adjustment requests, associate network, and channel movements. This cannot be undone.');
+    const confirmed = window.confirm('Clear all operational data? This removes activities, entities, records, teamMember records, teamMember activities, expenses, adjustment requests, collaboration network, and channel movements. This cannot be undone.');
     if (!confirmed) return;
 
     setIsClearingGlobalData(true);
@@ -161,22 +162,22 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       if (isDemoMode) {
         const demoKeys = [
           'flow_ops_units',
-          'flow_ops_workspaces',
+          'flow_ops_activitys',
           'flow_ops_entries',
-          'flow_ops_members',
+          'flow_ops_teamMembers',
           'flow_ops_activity_logs',
           'flow_ops_outflows',
           'flow_ops_adjustments',
           'flow_ops_channel_base',
-          'flow_ops_associates',
-          'flow_ops_associate_allocations',
+          'flow_ops_collaborations',
+          'flow_ops_collaboration_allocations',
           'flow_ops_partners',
           'flow_ops_partner_trans',
           'flow_ops_audit_events_v2',
           'flow_ops_operator_log_id',
           'flow_ops_operator_log_started_at',
           'flow_ops_operator_log_user_id',
-          'flow_ops_missing_supabase_workspaces',
+          'flow_ops_missing_supabase_activitys',
         ];
         demoKeys.forEach(key => localStorage.removeItem(key));
         await refreshData();
@@ -185,30 +186,30 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         const client = supabase;
         if (!client) throw new Error('Supabase project connectivity is not configured in environment variables.');
 
-        const isMissingWorkspaceError = (message: string) => {
+        const isMissingActivityError = (message: string) => {
           const normalized = message.toLowerCase();
-          return normalized.includes('could not find the workspace') || normalized.includes('relation') || normalized.includes('schema cache');
+          return normalized.includes('could not find the activity') || normalized.includes('relation') || normalized.includes('schema cache');
         };
 
-        const clearWorkspace = async (workspaceName: string) => {
-          const { error } = await client.from(workspaceName).delete().not('id', 'is', null);
-          if (error && !isMissingWorkspaceError(error.message ?? '')) {
-            throw new Error(`${workspaceName}: ${error.message}`);
+        const clearActivity = async (activityName: string) => {
+          const { error } = await client.from(activityName).delete().not('id', 'is', null);
+          if (error && !isMissingActivityError(error.message ?? '')) {
+            throw new Error(`${activityName}: ${error.message}`);
           }
         };
 
-        await clearWorkspace('entries');
-        await clearWorkspace('activity_logs');
-        await clearWorkspace('outflows');
-        await clearWorkspace('adjustments');
-        await clearWorkspace('channel_entries');
-        await clearWorkspace('associate_allocations');
-        await clearWorkspace('workspaces');
-        await clearWorkspace('members');
-        await clearWorkspace('audit_events');
-        await clearWorkspace('operator_activities');
-        await clearWorkspace('associates');
-        await clearWorkspace('units');
+        await clearActivity('records');
+        await clearActivity('activity_logs');
+        await clearActivity('outflows');
+        await clearActivity('adjustments');
+        await clearActivity('channel_entries');
+        await clearActivity('collaboration_allocations');
+        await clearActivity('activities');
+        await clearActivity('teamMembers');
+        await clearActivity('audit_events');
+        await clearActivity('operator_activities');
+        await clearActivity('collaborations');
+        await clearActivity('entities');
 
         await refreshData();
         notify({ type: 'success', message: 'Cloud operational data cleared.' });
@@ -237,7 +238,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         setAccessRequests([]);
         const normalizedErrorMessage = (error.message ?? '').toLowerCase();
         setRequestsNotice(normalizedErrorMessage.includes('access_requests')
-          ? 'access_requests workspace not found yet. Run supabase/migrations/20260322230000_flow_ops_schema.sql.'
+          ? 'access_requests activity not found yet. Run supabase/migrations/20260322230000_flow_ops_schema.sql.'
           : `Unable to load access requests: ${error.message}`);
         return;
       }
@@ -265,7 +266,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         setAccessInvites([]);
         const normalizedErrorMessage = (error.message ?? '').toLowerCase();
         setInviteNotice(normalizedErrorMessage.includes('access_invites')
-          ? 'access_invites workspace not found yet. Run supabase/migrations/20260322230000_flow_ops_schema.sql.'
+          ? 'access_invites activity not found yet. Run supabase/migrations/20260322230000_flow_ops_schema.sql.'
           : `Unable to load invite tokens: ${error.message}`);
         return;
       }
@@ -361,7 +362,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         },
         body: {
           access_request_id: request.id,
-          member_id: pendingMemberIds[request.id]?.trim() || undefined,
+          teamMember_id: pendingTeamMemberIds[request.id]?.trim() || undefined,
           password: initialPassword,
           approved_role: pendingApprovedRoles[request.id] || request.requested_role,
         },
@@ -381,7 +382,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         delete next[request.id];
         return next;
       });
-      setPendingMemberIds(prev => {
+      setPendingTeamMemberIds(prev => {
         const next = { ...prev };
         delete next[request.id];
         return next;
@@ -557,7 +558,14 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     : isSupabaseConfigured
       ? 'Connected'
       : 'Not configured';
-  const roleLabel = role.charAt(0).toUpperCase() + role.slice(1);
+  
+  const roleLabel = React.useMemo(() => {
+    if (clusterRole === 'cluster_admin') return 'Cluster Admin';
+    if (clusterRole === 'cluster_operator') return 'Cluster Operator';
+    if (role === 'admin') return 'Org Admin';
+    return role.charAt(0).toUpperCase() + role.slice(1);
+  }, [clusterRole, role]);
+
 
   const provisionOrganization = async () => {
     if (!supabase || !activeOrgId || !clusterId) return;
@@ -642,8 +650,25 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                 <div className="py-4 text-center text-xs text-stone-400">Loading cluster hierarchy...</div>
               ) : (
                 <div className="space-y-3">
-                  {clusterAdmins.length === 0 && <p className="text-xs text-stone-400 italic text-center py-4">No cluster admins found.</p>}
+                  {clusterAdmins.length === 0 && !isClusterAdmin && (
+                    <p className="text-xs text-stone-400 italic text-center py-4">No cluster admins found.</p>
+                  )}
+                  {/* Safeguard: Ensure current user is shown if they are a cluster admin but missing from list */}
+                  {isClusterAdmin && !clusterAdmins.some(a => a.user_id === user?.id) && (
+                    <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/20">
+                      <div className="min-w-0 flex-1 mr-4">
+                        <p className="text-xs font-medium text-stone-900 dark:text-stone-100 truncate">{user?.email} (You)</p>
+                        <p className="text-[10px] text-emerald-600 dark:text-emerald-400 uppercase tracking-tighter font-bold">
+                          {clusterRole?.replace('_', ' ') || 'Cluster Admin'}
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-emerald-600 font-bold uppercase px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30">
+                        Implicit Authority
+                      </span>
+                    </div>
+                  )}
                   {filteredClusterAdmins.map(admin => (
+
                     <div key={admin.user_id} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700/50">
                       <div className="min-w-0 flex-1 mr-4">
                         <p className="text-xs font-medium text-stone-900 dark:text-stone-100 truncate">{admin.email}</p>
@@ -751,26 +776,47 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
             <div className="p-3 rounded-lg bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700">
               <p className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-1">Organizations</p>
               <p className="text-[11px] text-stone-600 dark:text-stone-400 leading-relaxed">
-                Standard work environments. Membership is explicit and scoped per Org.
+                Standard work environments. TeamMembership is explicit and scoped per Org.
               </p>
             </div>
           </div>
         </div>
 
-        <div className="section">
-          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Data</h3>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => { void clearGlobalData(); }}
-              disabled={!canManageGlobalData || isClearingGlobalData}
-              className="action-btn-secondary text-xs"
-            >
-              {isClearingGlobalData ? 'Resetting…' : 'Reset System'}
-            </button>
+        <div className="section border-t border-stone-200 dark:border-stone-800 pt-6">
+          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Data & Governance</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <AlertTriangle size={16} className="text-amber-500" />
+                <h4 className="text-xs font-semibold uppercase tracking-tight text-stone-900 dark:text-stone-100">System Reset</h4>
+              </div>
+              <p className="text-[11px] text-stone-500 dark:text-stone-400 mb-4 h-8">
+                Permanently clear all operational data. This action is irreversible.
+              </p>
+              <button
+                type="button"
+                onClick={() => { void clearGlobalData(); }}
+                disabled={!canManageGlobalData || isClearingGlobalData}
+                className="action-btn-secondary w-full text-xs h-9 justify-center border-stone-200 text-stone-600 dark:border-stone-700 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800"
+              >
+                {isClearingGlobalData ? 'Resetting…' : 'Reset System'}
+              </button>
+            </div>
+
+            <div className="bg-stone-50/50 dark:bg-stone-900/20 border border-dashed border-stone-200 dark:border-stone-700/50 rounded-xl p-4 flex flex-col justify-between opacity-80">
+              <div>
+                <h4 className="text-xs font-semibold uppercase tracking-tight text-stone-400 mb-2">Bulk Export</h4>
+                <p className="text-[11px] text-stone-400 italic">
+                  Data export is currently restricted to reduce privacy exposure and maintain compliance integrity.
+                </p>
+              </div>
+              <button disabled className="mt-4 w-full text-xs h-9 rounded-md border border-stone-100 dark:border-stone-800 text-stone-300 dark:text-stone-600 bg-transparent cursor-not-allowed">
+                Export (Restricted)
+              </button>
+            </div>
           </div>
-          <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">Bulk data export is disabled to reduce privacy exposure.</p>
         </div>
+
 
         <LiveOperatorsTracker />
 
@@ -872,7 +918,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               </div>
             )}
 
-            <CollapsibleWorkspaceSection
+            <CollapsibleActivitySection
               title="Invite Tokens"
               summary={`${accessInvites.length} active/recent`}
               defaultExpanded
@@ -888,7 +934,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                 />
               }
             >
-              <table className="desktop-grid w-full workspace-auto text-left text-[13px]">
+              <table className="desktop-grid w-full activity-auto text-left text-[13px]">
                 <thead className="sticky top-0 z-10 bg-white dark:bg-stone-900 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-800">
                   <tr>
                     <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Label</th>
@@ -941,7 +987,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                   )}
                 </tbody>
               </table>
-            </CollapsibleWorkspaceSection>
+            </CollapsibleActivitySection>
           </div>
 
           <div className="section">
@@ -989,21 +1035,21 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               </div>
             )}
 
-            <CollapsibleWorkspaceSection
+            <CollapsibleActivitySection
               title="Account Requests"
               summary={`${accessRequests.length} pending`}
               defaultExpanded
               maxExpandedHeightClass="max-h-[520px]"
               maxCollapsedHeightClass="max-h-[96px]"
             >
-              <table className="desktop-grid w-full workspace-auto text-left text-[13px]">
+              <table className="desktop-grid w-full activity-auto text-left text-[13px]">
                 <thead className="sticky top-0 z-10 bg-white dark:bg-stone-900 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-800">
                   <tr>
                     <th className="px-4 py-2.5 w-[170px] text-[11px] font-semibold uppercase tracking-wide">Requested</th>
                     <th className="px-4 py-2.5 w-[220px] text-[11px] font-semibold uppercase tracking-wide">Login ID</th>
                     <th className="px-4 py-2.5 w-[120px] text-[11px] font-semibold uppercase tracking-wide">Requested</th>
                     <th className="px-4 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Approve As</th>
-                    <th className="px-4 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Member ID</th>
+                    <th className="px-4 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">TeamMember ID</th>
                     <th className="px-4 py-2.5 w-[180px] text-[11px] font-semibold uppercase tracking-wide">Initial Password</th>
                     <th className="px-4 py-2.5 w-[210px] text-[11px] font-semibold uppercase tracking-wide">Actions</th>
                   </tr>
@@ -1031,8 +1077,8 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                             type="text"
                             placeholder="e.g. OP-001"
                             className="w-full px-2 py-1 text-xs border border-stone-200 dark:border-stone-700 rounded bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100"
-                            value={pendingMemberIds[request.id] || ''}
-                            onChange={(e) => setPendingMemberIds(prev => ({ ...prev, [request.id]: e.target.value }))}
+                            value={pendingTeamMemberIds[request.id] || ''}
+                            onChange={(e) => setPendingTeamMemberIds(prev => ({ ...prev, [request.id]: e.target.value }))}
                           />
                         </td>
                         <td className="px-4 py-2.5">
@@ -1084,7 +1130,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                   )}
                 </tbody>
               </table>
-            </CollapsibleWorkspaceSection>
+            </CollapsibleActivitySection>
           </div>
           </>
         )}

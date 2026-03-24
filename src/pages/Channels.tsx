@@ -5,12 +5,12 @@ import { formatCompactValue, formatValue, formatDate } from '../lib/utils';
 import ChannelCharts from '../components/charts/ChannelCharts';
 import { cn } from '../lib/utils';
 import Papa from 'papaparse';
-import MobileRecordCard from '../components/MobileRecordCard';
+import MobileActivityRecordCard from '../components/MobileActivityRecordCard';
 import { useAppRole } from '../context/AppRoleContext';
-import { ChannelEntry, TransferAccount } from '../types';
+import { ChannelActivityRecord, TransferAccount } from '../types';
 import LoadingLine from '../components/LoadingLine';
 import { useNotification } from '../context/NotificationContext';
-import CollapsibleWorkspaceSection from '../components/CollapsibleWorkspaceSection';
+import CollapsibleActivitySection from '../components/CollapsibleActivitySection';
 import DataActionMenu from '../components/DataActionMenu';
 import { useLabels } from '../lib/labels';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -21,9 +21,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     channelEntries: channelEntries,
     adjustments,
     adjustmentRequests,
-    units,
-    addChannelEntry,
-    deleteChannelEntry,
+    entities,
+    addChannelRecord,
+    deleteChannelActivityRecord,
     addAdjustment,
     deleteAdjustment,
     resolveAdjustmentRequest,
@@ -53,32 +53,32 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   const [accountSaveState, setAccountSaveState] = useState<'idle' | 'saved'>('idle');
 
   // Channel State
-  const [isAddingEntry, setIsAddingEntry] = useState(false);
+  const [isAddingActivityRecord, setIsAddingActivityRecord] = useState(false);
   const [isTransferringToChannel, setIsTransferringToChannel] = useState(false);
   const [transType, setTransType] = useState<'increment' | 'decrement'>('increment');
   const [transAmount, setTransAmount] = useState('');
   const [transMethodBase, setTransMethodBase] = useState('channel_account');
   const [transMethodCustom, setTransMethodCustom] = useState('');
   const [transAccountLabel, setTransAccountLabel] = useState('');
-  const [isSavingEntry, setIsSavingEntry] = useState(false);
-  const [saveEntryProgress, setSaveEntryProgress] = useState(0);
-  const [entrySaveState, setEntrySaveState] = useState<'idle' | 'saved'>('idle');
-  const [deletingChannelEntryId, setDeletingChannelEntryId] = useState<string | null>(null);
-  const [archivedChannelEntryIds, setArchivedChannelEntryIds] = useState<string[]>(() => {
+  const [isSavingActivityRecord, setIsSavingActivityRecord] = useState(false);
+  const [saveActivityRecordProgress, setSaveActivityRecordProgress] = useState(0);
+  const [recordSaveState, setRecordSaveState] = useState<'idle' | 'saved'>('idle');
+  const [deletingChannelActivityRecordId, setDeletingChannelActivityRecordId] = useState<string | null>(null);
+  const [archivedChannelActivityRecordIds, setArchivedChannelActivityRecordIds] = useState<string[]>(() => {
     if (typeof window === 'undefined') return [];
     try {
-      const raw = window.localStorage.getItem('channel.archivedEntryIds');
+      const raw = window.localStorage.getItem('channel.archivedActivityRecordIds');
       const parsed = raw ? JSON.parse(raw) : [];
       return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
     } catch {
       return [];
     }
   });
-  const [isArchivedEntrysExpanded, setIsArchivedEntrysExpanded] = useState(false);
+  const [isArchivedActivityRecordsExpanded, setIsArchivedActivityRecordsExpanded] = useState(false);
   const [transferFromMethod, setTransferFromMethod] = useState('');
   const [transferFromQuery, setTransferFromQuery] = useState('');
   const [transferToChannelLabel, setTransferToChannelLabel] = useState('');
-  const [transferAmount, setTransferAmount] = useState('');
+  const [transferAmount, settransferAmount] = useState('');
   const [isSavingTransfer, setIsSavingTransfer] = useState(false);
   const [saveTransferProgress, setSaveTransferProgress] = useState(0);
   const [transferSaveState, setTransferSaveState] = useState<'idle' | 'saved'>('idle');
@@ -196,11 +196,11 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   const [saveAdjustmentProgress, setSaveAdjustmentProgress] = useState(0);
   const [adjustmentSaveState, setAdjustmentSaveState] = useState<'idle' | 'saved'>('idle');
   const [deletingAdjustmentId, setDeletingAdjustmentId] = useState<string | null>(null);
-  const [settlingEntryId, setSettlingEntryId] = useState<string | null>(null);
+  const [settlingActivityRecordId, setSettlingActivityRecordId] = useState<string | null>(null);
   const [settleAccountBase, setSettleAccountBase] = useState('channel_account');
   const [settleAccountCustom, setSettleAccountCustom] = useState('');
   const [settleAccountLabel, setSettleAccountLabel] = useState('');
-  const [isSettlingEntry, setIsSettlingEntry] = useState(false);
+  const [isSettlingActivityRecord, setIsSettlingActivityRecord] = useState(false);
   const [archivedAdjustmentIds, setArchivedAdjustmentIds] = useState<string[]>(() => {
     if (typeof window === 'undefined') return [];
     try {
@@ -228,9 +228,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('channel.autoArchiveEnabled') === 'true';
   });
-  const saveEntryProgressTimerRef = useRef<number | null>(null);
-  const saveEntryProgressResetTimerRef = useRef<number | null>(null);
-  const saveEntrySuccessResetTimerRef = useRef<number | null>(null);
+  const saveActivityRecordProgressTimerRef = useRef<number | null>(null);
+  const saveActivityRecordProgressResetTimerRef = useRef<number | null>(null);
+  const saveActivityRecordSuccessResetTimerRef = useRef<number | null>(null);
   const saveTransferProgressTimerRef = useRef<number | null>(null);
   const saveTransferProgressResetTimerRef = useRef<number | null>(null);
   const saveTransferSuccessResetTimerRef = useRef<number | null>(null);
@@ -238,16 +238,16 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   const saveAdjustmentProgressResetTimerRef = useRef<number | null>(null);
   const saveAdjustmentSuccessResetTimerRef = useRef<number | null>(null);
   const saveAccountSuccessResetTimerRef = useRef<number | null>(null);
-  const entryHistoryRef = useRef<HTMLDivElement>(null);
+  const recordHistoryRef = useRef<HTMLDivElement>(null);
 
-  const clearSaveEntryTimers = () => {
-    if (saveEntryProgressTimerRef.current !== null) {
-      window.clearInterval(saveEntryProgressTimerRef.current);
-      saveEntryProgressTimerRef.current = null;
+  const clearSaveActivityRecordTimers = () => {
+    if (saveActivityRecordProgressTimerRef.current !== null) {
+      window.clearInterval(saveActivityRecordProgressTimerRef.current);
+      saveActivityRecordProgressTimerRef.current = null;
     }
-    if (saveEntryProgressResetTimerRef.current !== null) {
-      window.clearTimeout(saveEntryProgressResetTimerRef.current);
-      saveEntryProgressResetTimerRef.current = null;
+    if (saveActivityRecordProgressResetTimerRef.current !== null) {
+      window.clearTimeout(saveActivityRecordProgressResetTimerRef.current);
+      saveActivityRecordProgressResetTimerRef.current = null;
     }
   };
 
@@ -274,12 +274,12 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   };
 
   useEffect(() => () => {
-    clearSaveEntryTimers();
+    clearSaveActivityRecordTimers();
     clearSaveTransferTimers();
     clearSaveAdjustmentTimers();
-    if (saveEntrySuccessResetTimerRef.current !== null) {
-      window.clearTimeout(saveEntrySuccessResetTimerRef.current);
-      saveEntrySuccessResetTimerRef.current = null;
+    if (saveActivityRecordSuccessResetTimerRef.current !== null) {
+      window.clearTimeout(saveActivityRecordSuccessResetTimerRef.current);
+      saveActivityRecordSuccessResetTimerRef.current = null;
     }
     if (saveTransferSuccessResetTimerRef.current !== null) {
       window.clearTimeout(saveTransferSuccessResetTimerRef.current);
@@ -301,19 +301,19 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     if (action !== 'add-deferred' && action !== 'add-immediate' && action !== 'add-account' && action !== 'toggle-filters') return;
 
     if (!canOperateValue) {
-      notify({ type: 'error', message: 'Only admin can add total entrys.' });
+      notify({ type: 'error', message: 'Only admin can add total records.' });
       return;
     }
 
     if (action === 'add-account') {
       openAddAccount();
     } else if (action === 'toggle-filters') {
-      entryHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       setIsTxControlsVisible(value => !value);
     } else {
       setTransType(action === 'add-immediate' ? 'decrement' : 'increment');
-      setIsAddingEntry(true);
-      entryHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setIsAddingActivityRecord(true);
+      recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     params.delete('action');
@@ -323,8 +323,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    window.localStorage.setItem('channel.archivedEntryIds', JSON.stringify(archivedChannelEntryIds));
-  }, [archivedChannelEntryIds]);
+    window.localStorage.setItem('channel.archivedActivityRecordIds', JSON.stringify(archivedChannelActivityRecordIds));
+  }, [archivedChannelActivityRecordIds]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -353,19 +353,19 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   } = useMemo(() => {
     const nextChannelTotals: Record<string, number> = {};
 
-    channelEntries.forEach(entry => {
-      const multiplier = entry.type === 'increment' ? 1 : -1;
-      const amount = entry.amount * multiplier;
-      nextChannelTotals[entry.method] = (nextChannelTotals[entry.method] || 0) + amount;
+    channelEntries.forEach(record => {
+      const multiplier = record.type === 'increment' ? 1 : -1;
+      const amount = record.amount * multiplier;
+      nextChannelTotals[record.method] = (nextChannelTotals[record.method] || 0) + amount;
     });
 
     const nextTotalChannel = Object.values(nextChannelTotals).reduce((sum, value) => sum + value, 0);
-    const nextUnresolvedOutflowMethods = Object.entries(nextChannelTotals)
+    const nextUnresolvedOutflowMethods = Object.records(nextChannelTotals)
       .filter(([, value]) => value < 0)
       .map(([method, value]) => ({ method, amount: Math.abs(value) }));
     const nextUnresolvedOutflowAmount = nextUnresolvedOutflowMethods.reduce((sum, item) => sum + item.amount, 0);
 
-    const nextChannelCardData = Object.entries(nextChannelTotals)
+    const nextChannelCardData = Object.records(nextChannelTotals)
       .map(([method, amount]) => ({
         method,
         amount,
@@ -412,14 +412,14 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     };
   }, [channelCardData, totalChannel, tx]);
 
-  const archivedChannelEntryIdSet = useMemo(() => new Set(archivedChannelEntryIds), [archivedChannelEntryIds]);
+  const archivedChannelActivityRecordIdSet = useMemo(() => new Set(archivedChannelActivityRecordIds), [archivedChannelActivityRecordIds]);
   const activeChannelEntries = useMemo(
-    () => channelEntries.filter(entry => !archivedChannelEntryIdSet.has(entry.id)),
-    [channelEntries, archivedChannelEntryIdSet]
+    () => channelEntries.filter(record => !archivedChannelActivityRecordIdSet.has(record.id)),
+    [channelEntries, archivedChannelActivityRecordIdSet]
   );
   const archivedChannelEntries = useMemo(
-    () => channelEntries.filter(entry => archivedChannelEntryIdSet.has(entry.id)),
-    [channelEntries, archivedChannelEntryIdSet]
+    () => channelEntries.filter(record => archivedChannelActivityRecordIdSet.has(record.id)),
+    [channelEntries, archivedChannelActivityRecordIdSet]
   );
   const retentionDaysNumber = useMemo(() => {
     const parsed = Number(retentionDays);
@@ -428,48 +428,48 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   }, [retentionDays]);
 
   const normalizedOrgSearch = orgSearchQuery.trim().toLowerCase();
-  const filteredActiveChannelEntries = useMemo(() => activeChannelEntries.filter(entry => {
-    if (orgTypeFilter !== 'all' && entry.type !== orgTypeFilter) return false;
-    if (orgDateStart && entry.date < orgDateStart) return false;
-    if (orgDateEnd && entry.date > orgDateEnd) return false;
+  const filteredActiveChannelEntries = useMemo(() => activeChannelEntries.filter(record => {
+    if (orgTypeFilter !== 'all' && record.type !== orgTypeFilter) return false;
+    if (orgDateStart && record.date < orgDateStart) return false;
+    if (orgDateEnd && record.date > orgDateEnd) return false;
     if (!normalizedOrgSearch) return true;
     return (
-      entry.method.toLowerCase().includes(normalizedOrgSearch)
-      || entry.date.toLowerCase().includes(normalizedOrgSearch)
+      record.method.toLowerCase().includes(normalizedOrgSearch)
+      || record.date.toLowerCase().includes(normalizedOrgSearch)
     );
   }), [activeChannelEntries, orgTypeFilter, orgDateStart, orgDateEnd, normalizedOrgSearch]);
 
-  const filteredArchivedChannelEntries = useMemo(() => archivedChannelEntries.filter(entry => {
-    if (orgTypeFilter !== 'all' && entry.type !== orgTypeFilter) return false;
-    if (orgDateStart && entry.date < orgDateStart) return false;
-    if (orgDateEnd && entry.date > orgDateEnd) return false;
+  const filteredArchivedChannelEntries = useMemo(() => archivedChannelEntries.filter(record => {
+    if (orgTypeFilter !== 'all' && record.type !== orgTypeFilter) return false;
+    if (orgDateStart && record.date < orgDateStart) return false;
+    if (orgDateEnd && record.date > orgDateEnd) return false;
     if (!normalizedOrgSearch) return true;
     return (
-      entry.method.toLowerCase().includes(normalizedOrgSearch)
-      || entry.date.toLowerCase().includes(normalizedOrgSearch)
+      record.method.toLowerCase().includes(normalizedOrgSearch)
+      || record.date.toLowerCase().includes(normalizedOrgSearch)
     );
   }), [archivedChannelEntries, orgTypeFilter, orgDateStart, orgDateEnd, normalizedOrgSearch]);
 
-  const oldChannelEntryIds = useMemo(() => {
+  const oldChannelActivityRecordIds = useMemo(() => {
     const threshold = new Date();
     threshold.setHours(0, 0, 0, 0);
     threshold.setDate(threshold.getDate() - retentionDaysNumber);
     const thresholdTime = threshold.getTime();
     return activeChannelEntries
-      .filter(entry => {
-        const date = new Date(entry.date);
+      .filter(record => {
+        const date = new Date(record.date);
         return Number.isFinite(date.getTime()) && date.getTime() < thresholdTime;
       })
-      .map(entry => entry.id);
+      .map(record => record.id);
   }, [activeChannelEntries, retentionDaysNumber]);
 
   // Calculate Outstanding Adjustments
   const totalOutstanding = useMemo(() => {
     const unitAdjustmentTotals: Record<string, number> = {};
     adjustments.forEach(adjustment => {
-      if (!unitAdjustmentTotals[adjustment.unit_id]) unitAdjustmentTotals[adjustment.unit_id] = 0;
+      if (!unitAdjustmentTotals[adjustment.entity_id]) unitAdjustmentTotals[adjustment.entity_id] = 0;
       const multiplier = adjustment.type === 'input' ? 1 : -1;
-      unitAdjustmentTotals[adjustment.unit_id] += adjustment.amount * multiplier;
+      unitAdjustmentTotals[adjustment.entity_id] += adjustment.amount * multiplier;
     });
     return Object.values(unitAdjustmentTotals).reduce((sum, value) => sum + value, 0);
   }, [adjustments]);
@@ -481,22 +481,22 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   const filteredActiveAdjustments = useMemo(() => activeAdjustments.filter(adjustment => {
     if (adjustmentTypeFilter !== 'all' && adjustment.type !== adjustmentTypeFilter) return false;
     if (!normalizedAdjustmentSearch) return true;
-    const unitName = (units.find(unit => unit.id === adjustment.unit_id)?.name || '').toLowerCase();
+    const unitName = (entities.find(unit => unit.id === adjustment.entity_id)?.name || '').toLowerCase();
     return (
       unitName.includes(normalizedAdjustmentSearch)
       || adjustment.date.toLowerCase().includes(normalizedAdjustmentSearch)
     );
-  }), [activeAdjustments, adjustmentTypeFilter, normalizedAdjustmentSearch, units]);
+  }), [activeAdjustments, adjustmentTypeFilter, normalizedAdjustmentSearch, entities]);
 
   const filteredArchivedAdjustments = useMemo(() => archivedAdjustments.filter(adjustment => {
     if (adjustmentTypeFilter !== 'all' && adjustment.type !== adjustmentTypeFilter) return false;
     if (!normalizedAdjustmentSearch) return true;
-    const unitName = (units.find(unit => unit.id === adjustment.unit_id)?.name || '').toLowerCase();
+    const unitName = (entities.find(unit => unit.id === adjustment.entity_id)?.name || '').toLowerCase();
     return (
       unitName.includes(normalizedAdjustmentSearch)
       || adjustment.date.toLowerCase().includes(normalizedAdjustmentSearch)
     );
-  }), [archivedAdjustments, adjustmentTypeFilter, normalizedAdjustmentSearch, units]);
+  }), [archivedAdjustments, adjustmentTypeFilter, normalizedAdjustmentSearch, entities]);
 
   const oldAdjustmentIds = useMemo(() => {
     const threshold = new Date();
@@ -511,19 +511,19 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       .map(adjustment => adjustment.id);
   }, [activeAdjustments, retentionDaysNumber]);
 
-  const settledAdjustmentEntryIds = useMemo(() => {
+  const settledAdjustmentActivityRecordIds = useMemo(() => {
     const unitTotals = new Map<string, number>();
     activeAdjustments.forEach(adjustment => {
-      const current = unitTotals.get(adjustment.unit_id) || 0;
+      const current = unitTotals.get(adjustment.entity_id) || 0;
       const next = current + (adjustment.type === 'input' ? adjustment.amount : -adjustment.amount);
-      unitTotals.set(adjustment.unit_id, next);
+      unitTotals.set(adjustment.entity_id, next);
     });
     const settledUnits = new Set(
-      Array.from(unitTotals.entries())
+      Array.from(unitTotals.records())
         .filter(([, total]) => Math.abs(total) < 0.01)
         .map(([unitId]) => unitId)
     );
-    return activeAdjustments.filter(adjustment => settledUnits.has(adjustment.unit_id)).map(adjustment => adjustment.id);
+    return activeAdjustments.filter(adjustment => settledUnits.has(adjustment.entity_id)).map(adjustment => adjustment.id);
   }, [activeAdjustments]);
 
   const pendingAdjustmentRequests = useMemo(
@@ -536,9 +536,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   useEffect(() => {
     if (!autoArchiveEnabled) return;
 
-    const txIds = oldChannelEntryIds;
+    const txIds = oldChannelActivityRecordIds;
     if (txIds.length > 0) {
-      setArchivedChannelEntryIds(current => {
+      setArchivedChannelActivityRecordIds(current => {
         const next = new Set(current);
         txIds.forEach(id => next.add(id));
         if (next.size === current.length) return current;
@@ -546,13 +546,13 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
           action: 'channel_entries_auto_archived',
           entity: 'channel',
           amount: txIds.length,
-          details: `Auto-archived channel entries older than ${retentionDaysNumber} days`,
+          details: `Auto-archived channel records older than ${retentionDaysNumber} days`,
         });
         return Array.from(next);
       });
     }
 
-    const adjustmentIds = Array.from(new Set([...oldAdjustmentIds, ...settledAdjustmentEntryIds]));
+    const adjustmentIds = Array.from(new Set([...oldAdjustmentIds, ...settledAdjustmentActivityRecordIds]));
     if (adjustmentIds.length > 0) {
       setArchivedAdjustmentIds(current => {
         const next = new Set(current);
@@ -562,26 +562,26 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
           action: 'adjustment_entries_auto_archived',
           entity: 'adjustment',
           amount: adjustmentIds.length,
-          details: `Auto-archived settled/old deferred entries with retention ${retentionDaysNumber} days`,
+          details: `Auto-archived settled/old deferred records with retention ${retentionDaysNumber} days`,
         });
         return Array.from(next);
       });
     }
-  }, [autoArchiveEnabled, oldChannelEntryIds, oldAdjustmentIds, recordSystemEvent, retentionDaysNumber, settledAdjustmentEntryIds]);
+  }, [autoArchiveEnabled, oldChannelActivityRecordIds, oldAdjustmentIds, recordSystemEvent, retentionDaysNumber, settledAdjustmentActivityRecordIds]);
 
-  const formatMethodLabel = (method: ChannelEntry['method']) => {
+  const formatMethodLabel = (method: ChannelActivityRecord['method']) => {
     const { base, account } = parseMethod(method);
     const label = baseMethodLabel(base);
     return account ? `${label} • ${account}` : label;
   };
 
-  const isTransferEntry = (entry: ChannelEntry) => entry.method.includes('::');
+  const isTransferActivityRecord = (record: ChannelActivityRecord) => record.method.includes('::');
 
   const handleTotalCardClick = (base: string) => {
-    entryHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     if (!canOperateValue) return;
 
-    setIsAddingEntry(true);
+    setIsAddingActivityRecord(true);
     setTransType('increment');
     setTransMethodCustom('');
 
@@ -618,7 +618,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       dailyTotals[tx.date] = runningTotal;
     });
 
-    Object.entries(dailyTotals)
+    Object.records(dailyTotals)
       .sort(([a], [b]) => a.localeCompare(b))
       .forEach(([date, total]) => {
         points.push({
@@ -694,16 +694,16 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       if (normalizedKey === 'i') {
         event.preventDefault();
         setTransType('increment');
-        setIsAddingEntry(true);
-        entryHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setIsAddingActivityRecord(true);
+        recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         return;
       }
 
       if (normalizedKey === 'o') {
         event.preventDefault();
         setTransType('decrement');
-        setIsAddingEntry(true);
-        entryHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        setIsAddingActivityRecord(true);
+        recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         return;
       }
 
@@ -715,7 +715,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
       if (normalizedKey === 'f') {
         event.preventDefault();
-        entryHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         setIsTxControlsVisible(value => !value);
       }
     };
@@ -784,54 +784,54 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  const handleAddEntry = async (e: React.FormEvent) => {
+  const handleAddActivityRecord = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canOperateValue || isSavingEntry) return;
+    if (!canOperateValue || isSavingActivityRecord) return;
     const resolvedMethodBase = transMethodBase === '__custom__' ? transMethodCustom.trim() : transMethodBase;
     if (!resolvedMethodBase) {
       notify({ type: 'error', message: 'Enter a channel label before saving.' });
       return;
     }
-    clearSaveEntryTimers();
-    setIsSavingEntry(true);
+    clearSaveActivityRecordTimers();
+    setIsSavingActivityRecord(true);
     let progress = 8;
-    setSaveEntryProgress(progress);
-    saveEntryProgressTimerRef.current = window.setInterval(() => {
+    setSaveActivityRecordProgress(progress);
+    saveActivityRecordProgressTimerRef.current = window.setInterval(() => {
       progress = Math.min(progress + (progress < 70 ? 10 : progress < 90 ? 4 : 1), 92);
-      setSaveEntryProgress(progress);
+      setSaveActivityRecordProgress(progress);
     }, 120);
 
     const today = new Date().toISOString().split('T')[0];
     try {
-      await addChannelEntry({
+      await addChannelRecord({
         type: transType,
         amount: parseFloat(transAmount),
         method: composeMethod(resolvedMethodBase, transAccountLabel),
         date: today
       });
-      clearSaveEntryTimers();
-      setSaveEntryProgress(100);
-      setIsAddingEntry(false);
+      clearSaveActivityRecordTimers();
+      setSaveActivityRecordProgress(100);
+      setIsAddingActivityRecord(false);
       setTransAmount('');
       setTransMethodBase('channel_account');
       setTransMethodCustom('');
       setTransAccountLabel('');
-      setEntrySaveState('saved');
-      if (saveEntrySuccessResetTimerRef.current !== null) {
-        window.clearTimeout(saveEntrySuccessResetTimerRef.current);
+      setRecordSaveState('saved');
+      if (saveActivityRecordSuccessResetTimerRef.current !== null) {
+        window.clearTimeout(saveActivityRecordSuccessResetTimerRef.current);
       }
-      saveEntrySuccessResetTimerRef.current = window.setTimeout(() => {
-        setEntrySaveState('idle');
-        saveEntrySuccessResetTimerRef.current = null;
+      saveActivityRecordSuccessResetTimerRef.current = window.setTimeout(() => {
+        setRecordSaveState('idle');
+        saveActivityRecordSuccessResetTimerRef.current = null;
       }, 2000);
-      notify({ type: 'success', message: 'Entry saved.' });
+      notify({ type: 'success', message: 'ActivityRecord saved.' });
     } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to save entry.' });
+      notify({ type: 'error', message: error?.message || 'Unable to save record.' });
     } finally {
-      saveEntryProgressResetTimerRef.current = window.setTimeout(() => {
-        setIsSavingEntry(false);
-        setSaveEntryProgress(0);
-        saveEntryProgressResetTimerRef.current = null;
+      saveActivityRecordProgressResetTimerRef.current = window.setTimeout(() => {
+        setIsSavingActivityRecord(false);
+        setSaveActivityRecordProgress(0);
+        saveActivityRecordProgressResetTimerRef.current = null;
       }, 360);
     }
   };
@@ -851,7 +851,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     const today = new Date().toISOString().split('T')[0];
     try {
       await addAdjustment({
-        unit_id: adjustmentUnitId,
+        entity_id: adjustmentUnitId,
         amount: parseFloat(adjustmentAmount),
         type: adjustmentType,
         date: today
@@ -869,9 +869,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
         setAdjustmentSaveState('idle');
         saveAdjustmentSuccessResetTimerRef.current = null;
       }, 2000);
-      notify({ type: 'success', message: 'Live deferred entry recorded.' });
+      notify({ type: 'success', message: 'Live deferred record recorded.' });
     } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to add live deferred entry.' });
+      notify({ type: 'error', message: error?.message || 'Unable to add live deferred record.' });
     } finally {
       saveAdjustmentProgressResetTimerRef.current = window.setTimeout(() => {
         setIsSavingAdjustment(false);
@@ -887,10 +887,10 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       await resolveAdjustmentRequest(requestId, status);
       notify({
         type: 'success',
-        message: status === 'approved' ? 'Deferred entry approved and posted.' : 'Deferred entry rejected.',
+        message: status === 'approved' ? 'Deferred record approved and posted.' : 'Deferred record rejected.',
       });
     } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to resolve deferred entry request.' });
+      notify({ type: 'error', message: error?.message || 'Unable to resolve deferred record request.' });
     }
   };
 
@@ -905,7 +905,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
     const parsedAmount = Number(transferAmount);
     if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-      notify({ type: 'error', message: 'Transfer amount must be greater than 0.' });
+      notify({ type: 'error', message: 'TransferAmount amount must be greater than 0.' });
       return;
     }
 
@@ -945,7 +945,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       setTransferFromMethod('');
       setTransferFromQuery('');
       setTransferToChannelLabel('');
-      setTransferAmount('');
+      settransferAmount('');
       setTransferSaveState('saved');
       if (saveTransferSuccessResetTimerRef.current !== null) {
         window.clearTimeout(saveTransferSuccessResetTimerRef.current);
@@ -954,7 +954,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
         setTransferSaveState('idle');
         saveTransferSuccessResetTimerRef.current = null;
       }, 2000);
-      notify({ type: 'success', message: 'Transfer completed successfully.' });
+      notify({ type: 'success', message: 'TransferAmount completed successfully.' });
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to complete transfer.' });
     } finally {
@@ -966,42 +966,42 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  const handleDeleteChannelEntry = async (id: string) => {
-    if (!canOperateValue || deletingChannelEntryId === id) return;
-    const confirmed = window.confirm('Delete this channel entry? This will adjust current channel totals and cannot be undone.');
+  const handleDeleteChannelActivityRecord = async (id: string) => {
+    if (!canOperateValue || deletingChannelActivityRecordId === id) return;
+    const confirmed = window.confirm('Delete this channel record? This will adjust current channel totals and cannot be undone.');
     if (!confirmed) return;
 
     try {
-      setDeletingChannelEntryId(id);
-      await deleteChannelEntry(id);
-      notify({ type: 'success', message: 'Channel entry deleted.' });
+      setDeletingChannelActivityRecordId(id);
+      await deleteChannelActivityRecord(id);
+      notify({ type: 'success', message: 'Channel record deleted.' });
     } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to delete channel entry.' });
+      notify({ type: 'error', message: error?.message || 'Unable to delete channel record.' });
     } finally {
-      setDeletingChannelEntryId(current => (current === id ? null : current));
+      setDeletingChannelActivityRecordId(current => (current === id ? null : current));
     }
   };
 
-  const handleArchiveChannelEntry = (id: string) => {
-    setArchivedChannelEntryIds(current => (current.includes(id) ? current : [...current, id]));
+  const handleArchiveChannelActivityRecord = (id: string) => {
+    setArchivedChannelActivityRecordIds(current => (current.includes(id) ? current : [...current, id]));
     void recordSystemEvent({
-      action: 'channel_entry_archived',
+      action: 'channel_record_archived',
       entity: 'channel',
-      unit_id: id,
-      details: 'Channel entry moved to archive list',
+      entity_id: id,
+      details: 'Channel record moved to archive list',
     });
-    notify({ type: 'success', message: 'Entry archived.' });
+    notify({ type: 'success', message: 'ActivityRecord archived.' });
   };
 
-  const handleUnarchiveChannelEntry = (id: string) => {
-    setArchivedChannelEntryIds(current => current.filter(item => item !== id));
+  const handleUnarchiveChannelActivityRecord = (id: string) => {
+    setArchivedChannelActivityRecordIds(current => current.filter(item => item !== id));
     void recordSystemEvent({
-      action: 'channel_entry_unarchived',
+      action: 'channel_record_unarchived',
       entity: 'channel',
-      unit_id: id,
-      details: 'Channel entry restored from archive list',
+      entity_id: id,
+      details: 'Channel record restored from archive list',
     });
-    notify({ type: 'success', message: 'Entry restored from archive.' });
+    notify({ type: 'success', message: 'ActivityRecord restored from archive.' });
   };
 
   const handleArchiveChannelByDateRange = () => {
@@ -1015,128 +1015,128 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       return;
     }
     const ids = activeChannelEntries
-      .filter(entry => entry.date >= orgDateStart && entry.date <= orgDateEnd)
-      .map(entry => entry.id);
+      .filter(record => record.date >= orgDateStart && record.date <= orgDateEnd)
+      .map(record => record.id);
     if (ids.length === 0) {
-      notify({ type: 'error', message: 'No active channel entries in selected range.' });
+      notify({ type: 'error', message: 'No active channel records in selected range.' });
       return;
     }
-    setArchivedChannelEntryIds(current => Array.from(new Set([...current, ...ids])));
+    setArchivedChannelActivityRecordIds(current => Array.from(new Set([...current, ...ids])));
     void recordSystemEvent({
       action: 'channel_entries_archived_date_range',
       entity: 'channel',
       amount: ids.length,
-      details: `Archived channel entries from ${orgDateStart} to ${orgDateEnd}`,
+      details: `Archived channel records from ${orgDateStart} to ${orgDateEnd}`,
     });
-    notify({ type: 'success', message: `Archived ${ids.length} channel entries.` });
+    notify({ type: 'success', message: `Archived ${ids.length} channel records.` });
   };
 
-  const handleArchiveOldChannelEntrys = () => {
+  const handleArchiveOldChannelActivityRecords = () => {
     if (!canOperateValue) return;
-    if (oldChannelEntryIds.length === 0) {
-      notify({ type: 'error', message: `No active channel entries older than ${retentionDaysNumber} days.` });
+    if (oldChannelActivityRecordIds.length === 0) {
+      notify({ type: 'error', message: `No active channel records older than ${retentionDaysNumber} days.` });
       return;
     }
-    setArchivedChannelEntryIds(current => Array.from(new Set([...current, ...oldChannelEntryIds])));
+    setArchivedChannelActivityRecordIds(current => Array.from(new Set([...current, ...oldChannelActivityRecordIds])));
     void recordSystemEvent({
       action: 'channel_entries_archived_old',
       entity: 'channel',
-      amount: oldChannelEntryIds.length,
-      details: `Archived old channel entries older than ${retentionDaysNumber} days`,
+      amount: oldChannelActivityRecordIds.length,
+      details: `Archived old channel records older than ${retentionDaysNumber} days`,
     });
-    notify({ type: 'success', message: `Archived ${oldChannelEntryIds.length} old channel entries.` });
+    notify({ type: 'success', message: `Archived ${oldChannelActivityRecordIds.length} old channel records.` });
   };
 
-  const handleRestoreAllArchivedChannelEntrys = () => {
-    if (!canOperateValue || archivedChannelEntryIds.length === 0) return;
-    const count = archivedChannelEntryIds.length;
-    setArchivedChannelEntryIds([]);
+  const handleRestoreAllArchivedChannelActivityRecords = () => {
+    if (!canOperateValue || archivedChannelActivityRecordIds.length === 0) return;
+    const count = archivedChannelActivityRecordIds.length;
+    setArchivedChannelActivityRecordIds([]);
     void recordSystemEvent({
       action: 'channel_entries_restored_bulk',
       entity: 'channel',
       amount: count,
-      details: 'Restored all archived channel entries',
+      details: 'Restored all archived channel records',
     });
-    notify({ type: 'success', message: `Restored ${count} archived channel entries.` });
+    notify({ type: 'success', message: `Restored ${count} archived channel records.` });
   };
 
   const handleDeleteAdjustment = async (id: string) => {
     if (!canOperateValue || deletingAdjustmentId === id) return;
-    const confirmed = window.confirm('Remove this deferred entry? This action cannot be undone.');
+    const confirmed = window.confirm('Remove this deferred record? This action cannot be undone.');
     if (!confirmed) return;
 
     try {
       setDeletingAdjustmentId(id);
       await deleteAdjustment(id);
-      notify({ type: 'success', message: 'Deferred entry removed.' });
+      notify({ type: 'success', message: 'Deferred record removed.' });
     } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to remove deferred entry.' });
+      notify({ type: 'error', message: error?.message || 'Unable to remove deferred record.' });
     } finally {
       setDeletingAdjustmentId(current => (current === id ? null : current));
     }
   };
 
-  const handleSettleEntry = async (id: string) => {
-    if (!canOperateValue || isSettlingEntry) return;
-    const entry = adjustments.find(l => l.id === id);
-    if (!entry) return;
+  const handleSettleActivityRecord = async (id: string) => {
+    if (!canOperateValue || isSettlingActivityRecord) return;
+    const record = adjustments.find(l => l.id === id);
+    if (!record) return;
     const resolvedSettleBase = settleAccountBase === '__custom__' ? settleAccountCustom.trim() : settleAccountBase;
     if (!resolvedSettleBase) {
       notify({ type: 'error', message: 'Enter a settlement channel label.' });
       return;
     }
-    setIsSettlingEntry(true);
+    setIsSettlingActivityRecord(true);
     const today = new Date().toISOString().split('T')[0];
-    const txType = entry.type === 'input' ? 'decrement' : 'increment';
+    const txType = record.type === 'input' ? 'decrement' : 'increment';
     const method = composeMethod(resolvedSettleBase, settleAccountLabel);
-    const contact = units.find(p => p.id === entry.unit_id)?.name || 'contact';
+    const contact = entities.find(p => p.id === record.entity_id)?.name || 'contact';
     try {
-      await addChannelEntry({
+      await addChannelRecord({
         type: txType,
-        amount: entry.amount,
+        amount: record.amount,
         method,
         date: today,
       });
       setArchivedAdjustmentIds(current => (current.includes(id) ? current : [...current, id]));
-      setSettlingEntryId(null);
+      setSettlingActivityRecordId(null);
       setSettleAccountBase('channel_account');
       setSettleAccountCustom('');
       setSettleAccountLabel('');
-      notify({ type: 'success', message: 'Entry settled.' });
+      notify({ type: 'success', message: 'ActivityRecord settled.' });
     } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Failed to settle entry.' });
+      notify({ type: 'error', message: error?.message || 'Failed to settle record.' });
     } finally {
-      setIsSettlingEntry(false);
+      setIsSettlingActivityRecord(false);
     }
   };
 
   const handleArchiveAdjustment = (id: string) => {
     setArchivedAdjustmentIds(current => (current.includes(id) ? current : [...current, id]));
     void recordSystemEvent({
-      action: 'deferred_entry_archived',
+      action: 'deferred_record_archived',
       entity: 'adjustment',
-      unit_id: id,
-      details: 'Deferred entry moved to archive',
+      entity_id: id,
+      details: 'Deferred record moved to archive',
     });
-    notify({ type: 'success', message: 'Deferred entry archived.' });
+    notify({ type: 'success', message: 'Deferred record archived.' });
   };
 
   const handleUnarchiveAdjustment = (id: string) => {
     setArchivedAdjustmentIds(current => current.filter(item => item !== id));
     void recordSystemEvent({
-      action: 'deferred_entry_unarchived',
+      action: 'deferred_record_unarchived',
       entity: 'adjustment',
-      unit_id: id,
-      details: 'Deferred entry restored from archive',
+      entity_id: id,
+      details: 'Deferred record restored from archive',
     });
-    notify({ type: 'success', message: 'Deferred entry restored.' });
+    notify({ type: 'success', message: 'Deferred record restored.' });
   };
 
   const handleArchiveSettledOrOldAdjustments = () => {
     if (!canOperateValue) return;
-    const ids = Array.from(new Set([...settledAdjustmentEntryIds, ...oldAdjustmentIds]));
+    const ids = Array.from(new Set([...settledAdjustmentActivityRecordIds, ...oldAdjustmentIds]));
     if (ids.length === 0) {
-      notify({ type: 'error', message: 'No settled or old deferred entries to archive.' });
+      notify({ type: 'error', message: 'No settled or old deferred records to archive.' });
       return;
     }
     setArchivedAdjustmentIds(current => Array.from(new Set([...current, ...ids])));
@@ -1144,9 +1144,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       action: 'deferred_entries_archived_settled_old',
       entity: 'adjustment',
       amount: ids.length,
-      details: `Archived settled/old deferred entries with retention ${retentionDaysNumber} days`,
+      details: `Archived settled/old deferred records with retention ${retentionDaysNumber} days`,
     });
-    notify({ type: 'success', message: `Archived ${ids.length} settled/old entries.` });
+    notify({ type: 'success', message: `Archived ${ids.length} settled/old records.` });
   };
 
   const handleRestoreAllArchivedAdjustments = () => {
@@ -1157,9 +1157,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       action: 'deferred_entries_restored_bulk',
       entity: 'adjustment',
       amount: count,
-      details: 'Restored all archived deferred entries',
+      details: 'Restored all archived deferred records',
     });
-    notify({ type: 'success', message: `Restored ${count} deferred entries.` });
+    notify({ type: 'success', message: `Restored ${count} deferred records.` });
   };
 
 
@@ -1183,7 +1183,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     <div className={cn(embedded ? 'space-y-6' : 'page-shell', 'w-full min-w-0 overflow-x-hidden')}>
       {!canOperateValue && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400 px-4 py-2 text-sm">
-          {tx('Read-only mode: only admin can post live deferred entrys or approve pending ones.')}
+          {tx('Read-only mode: only admin can post live deferred records or approve pending ones.')}
         </div>
       )}
       {!embedded ? (
@@ -1284,7 +1284,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     />
                     <input
                       className="control-input"
-                      placeholder="Channel label (e.g. Alpha, Beta, Internal Transfer)"
+                      placeholder="Channel label (e.g. Alpha, Beta, Internal TransferAmount)"
                       value={acctCategory}
                       onChange={e => setAcctCategory(e.target.value)}
                       disabled={isSavingAccount}
@@ -1303,7 +1303,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
               {transferAccounts.length === 0 && channelCardData.length === 0 && !isAddingAccount ? (
                 <EmptyState
                   title="No accounts yet"
-                  description="Add your first account to start tracking entries."
+                  description="Add your first account to start tracking records."
                   actionLabel="Add Account"
                   onAction={openAddAccount}
                   className="py-6"
@@ -1323,8 +1323,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                         if (!canOperateValue || !acct.is_active) return;
                         setTransMethodBase(acct.category);
                         setTransAccountLabel(acct.name);
-                        setIsAddingEntry(true);
-                        entryHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                        setIsAddingActivityRecord(true);
+                        recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
                       }}
                     >
                       <span className={cn('shrink-0 p-1.5 rounded-md', getChannelVisual(acct.category).badgeClass)}>{getChannelVisual(acct.category).icon}</span>
@@ -1360,7 +1360,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
             </div>
           </div>
 
-          <div ref={entryHistoryRef} className="section-card p-4">
+          <div ref={recordHistoryRef} className="section-card p-4">
             <div className="flex justify-between items-center mb-4">
               <div>
                 <h3 className="font-medium text-stone-900 dark:text-stone-100">Activity</h3>
@@ -1373,21 +1373,21 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                   <>
                     <button
                       type="button"
-                      onClick={() => { setTransType('increment'); setIsAddingEntry(true); entryHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                      onClick={() => { setTransType('increment'); setIsAddingActivityRecord(true); recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
                       className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50"
-                      title="Record Inflow (I)"
+                      title="ActivityRecord Inflow (I)"
                     >
                       <Plus size={13} />
-                      Record Inflow
+                      ActivityRecord Inflow
                     </button>
                     <button
                       type="button"
-                      onClick={() => { setTransType('decrement'); setIsAddingEntry(true); entryHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
+                      onClick={() => { setTransType('decrement'); setIsAddingActivityRecord(true); recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
                       className="inline-flex items-center gap-1.5 rounded-md border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/30 px-2.5 py-1.5 text-xs font-medium text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50"
-                      title="Record Outflow (O)"
+                      title="ActivityRecord Outflow (O)"
                     >
                       <ArrowDownLeft size={13} />
-                      Record Outflow
+                      ActivityRecord Outflow
                     </button>
                   </>
                 )}
@@ -1458,7 +1458,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     </button>
                     <button
                       type="button"
-                      onClick={handleArchiveOldChannelEntrys}
+                      onClick={handleArchiveOldChannelActivityRecords}
                       disabled={!canOperateValue}
                       className="action-btn-secondary text-xs disabled:opacity-50"
                     >
@@ -1466,8 +1466,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     </button>
                     <button
                       type="button"
-                      onClick={handleRestoreAllArchivedChannelEntrys}
-                      disabled={!canOperateValue || archivedChannelEntryIds.length === 0}
+                      onClick={handleRestoreAllArchivedChannelActivityRecords}
+                      disabled={!canOperateValue || archivedChannelActivityRecordIds.length === 0}
                       className="action-btn-secondary text-xs disabled:opacity-50"
                     >
                       Restore All Archived
@@ -1497,17 +1497,17 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
               )}
             </div>
 
-            {isAddingEntry && (
-              <form onSubmit={handleAddEntry} className="mb-6 pt-4 border-t border-stone-200/80 dark:border-stone-800/80">
+            {isAddingActivityRecord && (
+              <form onSubmit={handleAddActivityRecord} className="mb-6 pt-4 border-t border-stone-200/80 dark:border-stone-800/80">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                   <select 
                     className="control-input"
                     value={transType}
                     onChange={e => setTransType(e.target.value as any)}
-                    disabled={!canOperateValue || isSavingEntry}
+                    disabled={!canOperateValue || isSavingActivityRecord}
                   >
-                    <option value="increment">{tx('Record Inflow')} (+)</option>
-                    <option value="decrement">{tx('Record Outflow')} (-)</option>
+                    <option value="increment">{tx('ActivityRecord Inflow')} (+)</option>
+                    <option value="decrement">{tx('ActivityRecord Outflow')} (-)</option>
                   </select>
                   <select 
                     className="control-input"
@@ -1524,7 +1524,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                         setTransMethodCustom('');
                       }
                     }}
-                    disabled={!canOperateValue || isSavingEntry}
+                    disabled={!canOperateValue || isSavingActivityRecord}
                   >
                     {transferAccounts.filter(a => a.is_active).length > 0 && (
                       <optgroup label="Saved Accounts">
@@ -1543,10 +1543,10 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                   {transMethodBase === '__custom__' && (
                     <input
                       className="control-input"
-                      placeholder="Channel label (e.g. Alpha, Beta, Internal Transfer)"
+                      placeholder="Channel label (e.g. Alpha, Beta, Internal TransferAmount)"
                       value={transMethodCustom}
                       onChange={e => setTransMethodCustom(e.target.value)}
-                      disabled={!canOperateValue || isSavingEntry}
+                      disabled={!canOperateValue || isSavingActivityRecord}
                       required
                     />
                   )}
@@ -1555,7 +1555,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     placeholder="Account name (optional)"
                     value={transAccountLabel}
                     onChange={e => setTransAccountLabel(e.target.value)}
-                    disabled={!canOperateValue || isSavingEntry}
+                    disabled={!canOperateValue || isSavingActivityRecord}
                   />
                   <div className="flex items-center rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 overflow-hidden focus-within:ring-2 focus-within:ring-stone-500">
                     <input 
@@ -1564,7 +1564,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                       placeholder="Value" 
                       value={transAmount} 
                       onChange={e => setTransAmount(e.target.value)} 
-                      disabled={!canOperateValue || isSavingEntry}
+                      disabled={!canOperateValue || isSavingActivityRecord}
                       required 
                     />
                   </div>
@@ -1572,29 +1572,29 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                 <div className="flex justify-end gap-2">
                   <button 
                     type="button" 
-                    onClick={() => setIsAddingEntry(false)}
-                    disabled={isSavingEntry}
+                    onClick={() => setIsAddingActivityRecord(false)}
+                    disabled={isSavingActivityRecord}
                     className="action-btn-tertiary px-3 py-1.5 text-xs"
                   >
                     Cancel
                   </button>
                   <button 
                     type="submit" 
-                    disabled={!canOperateValue || isSavingEntry}
+                    disabled={!canOperateValue || isSavingActivityRecord}
                     className="px-3 py-1.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-md text-xs hover:bg-stone-800 dark:hover:bg-stone-200 disabled:opacity-70 disabled:cursor-not-allowed"
                   >
-                    {isSavingEntry ? tx('Saving…') : entrySaveState === 'saved' ? tx('Saved ✓') : tx('Save Entry')}
+                    {isSavingActivityRecord ? tx('Saving…') : recordSaveState === 'saved' ? tx('Saved ✓') : tx('Save ActivityRecord')}
                   </button>
                 </div>
-                {isSavingEntry && (
+                {isSavingActivityRecord && (
                   <div className="mt-3 space-y-1">
                     <div className="h-1.5 w-full rounded-full bg-stone-200 dark:bg-stone-700 overflow-hidden">
                       <div
                         className="h-full rounded-full bg-stone-900 dark:bg-stone-100 transition-all duration-150"
-                        style={{ width: `${saveEntryProgress}%` }}
+                        style={{ width: `${saveActivityRecordProgress}%` }}
                       />
                     </div>
-                    <div className="text-[11px] text-stone-500 dark:text-stone-400">{tx('Saving entry…')} {Math.max(8, Math.round(saveEntryProgress))}%</div>
+                    <div className="text-[11px] text-stone-500 dark:text-stone-400">{tx('Saving record…')} {Math.max(8, Math.round(saveActivityRecordProgress))}%</div>
                   </div>
                 )}
               </form>
@@ -1607,7 +1607,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                   <input
                     list="p2p-source-account-suggestions"
                     className="control-input"
-                    placeholder="From Transfer Channel (type to search)"
+                    placeholder="From TransferAmount Channel (type to search)"
                     value={transferFromQuery}
                     onChange={e => {
                       const nextValue = e.target.value;
@@ -1645,7 +1645,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     className="control-input"
                     placeholder="Amount"
                     value={transferAmount}
-                    onChange={e => setTransferAmount(e.target.value)}
+                    onChange={e => settransferAmount(e.target.value)}
                     disabled={!canOperateValue || isSavingTransfer}
                     required
                   />
@@ -1677,7 +1677,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     disabled={!canOperateValue || isSavingTransfer || !transferFromMethod || (Number.isFinite(parseFloat(transferAmount)) && parseFloat(transferAmount) > (channelTotals[transferFromMethod] || 0))}
                     className="px-3 py-1.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-md text-xs hover:bg-stone-800 dark:hover:bg-stone-200 disabled:opacity-70 disabled:cursor-not-allowed"
                   >
-                    {isSavingTransfer ? 'Transferring…' : transferSaveState === 'saved' ? 'Transferred ✓' : 'Transfer to Account'}
+                    {isSavingTransfer ? 'Transferring…' : transferSaveState === 'saved' ? 'Transferred ✓' : 'TransferAmount to Account'}
                   </button>
                 </div>
 
@@ -1697,7 +1697,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
             <div className="md:hidden divide-y divide-stone-100 dark:divide-stone-800">
               {filteredActiveChannelEntries.map(t => (
-                <MobileRecordCard
+                <MobileActivityRecordCard
                   key={t.id}
                   title={<span className="text-xs text-stone-500 dark:text-stone-400 font-normal">{formatDate(t.date)}</span>}
                   right={(
@@ -1710,9 +1710,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                   )}
                   meta={(
                     <span className="inline-flex items-center gap-1.5 capitalize">
-                      {isTransferEntry(t) && (
+                      {isTransferActivityRecord(t) && (
                         <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                          Transfer
+                          TransferAmount
                         </span>
                       )}
                       <span>{t.type === 'increment' ? 'Inflow' : 'Outflow'} • {formatMethodLabel(t.method)}</span>
@@ -1724,45 +1724,45 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                       <>
                         <button
                           type="button"
-                          onClick={() => handleArchiveChannelEntry(t.id)}
+                          onClick={() => handleArchiveChannelActivityRecord(t.id)}
                           className="action-btn-tertiary px-2.5 py-1 text-xs"
                         >
                           Archive
                         </button>
                         <button
                           type="button"
-                          onClick={() => { void handleDeleteChannelEntry(t.id); }}
-                          disabled={deletingChannelEntryId === t.id}
+                          onClick={() => { void handleDeleteChannelActivityRecord(t.id); }}
+                          disabled={deletingChannelActivityRecordId === t.id}
                           className="action-btn-tertiary px-2.5 py-1 text-xs text-red-600 dark:text-red-400 disabled:opacity-50"
                         >
-                          {deletingChannelEntryId === t.id ? 'Deleting…' : 'Delete'}
+                          {deletingChannelActivityRecordId === t.id ? 'Deleting…' : 'Delete'}
                         </button>
                       </>
                     )}
                   </div>
-                </MobileRecordCard>
+                </MobileActivityRecordCard>
               ))}
               {filteredActiveChannelEntries.length === 0 && (
-                <div className="px-6 py-8 text-center text-stone-400 text-sm">No entrys recorded.</div>
+                <div className="px-6 py-8 text-center text-stone-400 text-sm">No records recorded.</div>
               )}
             </div>
 
             {archivedChannelEntries.length > 0 && (
               <div className="mt-4 rounded-lg border border-stone-200 dark:border-stone-700 bg-stone-50/60 dark:bg-stone-800/40 p-3 md:hidden">
                 <div className="flex items-center justify-between gap-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">Archived Entrys</h4>
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">Archived ActivityRecords</h4>
                   <button
                     type="button"
-                    onClick={() => setIsArchivedEntrysExpanded(prev => !prev)}
+                    onClick={() => setIsArchivedActivityRecordsExpanded(prev => !prev)}
                     className="action-btn-secondary px-2.5 py-1 text-xs"
                   >
-                    {isArchivedEntrysExpanded ? 'Hide' : `Show (${filteredArchivedChannelEntries.length})`}
+                    {isArchivedActivityRecordsExpanded ? 'Hide' : `Show (${filteredArchivedChannelEntries.length})`}
                   </button>
                 </div>
-                {isArchivedEntrysExpanded && (
+                {isArchivedActivityRecordsExpanded && (
                   <div className="mt-3 divide-y divide-stone-100 dark:divide-stone-800">
                     {filteredArchivedChannelEntries.map(t => (
-                      <MobileRecordCard
+                      <MobileActivityRecordCard
                         key={t.id}
                         title={<span className="text-xs text-stone-500 dark:text-stone-400 font-normal">{formatDate(t.date)}</span>}
                         right={(
@@ -1780,30 +1780,30 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                             <>
                               <button
                                 type="button"
-                                onClick={() => handleUnarchiveChannelEntry(t.id)}
+                                onClick={() => handleUnarchiveChannelActivityRecord(t.id)}
                                 className="action-btn-tertiary px-2.5 py-1 text-xs"
                               >
                                 Unarchive
                               </button>
                               <button
                                 type="button"
-                                onClick={() => { void handleDeleteChannelEntry(t.id); }}
-                                disabled={deletingChannelEntryId === t.id}
+                                onClick={() => { void handleDeleteChannelActivityRecord(t.id); }}
+                                disabled={deletingChannelActivityRecordId === t.id}
                                 className="action-btn-tertiary px-2.5 py-1 text-xs text-red-600 dark:text-red-400 disabled:opacity-50"
                               >
-                                {deletingChannelEntryId === t.id ? 'Deleting…' : 'Delete'}
+                                {deletingChannelActivityRecordId === t.id ? 'Deleting…' : 'Delete'}
                               </button>
                             </>
                           )}
                         </div>
-                      </MobileRecordCard>
+                      </MobileActivityRecordCard>
                     ))}
                   </div>
                 )}
               </div>
             )}
 
-            <CollapsibleWorkspaceSection
+            <CollapsibleActivitySection
               title="Activity"
               summary={`${filteredActiveChannelEntries.length} records`}
               className="hidden md:block"
@@ -1812,7 +1812,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
               maxCollapsedHeightClass="max-h-[96px]"
               contentClassName="bg-white dark:bg-stone-900"
             >
-              <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] workspace-fixed bg-white dark:bg-stone-900 text-left text-[13px]">
+              <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] activity-fixed bg-white dark:bg-stone-900 text-left text-[13px]">
                 <thead className="sticky top-0 z-10 bg-stone-50 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-700">
                   <tr>
                     <th className="sticky-col px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Date</th>
@@ -1827,16 +1827,16 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                   {filteredActiveChannelEntries.map(t => (
                     <tr key={t.id} className={cn(
                       "hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors",
-                      isTransferEntry(t)
+                      isTransferActivityRecord(t)
                         ? "bg-blue-50/60 dark:bg-blue-900/10"
                         : "odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60"
                     )}>
                       <td className="sticky-col px-6 py-2.5 text-stone-500 dark:text-stone-400">{formatDate(t.date)}</td>
                       <td className="px-6 py-2.5">
                         <div className="inline-flex items-center gap-1.5">
-                          {isTransferEntry(t) && (
+                          {isTransferActivityRecord(t) && (
                             <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                              Transfer
+                              TransferAmount
                             </span>
                           )}
                           <span className={cn(
@@ -1864,18 +1864,18 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                           <>
                             <button
                               type="button"
-                              onClick={() => handleArchiveChannelEntry(t.id)}
+                              onClick={() => handleArchiveChannelActivityRecord(t.id)}
                               className="action-btn-tertiary px-2 py-1 text-[11px] mr-1.5"
-                              title="Archive Entry"
+                              title="Archive ActivityRecord"
                             >
                               Archive
                             </button>
                             <button
                               type="button"
-                              onClick={() => { void handleDeleteChannelEntry(t.id); }}
-                              disabled={deletingChannelEntryId === t.id}
+                              onClick={() => { void handleDeleteChannelActivityRecord(t.id); }}
+                              disabled={deletingChannelActivityRecordId === t.id}
                               className="inline-flex items-center justify-center p-1.5 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                              title={deletingChannelEntryId === t.id ? 'Deleting…' : 'Delete Entry'}
+                              title={deletingChannelActivityRecordId === t.id ? 'Deleting…' : 'Delete ActivityRecord'}
                             >
                               <Trash2 size={14} />
                             </button>
@@ -1887,27 +1887,27 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                   {filteredActiveChannelEntries.length === 0 && (
                     <tr>
                       <td colSpan={6} className="px-6 py-8 text-center text-stone-400">
-                        No entrys recorded.
+                        No records recorded.
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
-            </CollapsibleWorkspaceSection>
+            </CollapsibleActivitySection>
 
             {archivedChannelEntries.length > 0 && (
               <div className="hidden md:block mt-4">
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <button
                     type="button"
-                    onClick={() => setIsArchivedEntrysExpanded(prev => !prev)}
+                    onClick={() => setIsArchivedActivityRecordsExpanded(prev => !prev)}
                     className="action-btn-secondary text-xs px-2.5 py-1.5"
                   >
-                    {isArchivedEntrysExpanded ? 'Hide' : `Show (${filteredArchivedChannelEntries.length})`}
+                    {isArchivedActivityRecordsExpanded ? 'Hide' : `Show (${filteredArchivedChannelEntries.length})`}
                   </button>
                 </div>
-                {isArchivedEntrysExpanded && (
-                  <CollapsibleWorkspaceSection
+                {isArchivedActivityRecordsExpanded && (
+                  <CollapsibleActivitySection
                     title="Archived Activity"
                     summary={`${archivedChannelEntries.length} records`}
                     defaultExpanded={false}
@@ -1915,7 +1915,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     maxCollapsedHeightClass="max-h-[96px]"
                     contentClassName="bg-white dark:bg-stone-900"
                   >
-                    <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] workspace-fixed bg-white dark:bg-stone-900 text-left text-[13px]">
+                    <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] activity-fixed bg-white dark:bg-stone-900 text-left text-[13px]">
                       <thead className="sticky top-0 z-10 bg-stone-50 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-700">
                         <tr>
                           <th className="sticky-col px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Date</th>
@@ -1945,17 +1945,17 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                                 <>
                                   <button
                                     type="button"
-                                    onClick={() => handleUnarchiveChannelEntry(t.id)}
+                                    onClick={() => handleUnarchiveChannelActivityRecord(t.id)}
                                     className="action-btn-tertiary px-2 py-1 text-[11px] mr-1.5"
                                   >
                                     Unarchive
                                   </button>
                                   <button
                                     type="button"
-                                    onClick={() => { void handleDeleteChannelEntry(t.id); }}
-                                    disabled={deletingChannelEntryId === t.id}
+                                    onClick={() => { void handleDeleteChannelActivityRecord(t.id); }}
+                                    disabled={deletingChannelActivityRecordId === t.id}
                                     className="inline-flex items-center justify-center p-1.5 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title={deletingChannelEntryId === t.id ? 'Deleting…' : 'Delete Entry'}
+                                    title={deletingChannelActivityRecordId === t.id ? 'Deleting…' : 'Delete ActivityRecord'}
                                   >
                                     <Trash2 size={14} />
                                   </button>
@@ -1966,12 +1966,12 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                         ))}
                         {filteredArchivedChannelEntries.length === 0 && (
                           <tr>
-                            <td colSpan={6} className="px-6 py-8 text-center text-stone-400">No archived entrys match current filters.</td>
+                            <td colSpan={6} className="px-6 py-8 text-center text-stone-400">No archived records match current filters.</td>
                           </tr>
                         )}
                       </tbody>
                     </table>
-                  </CollapsibleWorkspaceSection>
+                  </CollapsibleActivitySection>
                 )}
               </div>
             )}
@@ -1991,7 +1991,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
                     {
                       key: 'new-adjustment-transfer',
-                      label: 'Add Live Entry',
+                      label: 'Add Live ActivityRecord',
                       onClick: () => setIsAddingAdjustment(true),
                       disabled: !canOperateValue,
                     },
@@ -2005,7 +2005,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                 <div className="flex items-center justify-between gap-3 mb-3">
                   <div>
                     <h4 className="text-sm font-medium text-stone-900 dark:text-stone-100">Pending Deferred Approvals</h4>
-                    <p className="text-xs text-stone-500 dark:text-stone-400">Operator-submitted deferred entries stay here until admin approves or rejects them.</p>
+                    <p className="text-xs text-stone-500 dark:text-stone-400">Operator-submitted deferred records stay here until admin approves or rejects them.</p>
                   </div>
                   <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
                     {pendingAdjustmentRequests.length} pending
@@ -2013,11 +2013,11 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                 </div>
 
                 {pendingAdjustmentRequests.length === 0 ? (
-                  <p className="text-sm text-stone-500 dark:text-stone-400">No pending deferred entries.</p>
+                  <p className="text-sm text-stone-500 dark:text-stone-400">No pending deferred records.</p>
                 ) : (
                   <div className="space-y-3">
                     {pendingAdjustmentRequests.map(request => {
-                      const unit = units.find(item => item.id === request.unit_id);
+                      const unit = entities.find(item => item.id === request.entity_id);
                       return (
                         <div key={request.id} className="flex flex-col gap-3 rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-4 py-3 md:flex-row md:items-center md:justify-between">
                           <div className="space-y-1">
@@ -2123,8 +2123,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     disabled={!canOperateValue || isSavingAdjustment}
                     required
                   >
-                    <option value="">Select Associate...</option>
-                    {units.map(p => (
+                    <option value="">Select Collaboration...</option>
+                    {entities.map(p => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
                   </select>
@@ -2163,7 +2163,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     disabled={!canOperateValue || isSavingAdjustment}
                     className="px-3 py-1.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-md text-xs hover:bg-stone-800 dark:hover:bg-stone-200 disabled:opacity-70 disabled:cursor-not-allowed"
                   >
-                    {isSavingAdjustment ? 'Recording…' : adjustmentSaveState === 'saved' ? 'Recorded ✓' : 'Record Entry'}
+                    {isSavingAdjustment ? 'ActivityRecording…' : adjustmentSaveState === 'saved' ? 'ActivityRecorded ✓' : 'ActivityRecord ActivityRecord'}
                   </button>
                 </div>
                 {isSavingAdjustment && (
@@ -2174,7 +2174,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                         style={{ width: `${saveAdjustmentProgress}%` }}
                       />
                     </div>
-                    <div className="text-[11px] text-stone-500 dark:text-stone-400">Recording live deferred entry… {Math.max(8, Math.round(saveAdjustmentProgress))}%</div>
+                    <div className="text-[11px] text-stone-500 dark:text-stone-400">ActivityRecording live deferred record… {Math.max(8, Math.round(saveAdjustmentProgress))}%</div>
                   </div>
                 )}
               </form>
@@ -2182,16 +2182,16 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
             <div className="md:hidden divide-y divide-stone-100 dark:divide-stone-800">
               {filteredActiveAdjustments.map(l => {
-                const unit = units.find(p => p.id === l.unit_id);
+                const unit = entities.find(p => p.id === l.entity_id);
                 return (
-                  <MobileRecordCard
+                  <MobileActivityRecordCard
                     key={l.id}
                     title={unit?.name || 'Unknown'}
                     right={<p className="font-mono text-stone-900 dark:text-stone-100">{formatValue(l.amount)}</p>}
                     meta={formatDate(l.date)}
                   >
                     <p className="text-xs text-stone-500 dark:text-stone-400">{l.type === 'input' ? 'Outflow' : 'Inflow'} · Active</p>
-                    {settlingEntryId === l.id && (
+                    {settlingActivityRecordId === l.id && (
                       <div className="mt-2 flex flex-wrap items-center gap-2 p-2 bg-stone-50 dark:bg-stone-800/60 rounded-lg border border-stone-200 dark:border-stone-700">
                         <select
                           className="control-input text-xs flex-1 min-w-[130px]"
@@ -2201,7 +2201,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                             setSettleAccountBase(value);
                             if (value !== '__custom__') setSettleAccountCustom('');
                           }}
-                          disabled={isSettlingEntry}
+                          disabled={isSettlingActivityRecord}
                         >
                           {availableChannelCategories.map(category => (
                             <option key={category.value} value={category.value}>{category.label}</option>
@@ -2214,7 +2214,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                             placeholder="Channel label"
                             value={settleAccountCustom}
                             onChange={e => setSettleAccountCustom(e.target.value)}
-                            disabled={isSettlingEntry}
+                            disabled={isSettlingActivityRecord}
                             required
                           />
                         )}
@@ -2223,29 +2223,29 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                           placeholder="Account label (optional)"
                           value={settleAccountLabel}
                           onChange={e => setSettleAccountLabel(e.target.value)}
-                          disabled={isSettlingEntry}
+                          disabled={isSettlingActivityRecord}
                         />
                         <button
                           type="button"
-                          onClick={() => void handleSettleEntry(l.id)}
-                          disabled={isSettlingEntry}
+                          onClick={() => void handleSettleActivityRecord(l.id)}
+                          disabled={isSettlingActivityRecord}
                           className="px-2.5 py-1 text-xs bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-60"
                         >
-                          {isSettlingEntry ? 'Settling…' : 'Confirm Settle'}
+                          {isSettlingActivityRecord ? 'Settling…' : 'Confirm Settle'}
                         </button>
-                        <button type="button" onClick={() => setSettlingEntryId(null)} disabled={isSettlingEntry} className="action-btn-tertiary px-2 py-1 text-xs">Cancel</button>
+                        <button type="button" onClick={() => setSettlingActivityRecordId(null)} disabled={isSettlingActivityRecord} className="action-btn-tertiary px-2 py-1 text-xs">Cancel</button>
                       </div>
                     )}
                     <div className="mt-2 flex justify-end gap-2">
                       {canOperateValue && (
                         <>
-                          {settlingEntryId !== l.id && (
+                          {settlingActivityRecordId !== l.id && (
                             <button
                               type="button"
-                              onClick={() => { setSettlingEntryId(l.id); setSettleAccountBase('channel_account'); setSettleAccountLabel(''); }}
+                              onClick={() => { setSettlingActivityRecordId(l.id); setSettleAccountBase('channel_account'); setSettleAccountLabel(''); }}
                               className="action-btn-tertiary px-2.5 py-1 text-xs text-emerald-700 dark:text-emerald-400"
                             >
-                              Settle Entry
+                              Settle ActivityRecord
                             </button>
                           )}
                           <button
@@ -2266,11 +2266,11 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                         </>
                       )}
                     </div>
-                  </MobileRecordCard>
+                  </MobileActivityRecordCard>
                 );
               })}
               {filteredActiveAdjustments.length === 0 && (
-                <div className="px-6 py-8 text-center text-stone-400 text-sm">No deferred entries yet.</div>
+                <div className="px-6 py-8 text-center text-stone-400 text-sm">No deferred records yet.</div>
               )}
             </div>
 
@@ -2288,9 +2288,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                 {isArchivedAdjustmentsExpanded && (
                   <div className="mt-3 divide-y divide-stone-100 dark:divide-stone-800">
                     {filteredArchivedAdjustments.map(l => {
-                      const unit = units.find(p => p.id === l.unit_id);
+                      const unit = entities.find(p => p.id === l.entity_id);
                       return (
-                        <MobileRecordCard
+                        <MobileActivityRecordCard
                           key={l.id}
                           title={unit?.name || 'Unknown'}
                           right={<p className="font-mono text-stone-900 dark:text-stone-100">{formatValue(l.amount)}</p>}
@@ -2318,7 +2318,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                               </>
                             )}
                           </div>
-                        </MobileRecordCard>
+                        </MobileActivityRecordCard>
                       );
                     })}
                   </div>
@@ -2326,7 +2326,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
               </div>
             )}
 
-            <CollapsibleWorkspaceSection
+            <CollapsibleActivitySection
               title="Deferred Tracking"
               summary={`${filteredActiveAdjustments.length} records`}
               className="hidden md:block"
@@ -2334,7 +2334,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
               maxExpandedHeightClass="max-h-[560px]"
               maxCollapsedHeightClass="max-h-[96px]"
             >
-              <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] workspace-fixed text-left text-[13px]">
+              <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] activity-fixed text-left text-[13px]">
                 <thead className="sticky top-0 z-10 bg-stone-50 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-700">
                   <tr>
                     <th className="sticky-col px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Date</th>
@@ -2346,7 +2346,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                 </thead>
                 <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
                   {filteredActiveAdjustments.map(l => {
-                    const unit = units.find(p => p.id === l.unit_id);
+                    const unit = entities.find(p => p.id === l.entity_id);
                     return (
                       <tr key={l.id} className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors">
                         <td className="sticky-col px-6 py-2.5 text-stone-500 dark:text-stone-400">{formatDate(l.date)}</td>
@@ -2363,7 +2363,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                         </td>
                         <td className="px-6 py-2.5 text-right font-mono font-medium text-stone-900 dark:text-stone-100">{formatValue(l.amount)}</td>
                         <td className="sticky-col-right px-6 py-2.5 text-right">
-                          {settlingEntryId === l.id ? (
+                          {settlingActivityRecordId === l.id ? (
                             <div className="flex flex-wrap items-center justify-end gap-1.5">
                               <select
                                 className="control-input text-xs w-[130px]"
@@ -2373,7 +2373,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                                   setSettleAccountBase(value);
                                   if (value !== '__custom__') setSettleAccountCustom('');
                                 }}
-                                disabled={isSettlingEntry}
+                                disabled={isSettlingActivityRecord}
                               >
                                 {availableChannelCategories.map(category => (
                                   <option key={category.value} value={category.value}>{category.label}</option>
@@ -2386,7 +2386,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                                   placeholder="Channel label"
                                   value={settleAccountCustom}
                                   onChange={e => setSettleAccountCustom(e.target.value)}
-                                  disabled={isSettlingEntry}
+                                  disabled={isSettlingActivityRecord}
                                   required
                                 />
                               )}
@@ -2395,17 +2395,17 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                                 placeholder="Label (opt.)"
                                 value={settleAccountLabel}
                                 onChange={e => setSettleAccountLabel(e.target.value)}
-                                disabled={isSettlingEntry}
+                                disabled={isSettlingActivityRecord}
                               />
                               <button
                                 type="button"
-                                onClick={() => void handleSettleEntry(l.id)}
-                                disabled={isSettlingEntry}
+                                onClick={() => void handleSettleActivityRecord(l.id)}
+                                disabled={isSettlingActivityRecord}
                                 className="px-2 py-1 text-[11px] bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-60"
                               >
-                                {isSettlingEntry ? 'Settling…' : 'Confirm'}
+                                {isSettlingActivityRecord ? 'Settling…' : 'Confirm'}
                               </button>
-                              <button type="button" onClick={() => setSettlingEntryId(null)} disabled={isSettlingEntry} className="action-btn-tertiary px-2 py-1 text-[11px]">Cancel</button>
+                              <button type="button" onClick={() => setSettlingActivityRecordId(null)} disabled={isSettlingActivityRecord} className="action-btn-tertiary px-2 py-1 text-[11px]">Cancel</button>
                             </div>
                           ) : (
                             <>
@@ -2413,10 +2413,10 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                                 <>
                                   <button
                                     type="button"
-                                    onClick={() => { setSettlingEntryId(l.id); setSettleAccountBase('channel_account'); setSettleAccountLabel(''); }}
+                                    onClick={() => { setSettlingActivityRecordId(l.id); setSettleAccountBase('channel_account'); setSettleAccountLabel(''); }}
                                     className="action-btn-tertiary px-2 py-1 text-[11px] mr-1.5 text-emerald-700 dark:text-emerald-400"
                                   >
-                                    Settle Entry
+                                    Settle ActivityRecord
                                   </button>
                                   <button
                                     type="button"
@@ -2430,7 +2430,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                                     onClick={() => { void handleDeleteAdjustment(l.id); }}
                                     disabled={deletingAdjustmentId === l.id}
                                     className="inline-flex items-center justify-center p-1.5 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title={deletingAdjustmentId === l.id ? 'Removing…' : 'Remove Entry'}
+                                    title={deletingAdjustmentId === l.id ? 'Removing…' : 'Remove ActivityRecord'}
                                   >
                                     <Trash2 size={14} />
                                   </button>
@@ -2445,13 +2445,13 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                   {filteredActiveAdjustments.length === 0 && (
                     <tr>
                       <td colSpan={5} className="px-6 py-8 text-center text-stone-400">
-                        No deferred entries yet.
+                        No deferred records yet.
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
-            </CollapsibleWorkspaceSection>
+            </CollapsibleActivitySection>
 
             {archivedAdjustments.length > 0 && (
               <div className="hidden md:block mt-4">
@@ -2465,14 +2465,14 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                   </button>
                 </div>
                 {isArchivedAdjustmentsExpanded && (
-                  <CollapsibleWorkspaceSection
+                  <CollapsibleActivitySection
                     title="Archived Deferred"
                     summary={`${filteredArchivedAdjustments.length} records`}
                     defaultExpanded={false}
                     maxExpandedHeightClass="max-h-[420px]"
                     maxCollapsedHeightClass="max-h-[96px]"
                   >
-                    <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] workspace-fixed text-left text-[13px]">
+                    <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] activity-fixed text-left text-[13px]">
                       <thead className="sticky top-0 z-10 bg-stone-50 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-700">
                         <tr>
                           <th className="sticky-col px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Date</th>
@@ -2484,7 +2484,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                       </thead>
                       <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
                         {filteredArchivedAdjustments.map(l => {
-                          const unit = units.find(p => p.id === l.unit_id);
+                          const unit = entities.find(p => p.id === l.entity_id);
                           return (
                             <tr key={l.id} className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors">
                               <td className="sticky-col px-6 py-2.5 text-stone-500 dark:text-stone-400">{formatDate(l.date)}</td>
@@ -2505,7 +2505,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                                   onClick={() => { if (canOperateValue) void handleDeleteAdjustment(l.id); }}
                                   disabled={!canOperateValue || deletingAdjustmentId === l.id}
                                   className="inline-flex items-center justify-center p-1.5 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                  title={deletingAdjustmentId === l.id ? 'Deleting…' : 'Delete Entry'}
+                                  title={deletingAdjustmentId === l.id ? 'Deleting…' : 'Delete ActivityRecord'}
                                 >
                                   <Trash2 size={14} />
                                 </button>
@@ -2515,12 +2515,12 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                         })}
                         {filteredArchivedAdjustments.length === 0 && (
                           <tr>
-                            <td colSpan={5} className="px-6 py-8 text-center text-stone-400">No archived deferred entries.</td>
+                            <td colSpan={5} className="px-6 py-8 text-center text-stone-400">No archived deferred records.</td>
                           </tr>
                         )}
                       </tbody>
                     </table>
-                  </CollapsibleWorkspaceSection>
+                  </CollapsibleActivitySection>
                 )}
               </div>
             )}
@@ -2558,7 +2558,7 @@ function TotalCard({ icon, label, amount, badgeClass, onClick }: { icon: React.R
         </div>
         <p
           className={cn(
-            'kpi-value text-[15px] font-medium font-mono tabular-nums text-right min-w-[88px] shrink-0',
+            'kpi-metric text-[15px] font-medium font-mono tabular-nums text-right min-w-[88px] shrink-0',
             amount > 0
               ? 'amount-positive'
               : amount < 0

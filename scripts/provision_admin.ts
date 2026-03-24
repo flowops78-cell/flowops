@@ -47,27 +47,31 @@ async function setup() {
   const clusterId = "9aa66524-7831-411c-b5f0-6218e3a247db"; // fixed for initial setup
   const orgId = "50d41461-d715-46c0-988a-131a6cf711f0"; // fixed for initial setup
 
-  await supabase.from('org_clusters').upsert({ id: clusterId, name: 'Main Cluster' });
-  await supabase.from('orgs').upsert({ id: orgId, name: 'Main Organization', cluster_id: clusterId });
-  await supabase.from('org_meta_mapping').upsert({ org_id: orgId, meta_org_id: clusterId });
+  await supabase.from('clusters').upsert({ id: clusterId, name: 'Main Cluster', created_by: userId });
+  await supabase.from('organizations').upsert({ id: orgId, name: 'Main Organization', cluster_id: clusterId });
 
   // 3. Assign the Roles
   console.log('Assigning roles and profile...');
-  await supabase.from('user_roles').upsert({ user_id: userId, role: 'admin' });
+  await supabase.from('platform_roles').upsert({ user_id: userId, role: 'platform_admin' });
+  await supabase.from('cluster_memberships').upsert({
+    user_id: userId,
+    cluster_id: clusterId,
+    role: 'cluster_admin'
+  }, { onConflict: 'user_id,cluster_id' });
   await supabase.from('profiles').upsert({ 
     id: userId, 
-    org_id: orgId, 
-    meta_org_id: clusterId 
+    active_org_id: orgId,
+    active_cluster_id: clusterId
   });
 
   // 4. Ensure Org Membership
-  await supabase.from('org_memberships').upsert({
+  await supabase.from('organization_memberships').upsert({
     user_id: userId,
     org_id: orgId,
     role: 'admin',
     status: 'active',
     is_default_org: true
-  });
+  }, { onConflict: 'user_id,org_id' });
 
   console.log('Global admin provisioned successfully!');
 }

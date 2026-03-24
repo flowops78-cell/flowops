@@ -1,13 +1,13 @@
 import React from 'react';
 
-type MobileRecordCardProps = {
+type MobileActivityRecordCardProps = {
   title: React.ReactNode;
   right?: React.ReactNode;
   meta?: React.ReactNode;
   children?: React.ReactNode;
 };
 
-export default function MobileRecordCard({ title, right, meta, children }: MobileRecordCardProps) {
+export default function MobileActivityRecordCard({ title, right, meta, children }: MobileActivityRecordCardProps) {
   return (
     <div className="p-4 space-y-1.5">
       <div className="flex items-center justify-between gap-3">

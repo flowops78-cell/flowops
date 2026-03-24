@@ -33,7 +33,7 @@
     --ambient-direct: radial-gradient(900px 500px at 16% 10%, rgb(37 99 235 / 0.1), transparent 62%);
     --ambient-overlay-opacity: 0.95;
     --ambient-direct-opacity: 0.62;
-    --kpi-value-col-width: 5.5rem;
+    --kpi-metric-col-width: 5.5rem;
   }
 
   html,
@@ -389,7 +389,7 @@
     word-break: break-word;
   }
 
-  .kpi-value {
+  .kpi-metric {
     overflow-wrap: normal;
     word-break: keep-all;
     white-space: nowrap;
@@ -400,8 +400,8 @@
     font-weight: 600;
   }
 
-  .kpi-value-inline {
-    min-width: var(--kpi-value-col-width);
+  .kpi-metric-inline {
+    min-width: var(--kpi-metric-col-width);
     text-align: right;
     display: inline-block;
   }

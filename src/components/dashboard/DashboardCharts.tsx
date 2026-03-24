@@ -175,7 +175,7 @@ export default function DashboardCharts({
               )}
             >
               <Award size={13} />
-              {getMetricLabel('topParticipants')}
+              {getMetricLabel('topEntitys')}
             </button>
             <button
               onClick={() => setInsightTab('hours')}
@@ -221,8 +221,8 @@ export default function DashboardCharts({
                   itemStyle={{ color: theme === 'dark' ? '#f5f5f4' : '#1c1917' }}
                 />
                 <Bar dataKey="net" radius={[0, 4, 4, 0]} barSize={16}>
-                  {topOutcomes.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.net >= 0 ? '#10b981' : '#ef4444'} />
+                  {topOutcomes.map((record, index) => (
+                    <Cell key={`cell-${index}`} fill={(record.direction === 'increase' ? record.unit_amount : -record.unit_amount) >= 0 ? '#10b981' : '#ef4444'} />
                   ))}
                 </Bar>
               </BarChart>

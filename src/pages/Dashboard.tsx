@@ -12,7 +12,7 @@ import { useAppRole } from '../context/AppRoleContext';
 const DashboardCharts = lazy(() => import('../components/dashboard/DashboardCharts'));
 
 export default function Dashboard({ embedded = false }: { embedded?: boolean }) {
-  const { units, workspaces, entries, channelEntries, adjustments } = useData();
+  const { entities, activities, records, channelEntries, adjustments } = useData();
   const { canAccessAdminUi } = useAppRole();
   const { theme } = useTheme();
   const navigate = useNavigate();
@@ -23,66 +23,66 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
   }
 
   // Stats Calculation
-  const totalWorkspaces = workspaces.length;
-  const totalParticipants = units.length;
-  const totalEntryFlow = useMemo(() => entries.reduce((sum, entry) => sum + entry.input_amount, 0), [entries]);
+  const totalActivitys = activities.length;
+  const totalEntitys = entities.length;
+  const totalRecordFlow = useMemo(() => records.reduce((sum, record) => sum + record.unit_amount, 0), [records]);
   const currentChannelTotal = useMemo(
-    () => channelEntries.reduce((sum, entry) => sum + (entry.type === 'increment' ? entry.amount : -entry.amount), 0),
+    () => channelEntries.reduce((sum, record) => sum + (record.type === 'increment' ? record.amount : -record.amount), 0),
     [channelEntries]
   );
   const totalInflow = useMemo(
-    () => channelEntries.reduce((sum, entry) => sum + (entry.type === 'increment' ? entry.amount : 0), 0),
+    () => channelEntries.reduce((sum, record) => sum + (record.type === 'increment' ? record.amount : 0), 0),
     [channelEntries],
   );
   const totalOutflow = useMemo(
-    () => channelEntries.reduce((sum, entry) => sum + (entry.type === 'decrement' ? entry.amount : 0), 0),
+    () => channelEntries.reduce((sum, record) => sum + (record.type === 'decrement' ? record.amount : 0), 0),
     [channelEntries],
   );
   const totalDeferredActive = useMemo(() => {
     const entityTotals: Record<string, number> = {};
-    adjustments.forEach(entry => {
-      if (!entityTotals[entry.unit_id]) entityTotals[entry.unit_id] = 0;
-      entityTotals[entry.unit_id] += entry.type === 'input' ? entry.amount : -entry.amount;
+    adjustments.forEach(record => {
+      if (!entityTotals[record.entity_id]) entityTotals[record.entity_id] = 0;
+      entityTotals[record.entity_id] += record.type === 'input' ? record.amount : -record.amount;
     });
     return Object.values(entityTotals).reduce((sum, value) => sum + value, 0);
   }, [adjustments]);
-  const activeWorkspacesCount = useMemo(() => workspaces.filter(g => !g.end_time).length, [workspaces]);
+  const activeActivitysCount = useMemo(() => activities.filter(g => !g.end_time).length, [activities]);
 
   // Optimize O(N^2) operations with indexed lookups
   const entriesByEntity = useMemo(() => {
-    const map: Record<string, typeof entries> = {};
-    entries.forEach(entry => {
-      if (!map[entry.unit_id]) map[entry.unit_id] = [];
-      map[entry.unit_id].push(entry);
+    const map: Record<string, typeof records> = {};
+    records.forEach(record => {
+      if (!map[record.entity_id]) map[record.entity_id] = [];
+      map[record.entity_id].push(record);
     });
     return map;
-  }, [entries]);
+  }, [records]);
 
-  const entriesByWorkspace = useMemo(() => {
-    const map: Record<string, typeof entries> = {};
-    entries.forEach(entry => {
-      if (entry.workspace_id) {
-        if (!map[entry.workspace_id]) map[entry.workspace_id] = [];
-        map[entry.workspace_id].push(entry);
+  const entriesByActivity = useMemo(() => {
+    const map: Record<string, typeof records> = {};
+    records.forEach(record => {
+      if (record.activity_id) {
+        if (!map[record.activity_id]) map[record.activity_id] = [];
+        map[record.activity_id].push(record);
       }
     });
     return map;
-  }, [entries]);
+  }, [records]);
 
-  // Calculate participant.net value_change - Optimized to O(N)
-  const participantStats = useMemo(() => units.map(unit => {
-    const participantEntries = entriesByEntity[unit.id] || [];
-    const net = participantEntries.reduce((sum, entry) => sum + entry.net, 0);
-    const workspacesPlayed = participantEntries.length;
-    return { ...unit, net, workspacesPlayed };
-  }), [units, entriesByEntity]);
+  // Calculate entity.net value_change - Optimized to O(N)
+  const entityStats = useMemo(() => entities.map(unit => {
+    const entityEntries = entriesByEntity[unit.id] || [];
+    const net = entityEntries.reduce((sum, record) => sum + (record.direction === 'increase' ? record.unit_amount : -record.unit_amount), 0);
+    const activitysPlayed = entityEntries.length;
+    return { ...unit, net, activitysPlayed };
+  }), [entities, entriesByEntity]);
 
-  const topOutcomes = useMemo(() => [...participantStats].sort((a, b) => b.net - a.net).slice(0, 5), [participantStats]);
+  const topOutcomes = useMemo(() => [...entityStats].sort((a, b) => b.net - a.net).slice(0, 5), [entityStats]);
   
-  // Recent activity (last 5 workspaces)
-  const recentWorkspaces = useMemo(() => [...workspaces]
+  // Recent activity (last 5 activities)
+  const recentActivitys = useMemo(() => [...activities]
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 5), [workspaces]);
+    .slice(0, 5), [activities]);
 
   // Hourly Heatmap Data
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -94,8 +94,8 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
       }
     }
 
-    workspaces.forEach(workspace => {
-      const date = new Date(workspace.start_time || workspace.date);
+    activities.forEach(activity => {
+      const date = new Date(activity.start_time || activity.date);
       const day = date.getDay();
       const hour = date.getHours();
       const bucket = heatmapData.find(item => item.day === day && item.hour === hour);
@@ -103,7 +103,7 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
     });
 
     return heatmapData.filter(item => item.value > 0);
-  }, [workspaces]);
+  }, [activities]);
 
   // Weekly Flow Trend (Last 7 Days)
   const flowTrend = useMemo(() => {
@@ -114,32 +114,32 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
     }).reverse();
 
     return last7Days.map(dateStr => {
-      const dailyWorkspaces = workspaces.filter(g => (g.date || '').startsWith(dateStr));
-      const dailyFlow = dailyWorkspaces.reduce((sum, workspace) => {
-        const workspaceEntries = entriesByWorkspace[workspace.id] || [];
-        return sum + workspaceEntries.reduce((entriesSum, entry) => entriesSum + entry.input_amount, 0);
+      const dailyActivitys = activities.filter(g => (g.date || '').startsWith(dateStr));
+      const dailyFlow = dailyActivitys.reduce((sum, activity) => {
+        const activityEntries = entriesByActivity[activity.id] || [];
+        return sum + activityEntries.reduce((entriesSum, record) => entriesSum + record.unit_amount, 0);
       }, 0);
       return { date: new Date(dateStr).toLocaleDateString(undefined, { weekday: 'short' }), value: dailyFlow };
     });
-  }, [workspaces, entriesByWorkspace]);
+  }, [activities, entriesByActivity]);
 
   return (
     <div className="page-shell animate-in fade-in">
       {!embedded && (
         <div className="section-card p-5 lg:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div>
-            <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100 mb-1">Brief</h2>
+            <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100 mb-1">Overview</h2>
           </div>
           <div className="flex flex-col items-start lg:items-end gap-3">
             <div className="hidden lg:flex items-center gap-2 text-xs">
               <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
-                {getMetricLabel('activities')}: <span className="font-mono text-stone-900 dark:text-stone-100">{totalWorkspaces}</span>
+                {getMetricLabel('activities')}: <span className="font-mono text-stone-900 dark:text-stone-100">{totalActivitys}</span>
               </span>
               <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
-                {getMetricLabel('participants')}: <span className="font-mono text-stone-900 dark:text-stone-100">{totalParticipants}</span>
+                {getMetricLabel('entities')}: <span className="font-mono text-stone-900 dark:text-stone-100">{totalEntitys}</span>
               </span>
               <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
-                Active {getMetricLabel('activities')}: <span className="font-mono text-stone-900 dark:text-stone-100">{activeWorkspacesCount}</span>
+                Active {getMetricLabel('activities')}: <span className="font-mono text-stone-900 dark:text-stone-100">{activeActivitysCount}</span>
               </span>
             </div>
             <div className="flex gap-2">
@@ -164,17 +164,17 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
           </button>
           <button
             type="button"
-            onClick={() => navigate('/participants?action=add-participant')}
+            onClick={() => navigate('/entities?action=add-entity')}
             className="action-btn-secondary justify-center min-h-[40px]"
           >
-            {getActionText('addParticipant')}
+            {getActionText('addEntity')}
           </button>
           <button
             type="button"
-            onClick={() => navigate('/participants?action=add-deferred')}
+            onClick={() => navigate('/entities?action=add-deferred')}
             className="action-btn-secondary justify-center min-h-[40px]"
           >
-            {getActionText('recordDeferredEntry')}
+            {getActionText('recordDeferredActivityRecord')}
           </button>
           <button
             type="button"
@@ -198,18 +198,18 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
           />
           <StatCard
             label={`Active ${getMetricLabel('activities')}`}
-            value={formatCompactNumber(activeWorkspacesCount)}
-            fullValue={activeWorkspacesCount.toString()}
+            value={formatCompactNumber(activeActivitysCount)}
+            fullValue={activeActivitysCount.toString()}
             icon={<Activity className="text-[var(--accent)]" />}
-            highlight={activeWorkspacesCount > 0}
+            highlight={activeActivitysCount > 0}
             onClick={() => navigate('/activity')}
           />
           <StatCard
             label={`Total ${getMetricLabel('flow')}`}
-            value={formatCompactValue(totalEntryFlow)}
-            fullValue={formatValue(totalEntryFlow)}
+            value={formatCompactValue(totalRecordFlow)}
+            fullValue={formatValue(totalRecordFlow)}
             icon={<TrendingUp className="text-[var(--accent)]" />}
-            numericValue={totalEntryFlow}
+            numericValue={totalRecordFlow}
             onClick={() => navigate('/activity')}
           />
           <StatCard
@@ -237,11 +237,11 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
             onClick={() => navigate('/channels')}
           />
           <StatCard
-            label={`Avg Entry ${getMetricLabel('flow')}`}
-            value={totalWorkspaces ? formatCompactValue(totalEntryFlow / totalWorkspaces) : '0'}
-            fullValue={totalWorkspaces ? formatValue(totalEntryFlow / totalWorkspaces) : '0'}
+            label={`Avg ActivityRecord ${getMetricLabel('flow')}`}
+            value={totalActivitys ? formatCompactValue(totalRecordFlow / totalActivitys) : '0'}
+            fullValue={totalActivitys ? formatValue(totalRecordFlow / totalActivitys) : '0'}
             icon={<Award className="text-[var(--accent)]" />}
-            numericValue={totalWorkspaces ? (totalEntryFlow / totalWorkspaces) : 0}
+            numericValue={totalActivitys ? (totalRecordFlow / totalActivitys) : 0}
             className="sm:col-span-2 lg:col-span-1"
             onClick={() => navigate('/activity')}
           />
@@ -280,7 +280,7 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
                   <Link to="/activity" className="text-xs text-[var(--accent)] hover:opacity-90 font-medium interactive-3d rounded px-1.5 py-0.5">View All</Link>
                 </div>
                 <div className="relative divide-y divide-stone-200/70 dark:divide-stone-800/80 max-h-[188px] overflow-y-auto pr-1">
-                  {recentWorkspaces.length === 0 ? (
+                  {recentActivitys.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-40 text-stone-400">
                       <AlertCircle className="mb-2 opacity-50" size={24} />
                       <p className="text-sm italic">No activities recorded yet.</p>
@@ -294,31 +294,31 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
                         </button>
                         <button
                           type="button"
-                          onClick={() => navigate('/participants?action=add-participant')}
+                          onClick={() => navigate('/entities?action=add-entity')}
                           className="action-btn-secondary text-xs px-2.5 py-1.5"
                         >
-                          {getActionText('addParticipant')}
+                          {getActionText('addEntity')}
                         </button>
                       </div>
                     </div>
                   ) : (
-                    recentWorkspaces.map(workspace => {
-                      const workspaceEntries = entries.filter(l => l.workspace_id === workspace.id);
-                      const entryFlow = workspaceEntries.reduce((sum, e) => sum + e.input_amount, 0);
-                      const entityCount = new Set(workspaceEntries.map(e => e.unit_id)).size;
+                    recentActivitys.map(activity => {
+                      const activityEntries = records.filter(l => l.activity_id === activity.id);
+                      const recordFlow = activityEntries.reduce((sum, e) => sum + e.unit_amount, 0);
+                      const entityCount = new Set(activityEntries.map(e => e.entity_id)).size;
 
                       return (
-                        <div key={workspace.id} className="interactive-3d grid grid-cols-[1fr_auto] items-center gap-2 py-2.5 first:pt-1 last:pb-0.5">
+                        <div key={activity.id} className="interactive-3d grid grid-cols-[1fr_auto] items-center gap-2 py-2.5 first:pt-1 last:pb-0.5">
                           <div className="flex items-center gap-2.5 min-w-0">
-                            <div className={`w-2 h-2 rounded-full shrink-0 ${workspace.end_time ? 'bg-stone-300 dark:bg-stone-600' : 'bg-emerald-500 animate-pulse'}`} />
+                            <div className={`w-2 h-2 rounded-full shrink-0 ${activity.end_time ? 'bg-stone-300 dark:bg-stone-600' : 'bg-emerald-500 animate-pulse'}`} />
                             <div className="min-w-0">
-                              <p className="font-medium text-stone-900 dark:text-stone-100 text-[13px] truncate">{new Date(workspace.date).toLocaleDateString()}</p>
-                              <p className="text-xs text-stone-500 dark:text-stone-400 truncate">{workspace.activity_category || 'Activity'}</p>
+                              <p className="font-medium text-stone-900 dark:text-stone-100 text-[13px] truncate">{new Date(activity.date).toLocaleDateString()}</p>
+                              <p className="text-xs text-stone-500 dark:text-stone-400 truncate">{activity.label || 'Activity'}</p>
                             </div>
                           </div>
                           <div className="text-right">
-                            <p className="font-mono font-medium text-stone-900 dark:text-stone-100 text-[13px]">{formatValue(entryFlow)}</p>
-                            <p className="text-xs text-stone-500 dark:text-stone-400">{entityCount} participants</p>
+                            <p className="font-mono font-medium text-stone-900 dark:text-stone-100 text-[13px]">{formatValue(recordFlow)}</p>
+                            <p className="text-xs text-stone-500 dark:text-stone-400">{entityCount} entities</p>
                           </div>
                         </div>
                       );

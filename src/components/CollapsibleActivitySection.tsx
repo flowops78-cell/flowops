@@ -2,7 +2,7 @@ import { useState, type ReactNode, type Ref, type UIEventHandler } from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { cn } from '../lib/utils';
 
-interface CollapsibleWorkspaceSectionProps {
+interface CollapsibleActivitySectionProps {
   title: string;
   summary?: string;
   className?: string;
@@ -17,7 +17,7 @@ interface CollapsibleWorkspaceSectionProps {
   extraHeaderContent?: ReactNode;
 }
 
-export default function CollapsibleWorkspaceSection({
+export default function CollapsibleActivitySection({
   title,
   summary,
   className,
@@ -30,7 +30,7 @@ export default function CollapsibleWorkspaceSection({
   onContentScroll,
   children,
   extraHeaderContent,
-}: CollapsibleWorkspaceSectionProps) {
+}: CollapsibleActivitySectionProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
 
   return (

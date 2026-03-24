@@ -1,21 +1,21 @@
 # Flow Ops Structural Blueprint
 
-Based on `supabase/migrations/20260322230000_flow_ops_schema.sql`, this document describes the current database structure. The system is organized into six connected sub-systems:
+Based on `supabase/migrations/20260327000000_baseline_schema.sql`, this document describes the canonical hard-reset backend structure.
 
-### 1) The Real-Time Engine (`workspaces`, `entries`, `operator_activities`)
-Flow Ops creates isolated, time-boxed operating environments called **Workspaces**. Inside an active Workspace, assigned operators track the live state of **Units** and the ongoing movement of inputs and outputs. Presence and activity are captured through `operator_activities`.
+### 1) Governance and Access
+`clusters`, `organizations`, `cluster_memberships`, `organization_memberships`, `profiles`, and `platform_roles` define tenant structure and access. Row-level security is derived only from organization membership and cluster membership helpers.
 
-### 2) The Channel Tracking Layer (`channel_entries`, `transfer_accounts`)
-This layer tracks where operational value is currently held. `transfer_accounts` stores the available accounts and channels, while `channel_entries` records each channel movement. The result is a complete audit trail for admins.
+### 2) Activity Domain
+`activities` replace workspaces as the top-level operational container. `records` replace entries and capture directional unit changes against an activity and optionally an entity.
 
-### 3) Persistent Unit Records (`units`, `unit_account_entries`, `output_requests`)
-Units remain persistent records across activities rather than one-time names inside a Workspace. `unit_account_entries` tracks ongoing unit-level adjustments outside an active activity, while `output_requests` manages reviewed output requests in a controlled queue.
+### 3) Entity Domain
+`entities` replace units as the persistent org-scoped domain object. They can reference a primary `collaboration`, another source `entity`, and a referring `collaboration` while maintaining a running `total_units` balance.
 
-### 4) Entity Alignment (`associates`, `associate_allocations`)
-The entity subsystem keeps external relationships separate from day-to-day activity operations. `associates` and `associate_allocations` support structured alignment for attribution, shared arrangements, and external channel activity without mixing those records into core activity tracking.
+### 4) Collaboration Domain
+`collaborations` replace associates and carry the final typed relationship model through `collaboration_type`, `participation_factor`, `overhead_weight_pct`, and structured `rules`.
 
-### 5) Team Operations (`members`, `activity_logs`, `expenses`)
-The team layer covers member scheduling, activity logs, and overhead records. Team members track their shifts in `activity_logs`, while fixed operating costs are recorded in `expenses`. This gives admins a clean operational view across activity work, member scheduling, and overhead.
+### 5) Team and Channel Domain
+`team_members` replace members for org-scoped staffing records. `channels` replace transfer accounts, and `channel_records` replace channel entries to link channel activity back to the canonical record stream.
 
-### 6) Database-Enforced Access Control (`user_roles`, Row Level Security)
-The system is protected at the database layer through a strict three-role hierarchy: **admin**, **operator**, and **viewer**. The frontend cannot bypass these rules. If an account attempts an action outside its permissions, Supabase RLS policies reject the request directly.
+### 6) Operational Observability
+`operator_activities`, `audit_events`, `access_requests`, and `access_invites` remain as supporting operational and access-control tables. `audit_events` now use `entity_id` instead of any unit-based reference.

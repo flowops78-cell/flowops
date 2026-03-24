@@ -29,22 +29,25 @@ async function provision(email, password, role, scopeId, isMetaOrg) {
   let metaOrgId = isMetaOrg ? scopeId : "9aa66524-7831-411c-b5f0-6218e3a247db";
 
   if (isMetaOrg) {
-    await supabase.from('org_clusters').upsert({ id: metaOrgId, name: 'Secondary Cluster' });
-    await supabase.from('orgs').upsert({ id: orgId, name: 'Linked Organization', cluster_id: metaOrgId });
-    await supabase.from('org_meta_mapping').upsert({ org_id: orgId, meta_org_id: metaOrgId });
+    await supabase.from('clusters').upsert({ id: metaOrgId, name: 'Secondary Cluster', created_by: userId });
+    await supabase.from('organizations').upsert({ id: orgId, name: 'Linked Organization', cluster_id: metaOrgId });
+    await supabase.from('cluster_memberships').upsert({
+      user_id: userId,
+      cluster_id: metaOrgId,
+      role: 'cluster_admin'
+    }, { onConflict: 'user_id,cluster_id' });
   } else {
-    await supabase.from('orgs').upsert({ id: orgId, name: 'Target Organization', cluster_id: metaOrgId });
+    await supabase.from('organizations').upsert({ id: orgId, name: 'Target Organization', cluster_id: metaOrgId });
   }
 
-  await supabase.from('user_roles').upsert({ user_id: userId, role });
-  await supabase.from('profiles').upsert({ id: userId, org_id: orgId, meta_org_id: metaOrgId });
-  await supabase.from('org_memberships').upsert({
+  await supabase.from('profiles').upsert({ id: userId, active_org_id: orgId, active_cluster_id: metaOrgId });
+  await supabase.from('organization_memberships').upsert({
     user_id: userId,
     org_id: orgId,
     role,
     status: 'active',
     is_default_org: true
-  });
+  }, { onConflict: 'user_id,org_id' });
 }
 
 async function main() {

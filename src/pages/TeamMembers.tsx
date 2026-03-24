@@ -4,20 +4,20 @@ import { useData } from '../context/DataContext';
 import { Plus, Clock, User, LayoutGrid, List, Trash2 } from 'lucide-react';
 import { formatValue, formatDate } from '../lib/utils';
 import ContextPanel from '../components/ContextPanel';
-import MobileRecordCard from '../components/MobileRecordCard';
-import CollapsibleWorkspaceSection from '../components/CollapsibleWorkspaceSection';
+import MobileActivityRecordCard from '../components/MobileActivityRecordCard';
+import CollapsibleActivitySection from '../components/CollapsibleActivitySection';
 import { cn } from '../lib/utils';
 import EmptyState from '../components/EmptyState';
 import LoadingLine from '../components/LoadingLine';
 import { useLabels } from '../lib/labels';
 import { useAppRole } from '../context/AppRoleContext';
 
-const getMemberDisplayName = (name?: string | null) => {
+const getTeamMemberDisplayName = (name?: string | null) => {
   const trimmed = name?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : 'Unnamed Team Member';
+  return trimmed && trimmed.length > 0 ? trimmed : 'Unnamed Team TeamMember';
 };
 
-const getMemberRoleLabel = (role?: string | null) => {
+const getTeamMemberRoleLabel = (role?: string | null) => {
   const normalized = (role ?? '').toLowerCase();
   if (normalized === 'viewer') return 'Viewer';
   if (normalized === 'operator') return 'Operator';
@@ -29,56 +29,56 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { 
-    members, 
+    teamMembers, 
     activityLogs, 
-    addMember, 
-    updateMember, 
-    deleteMember, 
+    addTeamMember, 
+    updateTeamMember, 
+    deleteTeamMember, 
     loading, 
     loadingProgress 
   } = useData();
   const { canAccessAdminUi } = useAppRole();
   const { tx } = useLabels();
-  const [isAddingMember, setIsAddingMember] = useState(false);
+  const [isAddingTeamMember, setIsAddingTeamMember] = useState(false);
   const [rosterViewMode, setRosterViewMode] = useState<'grid' | 'list'>('grid');
-  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
-  const [memberWorkspaceScrollTop, setMemberWorkspaceScrollTop] = useState(0);
-  const [logWorkspaceScrollTop, setLogWorkspaceScrollTop] = useState(0);
+  const [selectedTeamMemberId, setSelectedTeamMemberId] = useState<string | null>(null);
+  const [teamMemberActivityScrollTop, setTeamMemberActivityScrollTop] = useState(0);
+  const [logActivityScrollTop, setLogActivityScrollTop] = useState(0);
   const [importStatus, setImportStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [memberSearch, setMemberSearch] = useState('');
-  const [deletingMemberId, setDeletingMemberId] = useState<string | null>(null);
-  const [isSavingMember, setIsSavingMember] = useState(false);
-  const [saveMemberProgress, setSaveMemberProgress] = useState(0);
-  const memberActivitySectionRef = useRef<HTMLDivElement | null>(null);
-  const saveMemberProgressTimerRef = useRef<number | null>(null);
-  const saveMemberProgressResetTimerRef = useRef<number | null>(null);
+  const [teamMemberSearch, setTeamMemberSearch] = useState('');
+  const [deletingTeamMemberId, setDeletingTeamMemberId] = useState<string | null>(null);
+  const [isSavingTeamMember, setIsSavingTeamMember] = useState(false);
+  const [saveTeamMemberProgress, setSaveTeamMemberProgress] = useState(0);
+  const teamMemberActivitySectionRef = useRef<HTMLDivElement | null>(null);
+  const saveTeamMemberProgressTimerRef = useRef<number | null>(null);
+  const saveTeamMemberProgressResetTimerRef = useRef<number | null>(null);
 
-  const clearSaveMemberProgressTimers = () => {
-    if (saveMemberProgressTimerRef.current !== null) {
-      window.clearInterval(saveMemberProgressTimerRef.current);
-      saveMemberProgressTimerRef.current = null;
+  const clearSaveTeamMemberProgressTimers = () => {
+    if (saveTeamMemberProgressTimerRef.current !== null) {
+      window.clearInterval(saveTeamMemberProgressTimerRef.current);
+      saveTeamMemberProgressTimerRef.current = null;
     }
-    if (saveMemberProgressResetTimerRef.current !== null) {
-      window.clearTimeout(saveMemberProgressResetTimerRef.current);
-      saveMemberProgressResetTimerRef.current = null;
+    if (saveTeamMemberProgressResetTimerRef.current !== null) {
+      window.clearTimeout(saveTeamMemberProgressResetTimerRef.current);
+      saveTeamMemberProgressResetTimerRef.current = null;
     }
   };
 
   useEffect(() => () => {
-    clearSaveMemberProgressTimers();
+    clearSaveTeamMemberProgressTimers();
   }, []);
 
   const [name, setName] = useState('');
-  const [memberLoginId, setMemberLoginId] = useState('');
+  const [teamMemberLoginId, setTeamMemberLoginId] = useState('');
   const [role, setRole] = useState('viewer');
 
-  const selectedMember = members.find(s => s.id === selectedMemberId);
+  const selectedTeamMember = teamMembers.find(s => s.id === selectedTeamMemberId);
 
-  const activeMemberActivityByMemberId = useMemo(() => {
+  const activeTeamMemberActivityByTeamMemberId = useMemo(() => {
     const map = new Map<string, typeof activityLogs[number]>();
     activityLogs.forEach(log => {
-      if (log.status === 'active' && !map.has(log.member_id)) {
-        map.set(log.member_id, log);
+      if (log.status === 'active' && !map.has(log.teamMember_id)) {
+        map.set(log.teamMember_id, log);
       }
     });
     return map;
@@ -96,13 +96,13 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
     return latest ? formatDate(latest) : 'No recent activity';
   }, [activityLogs]);
 
-  const memberNameById = useMemo(() => {
+  const teamMemberNameById = useMemo(() => {
     const map = new Map<string, string>();
-    members.forEach(member => {
-      map.set(member.id, getMemberDisplayName(member.name));
+    teamMembers.forEach(teamMember => {
+      map.set(teamMember.id, getTeamMemberDisplayName(teamMember.name));
     });
     return map;
-  }, [members]);
+  }, [teamMembers]);
 
   const ROSTER_ROW_HEIGHT = 56;
   const SHIFT_ROW_HEIGHT = 58;
@@ -110,87 +110,87 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
   const ROSTER_VIEWPORT_HEIGHT = 560;
   const SHIFT_VIEWPORT_HEIGHT = 460;
 
-  const normalizedMemberSearch = memberSearch.trim().toLowerCase();
+  const normalizedTeamMemberSearch = teamMemberSearch.trim().toLowerCase();
   
-  const filteredMemberActivities = useMemo(() => {
-    if (!normalizedMemberSearch) return activityLogs;
+  const filteredTeamMemberActivities = useMemo(() => {
+    if (!normalizedTeamMemberSearch) return activityLogs;
 
     return activityLogs.filter(log => {
-      const memberName = (memberNameById.get(log.member_id) ?? 'Unknown').toLowerCase();
+      const teamMemberName = (teamMemberNameById.get(log.teamMember_id) ?? 'Unknown').toLowerCase();
       const dateLabel = log.start_time ? formatDate(log.start_time).toLowerCase() : '';
       const status = (log.status ?? '').toLowerCase();
-      const workspaceId = (log.workspace_id ?? '').toLowerCase();
+      const activityId = (log.activity_id ?? '').toLowerCase();
       return (
-        memberName.includes(normalizedMemberSearch) ||
-        workspaceId.includes(normalizedMemberSearch) ||
-        dateLabel.includes(normalizedMemberSearch) ||
-        status.includes(normalizedMemberSearch)
+        teamMemberName.includes(normalizedTeamMemberSearch) ||
+        activityId.includes(normalizedTeamMemberSearch) ||
+        dateLabel.includes(normalizedTeamMemberSearch) ||
+        status.includes(normalizedTeamMemberSearch)
       );
     });
-  }, [normalizedMemberSearch, activityLogs, memberNameById]);
+  }, [normalizedTeamMemberSearch, activityLogs, teamMemberNameById]);
 
-  const shouldWindowMemberActivityWorkspace = filteredMemberActivities.length > 150;
+  const shouldWindowTeamMemberActivity = filteredTeamMemberActivities.length > 150;
   const logVisibleCount = Math.ceil(SHIFT_VIEWPORT_HEIGHT / SHIFT_ROW_HEIGHT) + WORKSPACE_OVERSCAN * 2;
-  const logStartIndex = shouldWindowMemberActivityWorkspace
-    ? Math.max(0, Math.floor(logWorkspaceScrollTop / SHIFT_ROW_HEIGHT) - WORKSPACE_OVERSCAN)
+  const logStartIndex = shouldWindowTeamMemberActivity
+    ? Math.max(0, Math.floor(logActivityScrollTop / SHIFT_ROW_HEIGHT) - WORKSPACE_OVERSCAN)
     : 0;
-  const logEndIndex = shouldWindowMemberActivityWorkspace
-    ? Math.min(filteredMemberActivities.length, logStartIndex + logVisibleCount)
-    : filteredMemberActivities.length;
+  const logEndIndex = shouldWindowTeamMemberActivity
+    ? Math.min(filteredTeamMemberActivities.length, logStartIndex + logVisibleCount)
+    : filteredTeamMemberActivities.length;
 
-  const visibleMemberActivities = shouldWindowMemberActivityWorkspace 
-    ? filteredMemberActivities.slice(logStartIndex, logEndIndex) 
-    : filteredMemberActivities;
+  const visibleTeamMemberActivities = shouldWindowTeamMemberActivity 
+    ? filteredTeamMemberActivities.slice(logStartIndex, logEndIndex) 
+    : filteredTeamMemberActivities;
 
-  const logTopSpacerHeight = shouldWindowMemberActivityWorkspace ? logStartIndex * SHIFT_ROW_HEIGHT : 0;
-  const logBottomSpacerHeight = shouldWindowMemberActivityWorkspace 
-    ? Math.max(0, (filteredMemberActivities.length - logEndIndex) * SHIFT_ROW_HEIGHT) 
+  const logTopSpacerHeight = shouldWindowTeamMemberActivity ? logStartIndex * SHIFT_ROW_HEIGHT : 0;
+  const logBottomSpacerHeight = shouldWindowTeamMemberActivity 
+    ? Math.max(0, (filteredTeamMemberActivities.length - logEndIndex) * SHIFT_ROW_HEIGHT) 
     : 0;
 
   useEffect(() => {
-    setLogWorkspaceScrollTop(0);
-  }, [normalizedMemberSearch]);
+    setLogActivityScrollTop(0);
+  }, [normalizedTeamMemberSearch]);
 
-  const handleAddMember = async (e: React.FormEvent) => {
+  const handleAddTeamMember = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSavingMember) return;
+    if (isSavingTeamMember) return;
     const normalizedName = name.trim();
     if (!normalizedName) {
-      setImportStatus({ type: 'error', message: 'Team member name is required.' });
+      setImportStatus({ type: 'error', message: 'Team teamMember name is required.' });
       return;
     }
-    clearSaveMemberProgressTimers();
-    setIsSavingMember(true);
+    clearSaveTeamMemberProgressTimers();
+    setIsSavingTeamMember(true);
     let progress = 8;
-    setSaveMemberProgress(progress);
-    saveMemberProgressTimerRef.current = window.setInterval(() => {
+    setSaveTeamMemberProgress(progress);
+    saveTeamMemberProgressTimerRef.current = window.setInterval(() => {
       progress = Math.min(progress + (progress < 70 ? 10 : progress < 90 ? 4 : 1), 92);
-      setSaveMemberProgress(progress);
+      setSaveTeamMemberProgress(progress);
     }, 120);
 
     try {
-      await addMember({
+      await addTeamMember({
         name: normalizedName,
-        member_id: memberLoginId.trim() || undefined,
+        teamMember_id: teamMemberLoginId.trim() || undefined,
         role: role as any,
         status: 'active'
       });
 
-      clearSaveMemberProgressTimers();
-      setSaveMemberProgress(100);
-      setImportStatus({ type: 'success', message: 'Team member saved.' });
-      setIsAddingMember(false);
+      clearSaveTeamMemberProgressTimers();
+      setSaveTeamMemberProgress(100);
+      setImportStatus({ type: 'success', message: 'Team teamMember saved.' });
+      setIsAddingTeamMember(false);
       setName('');
-      setMemberLoginId('');
+      setTeamMemberLoginId('');
     } catch (error: any) {
-      clearSaveMemberProgressTimers();
-      setSaveMemberProgress(100);
-      setImportStatus({ type: 'error', message: error?.message || 'Unable to save team member.' });
+      clearSaveTeamMemberProgressTimers();
+      setSaveTeamMemberProgress(100);
+      setImportStatus({ type: 'error', message: error?.message || 'Unable to save team teamMember.' });
     } finally {
-      saveMemberProgressResetTimerRef.current = window.setTimeout(() => {
-        setIsSavingMember(false);
-        setSaveMemberProgress(0);
-        saveMemberProgressResetTimerRef.current = null;
+      saveTeamMemberProgressResetTimerRef.current = window.setTimeout(() => {
+        setIsSavingTeamMember(false);
+        setSaveTeamMemberProgress(0);
+        saveTeamMemberProgressResetTimerRef.current = null;
       }, 360);
     }
   };
@@ -200,10 +200,10 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
     const action = params.get('action');
     if (!action) return;
 
-    if (action === 'add-member' || action === 'add-member') {
-      setIsAddingMember(true);
+    if (action === 'add-teamMember' || action === 'add-teamMember') {
+      setIsAddingTeamMember(true);
     } else if (action === 'view-log') {
-      memberActivitySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      teamMemberActivitySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
     params.delete('action');
@@ -226,60 +226,60 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
 
       if (normalizedKey === 'delete' || normalizedKey === 'backspace') {
         event.preventDefault();
-        const targetMember = selectedMemberId
-          ? members.find(member => member.id === selectedMemberId)
-          : members.find(member => !activeMemberActivityByMemberId.has(member.id));
-        if (targetMember) {
-          void handleDeleteMember(targetMember.id);
+        const targetTeamMember = selectedTeamMemberId
+          ? teamMembers.find(teamMember => teamMember.id === selectedTeamMemberId)
+          : teamMembers.find(teamMember => !activeTeamMemberActivityByTeamMemberId.has(teamMember.id));
+        if (targetTeamMember) {
+          void handleDeleteTeamMember(targetTeamMember.id);
         }
         return;
       }
 
       if (normalizedKey === 'l') {
         event.preventDefault();
-        memberActivitySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        teamMemberActivitySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     };
 
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
-  }, [selectedMemberId, members, activeMemberActivityByMemberId, canAccessAdminUi]);
+  }, [selectedTeamMemberId, teamMembers, activeTeamMemberActivityByTeamMemberId, canAccessAdminUi]);
 
-  const handleDeleteMember = async (targetMemberId: string, e?: React.MouseEvent) => {
+  const handleDeleteTeamMember = async (targetTeamMemberId: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    if (deletingMemberId === targetMemberId) return;
+    if (deletingTeamMemberId === targetTeamMemberId) return;
 
-    const member = members.find(item => item.id === targetMemberId);
-    if (!member) return;
+    const teamMember = teamMembers.find(item => item.id === targetTeamMemberId);
+    if (!teamMember) return;
 
-    const activeMemberActivity = activeMemberActivityByMemberId.get(targetMemberId);
-    if (activeMemberActivity) {
-      setImportStatus({ type: 'error', message: 'Close the active activity log before deleting this team member.' });
+    const activeTeamMemberActivity = activeTeamMemberActivityByTeamMemberId.get(targetTeamMemberId);
+    if (activeTeamMemberActivity) {
+      setImportStatus({ type: 'error', message: 'Close the active activity log before deleting this team teamMember.' });
       return;
     }
 
-    const confirmed = window.confirm(`Remove ${getMemberDisplayName(member.name)} from the team?`);
+    const confirmed = window.confirm(`Remove ${getTeamMemberDisplayName(teamMember.name)} from the team?`);
     if (!confirmed) return;
 
     try {
-      setDeletingMemberId(targetMemberId);
-      await deleteMember(targetMemberId);
-      setImportStatus({ type: 'success', message: 'Team member removed.' });
-      if (selectedMemberId === targetMemberId) {
-        setSelectedMemberId(null);
+      setDeletingTeamMemberId(targetTeamMemberId);
+      await deleteTeamMember(targetTeamMemberId);
+      setImportStatus({ type: 'success', message: 'Team teamMember removed.' });
+      if (selectedTeamMemberId === targetTeamMemberId) {
+        setSelectedTeamMemberId(null);
       }
     } catch (error: any) {
-      setImportStatus({ type: 'error', message: error?.message || 'Unable to delete team member.' });
+      setImportStatus({ type: 'error', message: error?.message || 'Unable to delete team teamMember.' });
     } finally {
-      setDeletingMemberId(null);
+      setDeletingTeamMemberId(null);
     }
   };
 
 
   const handleUpdateTags = async (id: string, tags: string[]) => {
-    const teamMember = members.find(s => s.id === id);
-    if (teamMember && updateMember) {
-      await updateMember({ ...teamMember, tags });
+    const teamTeamMember = teamMembers.find(s => s.id === id);
+    if (teamTeamMember && updateTeamMember) {
+      await updateTeamMember({ ...teamTeamMember, tags });
     }
   };
 
@@ -316,9 +316,9 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
 
   const statusMessages = importStatus ? [importStatus] : [];
 
-  const formatMemberCount = (count: number) => `${count} ${count === 1 ? 'user' : 'users'}`;
+  const formatTeamMemberCount = (count: number) => `${count} ${count === 1 ? 'user' : 'users'}`;
 
-  if (loading && members.length === 0) {
+  if (loading && teamMembers.length === 0) {
     return (
       <div className="page-shell">
         <div className="section-card p-4">
@@ -338,28 +338,28 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
         <div className="section-card p-5 lg:p-6 flex flex-col gap-4">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-center justify-between">
             <div>
-              <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Team</h2>
+              <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Team TeamMembers</h2>
               <p className="text-stone-500 dark:text-stone-400 text-sm">Team roster and operational roles.</p>
             </div>
             <div className="flex flex-col items-start lg:items-end gap-3">
               <div className="hidden lg:flex items-center gap-2 text-xs">
                 <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
-                  <span className="font-mono text-stone-900 dark:text-stone-100">{formatMemberCount(members.length)}</span>
+                  <span className="font-mono text-stone-900 dark:text-stone-100">{formatTeamMemberCount(teamMembers.length)}</span>
                 </span>
                 <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
-                  <span className="font-mono text-stone-900 dark:text-stone-100">{Array.from(activeMemberActivityByMemberId.values()).length}</span> active
+                  <span className="font-mono text-stone-900 dark:text-stone-100">{Array.from(activeTeamMemberActivityByTeamMemberId.values()).length}</span> active
                 </span>
               </div>
               <div className="flex gap-2 flex-wrap">
                 {rosterViewToggle}
                 {canAccessAdminUi && (
                   <button
-                    onClick={() => setIsAddingMember(true)}
+                    onClick={() => setIsAddingTeamMember(true)}
                     className="action-btn-primary"
-                    title="Add Team Member"
+                    title="Add Team TeamMember"
                   >
                     <Plus size={16} />
-                    Add Team Member
+                    Add Team TeamMember
                   </button>
                 )}
               </div>
@@ -390,18 +390,18 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
           {rosterViewToggle}
           {canAccessAdminUi && (
             <button
-              onClick={() => setIsAddingMember(true)}
+              onClick={() => setIsAddingTeamMember(true)}
               className="action-btn-primary"
             >
               <Plus size={16} />
-              Add Team Member
+              Add Team TeamMember
             </button>
           )}
         </div>
       )}
       
-      {canAccessAdminUi && isAddingMember && (
-        <form onSubmit={handleAddMember} className="section-card p-4 animate-in fade-in slide-in-from-top-4 mb-6">
+      {canAccessAdminUi && isAddingTeamMember && (
+        <form onSubmit={handleAddTeamMember} className="section-card p-4 animate-in fade-in slide-in-from-top-4 mb-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
             <div className="space-y-1 md:col-span-1">
               <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Name</label>
@@ -418,8 +418,8 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
               <input
                 className="control-input"
                 placeholder="e.g. USR-101"
-                value={memberLoginId}
-                onChange={e => setMemberLoginId(e.target.value)}
+                value={teamMemberLoginId}
+                onChange={e => setTeamMemberLoginId(e.target.value)}
               />
             </div>
             <div className="space-y-1">
@@ -438,40 +438,40 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
           <div className="flex justify-end gap-2">
             <button 
               type="button" 
-              onClick={() => setIsAddingMember(false)}
-              disabled={isSavingMember}
+              onClick={() => setIsAddingTeamMember(false)}
+              disabled={isSavingTeamMember}
               className="action-btn-tertiary px-4 py-2 text-sm"
             >
               Cancel
             </button>
             <button 
               type="submit" 
-              disabled={isSavingMember}
+              disabled={isSavingTeamMember}
               className="px-4 py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-md text-sm hover:bg-stone-800 dark:hover:bg-stone-200 disabled:opacity-70"
             >
-              {isSavingMember ? 'Saving…' : 'Add Team Member'}
+              {isSavingTeamMember ? 'Saving…' : 'Add Team TeamMember'}
             </button>
           </div>
         </form>
       )}
 
-      {members.length === 0 ? (
+      {teamMembers.length === 0 ? (
         <div className="section-card">
           <EmptyState
-            title="No team members yet"
-            description="Add a team member to include them in operational tracking."
-            actionLabel="Add Team Member"
-            onAction={() => setIsAddingMember(true)}
+            title="No team teamMembers yet"
+            description="Add a team teamMember to include them in operational tracking."
+            actionLabel="Add Team TeamMember"
+            onAction={() => setIsAddingTeamMember(true)}
           />
         </div>
       ) : rosterViewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {members.map(member => {
-            const activeActivity = activeMemberActivityByMemberId.get(member.id);
+          {teamMembers.map(teamMember => {
+            const activeActivity = activeTeamMemberActivityByTeamMemberId.get(teamMember.id);
             return (
               <div 
-                key={member.id} 
-                onClick={() => setSelectedMemberId(member.id)}
+                key={teamMember.id} 
+                onClick={() => setSelectedTeamMemberId(teamMember.id)}
                 className="bg-white dark:bg-stone-900 p-4 rounded-xl shadow-sm border border-stone-200 dark:border-stone-800 cursor-pointer hover:border-emerald-500 transition-colors group"
               >
                 <div className="flex justify-between items-start mb-3">
@@ -480,8 +480,8 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
                       <User size={20} />
                     </div>
                     <div>
-                      <h3 className="font-medium text-stone-900 dark:text-stone-100">{getMemberDisplayName(member.name)}</h3>
-                      <p className="text-[10px] text-stone-500 font-mono">{member.member_id || getMemberRoleLabel(member.role)}</p>
+                      <h3 className="font-medium text-stone-900 dark:text-stone-100">{getTeamMemberDisplayName(teamMember.name)}</h3>
+                      <p className="text-[10px] text-stone-500 font-mono">{teamMember.teamMember_id || getTeamMemberRoleLabel(teamMember.role)}</p>
                     </div>
                   </div>
                 </div>
@@ -491,7 +491,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
                     {activeActivity ? (
                       <span className="text-emerald-600 flex items-center gap-1 font-medium">
                         <Clock size={12} />
-                        Active in {activeActivity.workspace_id?.slice(0, 8).toUpperCase()}
+                        Active in {activeActivity.activity_id?.slice(0, 8).toUpperCase()}
                       </span>
                     ) : (
                       'Inactive'
@@ -499,8 +499,8 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
                   </div>
                   {canAccessAdminUi && (
                     <button
-                      onClick={(e) => { void handleDeleteMember(member.id, e); }}
-                      disabled={Boolean(activeActivity) || deletingMemberId === member.id}
+                      onClick={(e) => { void handleDeleteTeamMember(teamMember.id, e); }}
+                      disabled={Boolean(activeActivity) || deletingTeamMemberId === teamMember.id}
                       className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md disabled:opacity-30"
                     >
                       <Trash2 size={14} />
@@ -513,11 +513,11 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
         </div>
       ) : (
         <div className="section-card overflow-hidden">
-          <CollapsibleWorkspaceSection
-            title="Team Members"
-            summary={formatMemberCount(members.length)}
+          <CollapsibleActivitySection
+            title="Team TeamMembers"
+            summary={formatTeamMemberCount(teamMembers.length)}
             defaultExpanded
-            onContentScroll={event => setMemberWorkspaceScrollTop(event.currentTarget.scrollTop)}
+            onContentScroll={event => setTeamMemberActivityScrollTop(event.currentTarget.scrollTop)}
           >
             <table className="w-full text-left text-sm">
               <thead className="bg-stone-50 dark:bg-stone-800 text-stone-500 text-[11px] uppercase tracking-wider border-b border-stone-200 dark:border-stone-700">
@@ -530,20 +530,20 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                {members.map(member => {
-                  const activeActivity = activeMemberActivityByMemberId.get(member.id);
+                {teamMembers.map(teamMember => {
+                  const activeActivity = activeTeamMemberActivityByTeamMemberId.get(teamMember.id);
                   return (
-                    <tr key={member.id} className="hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
+                    <tr key={teamMember.id} className="hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
                       <td className="px-4 py-3">
-                        <button onClick={() => setSelectedMemberId(member.id)} className="font-medium text-stone-900 dark:text-stone-100 hover:underline">
-                          {getMemberDisplayName(member.name)}
+                        <button onClick={() => setSelectedTeamMemberId(teamMember.id)} className="font-medium text-stone-900 dark:text-stone-100 hover:underline">
+                          {getTeamMemberDisplayName(teamMember.name)}
                         </button>
                       </td>
-                      <td className="px-4 py-3 text-stone-500 font-mono text-xs">{member.member_id || '-'}</td>
-                      <td className="px-4 py-3 text-stone-600 dark:text-stone-400">{getMemberRoleLabel(member.role)}</td>
+                      <td className="px-4 py-3 text-stone-500 font-mono text-xs">{teamMember.teamMember_id || '-'}</td>
+                      <td className="px-4 py-3 text-stone-600 dark:text-stone-400">{getTeamMemberRoleLabel(teamMember.role)}</td>
                       <td className="px-4 py-3">
                         {activeActivity ? (
-                          <span className="text-emerald-600 font-medium text-xs">Active in {activeActivity.workspace_id?.slice(0, 8).toUpperCase()}</span>
+                          <span className="text-emerald-600 font-medium text-xs">Active in {activeActivity.activity_id?.slice(0, 8).toUpperCase()}</span>
                         ) : (
                           <span className="text-stone-400 text-xs">Inactive</span>
                         )}
@@ -551,8 +551,8 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
                       <td className="px-4 py-3 text-right">
                         {canAccessAdminUi && (
                           <button
-                            onClick={(e) => { void handleDeleteMember(member.id, e); }}
-                            disabled={Boolean(activeActivity) || deletingMemberId === member.id}
+                            onClick={(e) => { void handleDeleteTeamMember(teamMember.id, e); }}
+                            disabled={Boolean(activeActivity) || deletingTeamMemberId === teamMember.id}
                             className="text-red-600 hover:underline text-xs disabled:opacity-30"
                           >
                             Remove
@@ -564,19 +564,19 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
                 })}
               </tbody>
             </table>
-          </CollapsibleWorkspaceSection>
+          </CollapsibleActivitySection>
         </div>
       )}
 
       <div className="mt-8 pt-8 border-t border-stone-200 dark:border-stone-800">
-        <div ref={memberActivitySectionRef} className="flex items-center justify-between mb-4">
+        <div ref={teamMemberActivitySectionRef} className="flex items-center justify-between mb-4">
           <h3 className="text-lg font-light text-stone-900 dark:text-stone-100">Activity Logs</h3>
           <div className="flex items-center gap-3">
             <div className="relative">
               <input
                 type="text"
-                value={memberSearch}
-                onChange={e => setMemberSearch(e.target.value)}
+                value={teamMemberSearch}
+                onChange={e => setTeamMemberSearch(e.target.value)}
                 placeholder="Search logs..."
                 className="control-input py-1.5 min-w-[200px]"
               />
@@ -588,20 +588,20 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
           <table className="w-full text-left text-sm">
             <thead className="bg-stone-50 dark:bg-stone-800 text-stone-500 text-[11px] uppercase tracking-wider border-b border-stone-200 dark:border-stone-700">
               <tr>
-                <th className="px-4 py-3">Member</th>
-                <th className="px-4 py-3">Workspace</th>
+                <th className="px-4 py-3">TeamMember</th>
+                <th className="px-4 py-3">Activity</th>
                 <th className="px-4 py-3">Time</th>
                 <th className="px-4 py-3">Hours</th>
                 <th className="px-4 py-3 text-right">Status</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-              {visibleMemberActivities.map(log => {
-                const member = members.find(m => m.id === log.member_id);
+              {visibleTeamMemberActivities.map(log => {
+                const teamMember = teamMembers.find(m => m.id === log.teamMember_id);
                 return (
                   <tr key={log.id} className="hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
-                    <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100">{member ? getMemberDisplayName(member.name) : 'Unknown'}</td>
-                    <td className="px-4 py-3 text-stone-500 font-mono text-xs">{log.workspace_id?.slice(0, 8).toUpperCase() || '-'}</td>
+                    <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100">{teamMember ? getTeamMemberDisplayName(teamMember.name) : 'Unknown'}</td>
+                    <td className="px-4 py-3 text-stone-500 font-mono text-xs">{log.activity_id?.slice(0, 8).toUpperCase() || '-'}</td>
                     <td className="px-4 py-3 text-stone-600 dark:text-stone-400">{formatDate(log.start_time)}</td>
                     <td className="px-4 py-3 font-mono">{log.duration_hours?.toFixed(2) || '0.00'}h</td>
                     <td className="px-4 py-3 text-right">
@@ -617,7 +617,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
               })}
             </tbody>
           </table>
-          {visibleMemberActivities.length === 0 && (
+          {visibleTeamMemberActivities.length === 0 && (
             <div className="p-8 text-center text-stone-500">No activity logs found.</div>
           )}
         </div>

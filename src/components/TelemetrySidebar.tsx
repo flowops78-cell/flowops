@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Circle, Users, Activity, TrendingUp, TrendingDown, Bell, BellOff, AlertCircle } from 'lucide-react';
+import { Circle, Users, Activity as ActivityIcon, TrendingUp, TrendingDown, Bell, BellOff, AlertCircle } from 'lucide-react';
 import { formatValue } from '../lib/utils';
-import { Entry, Entity, Workspace } from '../types';
+import { ActivityRecord, Entity, Activity } from '../types';
 import ContextPanel from './ContextPanel';
 
 interface TelemetryEvent {
   id: string;
-  type: 'inflow' | 'outflow' | 'join' | 'leave' | 'workspace_start' | 'level_up';
+  type: 'inflow' | 'outflow' | 'join' | 'leave' | 'activity_start' | 'level_up';
   timestamp: Date;
   message: string;
   details?: string;
@@ -15,25 +15,25 @@ interface TelemetryEvent {
 }
 
 interface TelemetrySidebarProps {
-  workspace: Workspace;
-  entries: Entry[];
-  units: Entity[];
+  activity: Activity;
+  records: ActivityRecord[];
+  entities: Entity[];
   isOpen: boolean;
   onClose: () => void;
 }
 
-type NotificationFilter = 'all' | 'inflow' | 'outflow' | 'workspace_start';
+type NotificationFilter = 'all' | 'inflow' | 'outflow' | 'activity_start';
 
 const eventToneClass: Record<TelemetryEvent['type'], string> = {
   inflow: 'bg-emerald-500',
   outflow: 'bg-blue-500',
-  workspace_start: 'bg-stone-900 dark:bg-stone-100',
+  activity_start: 'bg-stone-900 dark:bg-stone-100',
   join: 'bg-stone-400',
   leave: 'bg-stone-400',
   level_up: 'bg-stone-400',
 };
 
-export default function TelemetrySidebar({ workspace, entries, units, isOpen, onClose }: TelemetrySidebarProps) {
+export default function TelemetrySidebar({ activity, records, entities, isOpen, onClose }: TelemetrySidebarProps) {
   const [now, setNow] = useState(new Date());
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
     const saved = localStorage.getItem('telemetry_notifications');
@@ -41,8 +41,8 @@ export default function TelemetrySidebar({ workspace, entries, units, isOpen, on
   });
   const [notificationFilter, setNotificationFilter] = useState<NotificationFilter>(() => {
     const saved = localStorage.getItem('telemetry_notification_filter');
-    if (saved === 'inflow' || saved === 'outflow' || saved === 'workspace_start' || saved === 'all') return saved;
-    if (saved === 'entry_value' || saved === 'entry_value') return 'inflow';
+    if (saved === 'inflow' || saved === 'outflow' || saved === 'activity_start' || saved === 'all') return saved;
+    if (saved === 'record_value' || saved === 'record_value') return 'inflow';
     if (saved === 'outflow') return 'outflow';
     return 'all';
   });
@@ -58,7 +58,7 @@ export default function TelemetrySidebar({ workspace, entries, units, isOpen, on
   const [notificationStatus, setNotificationStatus] = useState<string | null>(null);
   const lastNotifiedEventIdRef = useRef<string | null>(null);
 
-  // Update "now" every minute to keep duration/activity units fresh
+  // Update "now" every minute to keep duration/activity entities fresh
   useEffect(() => {
     if (!isOpen) return;
     const interval = setInterval(() => setNow(new Date()), 60000);
@@ -107,48 +107,48 @@ export default function TelemetrySidebar({ workspace, entries, units, isOpen, on
     }
   };
 
-  // Derive events from entries and workspace data
+  // Derive events from records and activity data
   const events: TelemetryEvent[] = [];
 
-  // Workspace Start
-  if (workspace.start_time || workspace.created_at) {
+  // Activity Start
+  if (activity.start_time || activity.created_at) {
     events.push({
-      id: 'workspace-start',
-      type: 'workspace_start',
-      timestamp: new Date(workspace.start_time || workspace.created_at || workspace.date),
+      id: 'activity-start',
+      type: 'activity_start',
+      timestamp: new Date(activity.start_time || activity.created_at || activity.date),
       message: 'Activity started',
-      details: workspace.activity_category ? `${workspace.activity_category}${workspace.location ? ` - ${workspace.location}` : ''}` : 'Default Mode'
+      details: activity.label ? `${activity.label}${activity.location ? ` - ${activity.location}` : ''}` : 'Default Mode'
     });
   }
 
   // Entries Events
-  entries.forEach(entry => {
-    const entity = units.find(p => p.id === entry.unit_id);
+  records.forEach(record => {
+    const entity = entities.find(p => p.id === record.entity_id);
     if (!entity) return;
 
-    // Join / Entry value
-    if (entry.created_at) {
+    // Join / ActivityRecord value
+    if (record.created_at) {
       events.push({
-        id: `join-${entry.id}`,
+        id: `join-${record.id}`,
         type: 'inflow',
-        timestamp: new Date(entry.created_at),
+        timestamp: new Date(record.created_at),
         message: `${entity.name} joined`,
-        details: formatValue(entry.input_amount),
+        details: formatValue(record.unit_amount),
         entity,
-        amount: entry.input_amount
+        amount: record.unit_amount
       });
     }
 
     // Leave / Alignment
-    if (entry.left_at) {
+    if (record.left_at) {
       events.push({
-        id: `leave-${entry.id}`,
+        id: `leave-${record.id}`,
         type: 'outflow',
-        timestamp: new Date(entry.left_at),
+        timestamp: new Date(record.left_at),
         message: `${entity.name} closed out`,
-        details: `${formatValue(entry.output_amount)} (Net: ${entry.net > 0 ? '+' : ''}${formatValue(entry.net)})`,
+        details: `${formatValue(record.unit_amount)} (Net: ${(record.direction === 'increase' ? record.unit_amount : -record.unit_amount) > 0 ? '+' : ''}${formatValue((record.direction === 'increase' ? record.unit_amount : -record.unit_amount))})`,
         entity,
-        amount: entry.output_amount
+        amount: record.unit_amount
       });
     }
   });
@@ -196,14 +196,14 @@ export default function TelemetrySidebar({ workspace, entries, units, isOpen, on
   }, [notificationStatus]);
 
   // --- Real-time Stats Calculation ---
-  const totalInflow = entries.reduce((sum, entry) => sum + entry.input_amount, 0);
-  const totalOutflow = entries.reduce((sum, entry) => sum + (entry.output_amount || 0), 0);
+  const totalInflow = records.reduce((sum, record) => sum + record.unit_amount, 0);
+  const totalOutflow = records.reduce((sum, record) => sum + (record.unit_amount || 0), 0);
   const activeValue = totalInflow - totalOutflow;
-  const activeEntitiesCount = entries.filter(entry => !entry.left_at).length;
+  const activeEntitiesCount = records.filter(record => !record.left_at).length;
   const discrepancy = totalOutflow - totalInflow;
   const statCards = [
     {
-      key: 'active-units',
+      key: 'active-entities',
       label: 'Entities',
       value: activeEntitiesCount,
       icon: <Users size={12} />,
@@ -217,7 +217,7 @@ export default function TelemetrySidebar({ workspace, entries, units, isOpen, on
       valueClass: 'text-emerald-600 dark:text-emerald-400',
     },
     {
-      key: 'entry-total',
+      key: 'record-total',
       label: 'Inflow',
       value: formatValue(totalInflow),
       icon: <TrendingUp size={12} />,
@@ -232,7 +232,7 @@ export default function TelemetrySidebar({ workspace, entries, units, isOpen, on
     },
     {
       key: 'total-net-delta',
-      label: 'Net',
+      label: 'Total Units',
       value: formatValue(discrepancy),
       icon: <AlertCircle size={12} />,
       valueClass: Math.abs(discrepancy) < 0.01 ? 'text-stone-900 dark:text-stone-100' : 'text-red-600 dark:text-red-400',
@@ -245,7 +245,7 @@ export default function TelemetrySidebar({ workspace, entries, units, isOpen, on
         <div className="border-b border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-800/50">
           <div className="px-4 pt-4 pb-2 flex justify-between items-center">
             <h3 className="font-medium text-stone-900 dark:text-stone-100 flex items-center gap-2">
-              <Activity size={18} className="text-emerald-600 dark:text-emerald-400" />
+              <ActivityIcon size={18} className="text-emerald-600 dark:text-emerald-400" />
               Activity Monitor
             </h3>
             <button 
@@ -266,7 +266,7 @@ export default function TelemetrySidebar({ workspace, entries, units, isOpen, on
               <option value="all">All Activity</option>
               <option value="inflow">Inflow Events</option>
               <option value="outflow">Outflow Events</option>
-              <option value="workspace_start">Start Events</option>
+              <option value="activity_start">Start Events</option>
             </select>
             <label className="text-xs flex items-center gap-1.5 text-stone-500 dark:text-stone-400 select-none cursor-pointer">
               <input

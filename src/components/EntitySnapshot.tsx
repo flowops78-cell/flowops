@@ -1,22 +1,22 @@
 import React, { useState } from 'react';
 import { X, Plus, Tag, User, Circle, Clock, Award, Activity } from 'lucide-react';
-import { Entity, Member } from '../types';
+import { Entity, TeamMember } from '../types';
 import { formatValue, formatDate } from '../lib/utils';
 import { cn } from '../lib/utils';
 import { useLabels } from '../lib/labels';
 
-interface ParticipantSnapshotProps {
-  entity: Entity | Member;
-  type: 'entity' | 'member';
+interface EntitySnapshotProps {
+  entity: Entity | TeamMember;
+  type: 'entity' | 'teamMember';
   onClose: () => void;
   onUpdateTags: (id: string, tags: string[]) => void;
   // Optional context data
-  workspaceNet?: number;
-  currentMemberActivity?: any;
+  activityNet?: number;
+  currentTeamMemberActivity?: any;
   variant?: 'modal' | 'sidebar';
 }
 
-export default function ParticipantSnapshot({ entity, type, onClose, onUpdateTags, workspaceNet, currentMemberActivity, variant = 'modal' }: ParticipantSnapshotProps) {
+export default function EntitySnapshot({ entity, type, onClose, onUpdateTags, activityNet, currentTeamMemberActivity, variant = 'modal' }: EntitySnapshotProps) {
   const [newTag, setNewTag] = useState('');
   const [isAddingTag, setIsAddingTag] = useState(false);
   const { tx } = useLabels();
@@ -63,7 +63,7 @@ export default function ParticipantSnapshot({ entity, type, onClose, onUpdateTag
         <h2 className="text-xl font-bold text-stone-900 dark:text-stone-100">{entity.name}</h2>
         <p className="text-sm text-stone-500 dark:text-stone-400 capitalize flex items-center justify-center gap-1 mt-1">
           {type === 'entity' ? <User size={12} className="mr-1" /> : <Activity size={12} className="mr-1" />}
-          {type === 'entity' ? 'Participant' : (entity as Member).role}
+          {type === 'entity' ? 'Entity' : (entity as TeamMember).role}
         </p>
 
         {/* Stats Grid */}
@@ -82,12 +82,12 @@ export default function ParticipantSnapshot({ entity, type, onClose, onUpdateTag
                   {(entity as Entity).last_active_at ? formatDate((entity as Entity).last_active_at!) : 'Never'}
                 </p>
               </div>
-              {workspaceNet !== undefined && (
+              {activityNet !== undefined && (
                 <div className="col-span-2 bg-stone-50 dark:bg-stone-800 p-3 rounded-xl border border-stone-200 dark:border-stone-700">
                   <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-1">Current Activity</p>
                   <div className="flex items-center justify-center gap-2">
-                      <span className={`text-xl font-mono font-bold ${workspaceNet >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                        {workspaceNet >= 0 ? '+' : ''}{formatValue(workspaceNet)}
+                      <span className={`text-xl font-mono font-bold ${activityNet >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {activityNet >= 0 ? '+' : ''}{formatValue(activityNet)}
                       </span>
                   </div>
                 </div>
@@ -97,14 +97,14 @@ export default function ParticipantSnapshot({ entity, type, onClose, onUpdateTag
             <>
               <div className="bg-stone-50 dark:bg-stone-800 p-3 rounded-xl">
                 <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Status</p>
-                <p className={`text-sm font-medium mt-1 capitalize ${(entity as Member).status === 'active' ? 'text-emerald-600' : 'text-stone-500'}`}>
-                  {(entity as Member).status}
+                <p className={`text-sm font-medium mt-1 capitalize ${(entity as TeamMember).status === 'active' ? 'text-emerald-600' : 'text-stone-500'}`}>
+                  {(entity as TeamMember).status}
                 </p>
               </div>
               <div className="bg-stone-50 dark:bg-stone-800 p-3 rounded-xl">
                 <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Arrangement</p>
                 <p className="text-sm font-medium text-stone-900 dark:text-stone-100 mt-1 capitalize">
-                  {(entity as Member).arrangement_type || 'None'}
+                  {(entity as TeamMember).arrangement_type || 'None'}
                 </p>
               </div>
             </>
@@ -169,13 +169,13 @@ export default function ParticipantSnapshot({ entity, type, onClose, onUpdateTag
         </div>
 
         {/* Contact Info */}
-        {type === 'member' && (entity as Member).member_id && (
+        {type === 'teamMember' && (entity as TeamMember).teamMember_id && (
           <div className="mt-6 pt-6 border-t border-stone-100 dark:border-stone-800 text-left">
-            <h3 className="text-xs font-medium text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-3">Team Member Details</h3>
+            <h3 className="text-xs font-medium text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-3">Team TeamMember Details</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-stone-500 dark:text-stone-400">Handle / ID</span>
-                <span className="text-stone-900 dark:text-stone-100 font-mono">{(entity as Member).member_id}</span>
+                <span className="text-stone-900 dark:text-stone-100 font-mono">{(entity as TeamMember).teamMember_id}</span>
               </div>
             </div>
           </div>

@@ -19,7 +19,7 @@ type AccessRequestRow = {
 
 type ProvisionPayload = {
   access_request_id: string;
-  member_id?: string;
+  team_member_name?: string;
   password?: string;
   approved_role?: DbRole;
   access_token?: string;
@@ -190,16 +190,14 @@ Deno.serve(async (request: Request) => {
     status: 'active',
   });
 
-  // 3. Member Record
-  if (payload.member_id) {
-    await adminClient.from('members').upsert({
+  // 3. Team member record
+  if (payload.team_member_name) {
+    await adminClient.from('team_members').upsert({
       org_id: targetOrgId,
       user_id: provisionedUserId,
-      member_id: payload.member_id,
-      name: resolvedLoginId.split('@')[0],
-      role: resolvedRole,
-      status: 'active',
-    });
+      name: payload.team_member_name.trim() || resolvedLoginId.split('@')[0],
+      staff_role: resolvedRole,
+    }, { onConflict: 'org_id,user_id' });
   }
 
   // 4. Resolve Request

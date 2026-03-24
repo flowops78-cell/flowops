@@ -1,18 +1,18 @@
-import { Workspace, Entry } from '../types';
+import { Activity, ActivityRecord as ActivityRecord } from '../types';
 
-export const VALID_WORKSPACE_STATUSES: Workspace['status'][] = ['active', 'completed', 'archived'];
+export const VALID_ACTIVITY_STATUSES: Activity['status'][] = ['active', 'completed', 'archived'];
 
-export const normalizeWorkspaceStatus = (status?: string | null): Workspace['status'] => {
+export const normalizeActivityStatus = (status?: string | null): Activity['status'] => {
   const normalized = (status ?? '').toLowerCase();
   if (normalized === 'archived') return 'archived';
   if (normalized === 'completed' || normalized === 'closed' || normalized === 'aligned') return 'completed';
   return 'active';
 };
 
-export const isAllowedWorkspaceStatusTransition = (fromStatus: Workspace['status'], toStatus: Workspace['status']) => {
+export const isAllowedActivityStatusTransition = (fromStatus: Activity['status'], toStatus: Activity['status']) => {
   if (fromStatus === toStatus) return true;
 
-  const allowed: Partial<Record<Workspace['status'], Workspace['status'][]>> = {
+  const allowed: Partial<Record<Activity['status'], Activity['status'][]>> = {
     active: ['completed'],
     completed: ['archived'],
     archived: ['active'],
@@ -21,14 +21,15 @@ export const isAllowedWorkspaceStatusTransition = (fromStatus: Workspace['status
   return allowed[fromStatus]?.includes(toStatus) ?? false;
 };
 
-export const computeEntriesDiscrepancy = (entries: Entry[]) => {
-  const totalInput = entries.reduce((sum, entry) => sum + entry.input_amount, 0);
-  const totalOutput = entries.reduce((sum, entry) => sum + entry.output_amount, 0);
+export const computeActivityRecordsDiscrepancy = (records: ActivityRecord[]) => {
+  const totalInput = records.reduce((sum, record) => sum + (record.unit_amount ?? record.unit_amount ?? 0), 0);
+  const totalOutput = records.reduce((sum, record) => sum + (record.unit_amount ?? record.unit_amount ?? 0), 0);
   return totalOutput - totalInput;
 };
 
-export const isTotaldEntries = (entries: Entry[], tolerance = 0.01) => {
-  return Math.abs(computeEntriesDiscrepancy(entries)) < tolerance;
+export const isTotaledActivityRecords = (records: ActivityRecord[], tolerance = 0.01) => {
+  return Math.abs(computeActivityRecordsDiscrepancy(records)) < tolerance;
 };
 
-export const canAddEntitiesForStatus = (status: Workspace['status']) => status === 'active';
+export const canAddEntitiesForStatus = (status: Activity['status']) => status === 'active';
+

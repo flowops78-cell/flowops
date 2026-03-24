@@ -5,7 +5,7 @@ import { useLabels } from '../lib/labels';
 
 const Brief = lazy(() => import('./Channels'));
 
-export default function BriefFlowOverview() {
+export default function ActivityOverview() {
   const { tx } = useLabels();
 
   return (

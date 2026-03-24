@@ -25,7 +25,7 @@ export default function WaitingAssignment() {
             <div className="text-sm">
               <p className="font-medium text-stone-900 dark:text-stone-100">Next Steps</p>
               <p className="mt-1 text-stone-500 dark:text-stone-400">
-                Please contact your Cluster Administrator to be assigned to a working workspace. Once assigned, you will be able to access the dashboard.
+                Please contact your Cluster Administrator to be assigned to a working activity. Once assigned, you will be able to access the dashboard.
               </p>
             </div>
           </div>

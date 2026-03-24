@@ -7,7 +7,7 @@ const routePreloaders: Record<string, () => Promise<unknown>> = {
     import('../pages/Activities'),
   ]),
   '/channels': () => Promise.all([
-    import('../pages/BriefFlowOverview'),
+    import('../pages/ActivityOverview'),
     import('../pages/Channels'),
   ]),
   '/channels-fallback': () => Promise.all([
@@ -17,7 +17,7 @@ const routePreloaders: Record<string, () => Promise<unknown>> = {
     import('../pages/CollaborationNetwork'),
   ]),
   '/team': () => Promise.all([
-    import('../pages/Team'),
+    import('../pages/TeamMembers'),
   ]),
   '/settings': () => Promise.all([
     import('../pages/Settings'),
