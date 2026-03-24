@@ -109,7 +109,23 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const operatorLogs: any[] = [];
   const recordSystemEvent = async (_data: any) => {};
   const updateProfileOrgId = async (_id: string) => {};
-  const bootstrapClusterAdmin = async (_data: any) => {};
+  const bootstrapClusterAdmin = async () => {
+    if (!supabase || !activeOrgId) {
+      notify({ type: 'error', message: 'Not ready: missing org context.' });
+      return;
+    }
+    if (!window.confirm('Bootstrap a new cluster and make yourself cluster admin? This is a one-time operation.')) return;
+    const accessToken = await getSupabaseAccessToken();
+    if (!accessToken) { notify({ type: 'error', message: 'Unable to get access token.' }); return; }
+    const { data, error } = await supabase.functions.invoke('manage-organizations', {
+      headers: { Authorization: `Bearer ${accessToken}`, apikey: SUPABASE_ANON_KEY },
+      body: { action: 'bootstrap-cluster-admin', org_id: activeOrgId },
+    });
+    if (error) { notify({ type: 'error', message: `Bootstrap failed: ${String(error)}` }); return; }
+    notify({ type: 'success', message: (data as any)?.message ?? 'Cluster bootstrapped. Reload to reflect changes.' });
+    await refreshData();
+    await fetchClusterAdmins();
+  };
   const managedOrgIds: string[] = [];
   const clusterId: string | null = null;
   const { role, clusterRole, isClusterAdmin, canAccessAdminUi } = useAppRole();
