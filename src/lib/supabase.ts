@@ -123,15 +123,20 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
     const activeOrgId = profile?.active_org_id ?? typedOrgTeamMemberships.find(m => m.is_default_org)?.org_id ?? typedOrgTeamMemberships[0]?.org_id ?? null;
     let clusterId = profile?.active_cluster_id || typedClusterTeamMemberships[0]?.cluster_id || null;
 
-    // If cluster admin, fetch ALL organizations in this cluster regardless of direct membership
+    // If cluster admin, fetch ALL organizations in ALL clusters they admin (not just the active one)
     let allClusterOrgIds: string[] = [];
-    if (isClusterAdmin && clusterId) {
-      const { data: clusterOrgs } = await supabase
-        .from('organizations')
-        .select('id, name, tag, slug')
-        .eq('cluster_id', clusterId);
-      if (clusterOrgs) {
-        allClusterOrgIds = clusterOrgs.map(o => o.id);
+    if (isClusterAdmin) {
+      const adminClusterIds = typedClusterTeamMemberships
+        .filter(m => m.role === 'cluster_admin')
+        .map(m => m.cluster_id);
+      if (adminClusterIds.length > 0) {
+        const { data: clusterOrgs } = await supabase
+          .from('organizations')
+          .select('id, name, tag, slug')
+          .in('cluster_id', adminClusterIds);
+        if (clusterOrgs) {
+          allClusterOrgIds = clusterOrgs.map(o => o.id);
+        }
       }
     }
 
