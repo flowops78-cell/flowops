@@ -825,31 +825,34 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                           )}
                         </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <select
-                          className="text-[10px] bg-stone-50 dark:bg-stone-900 border-stone-200 rounded px-1 py-0.5 disabled:opacity-50"
-                          value={pendingClusterRoles[admin.user_id] || admin.role}
-                          onChange={(e) => setPendingClusterRoles(prev => ({ ...prev, [admin.user_id]: e.target.value as any }))}
-                          disabled={isSelf}
-                          title={isSelf ? "You cannot downgrade your own primary administrative access." : undefined}
-                        >
-                          <option value="cluster_admin">Admin</option>
-                          <option value="cluster_operator">Operator</option>
-                          <option value="viewer">Viewer</option>
-                        </select>
-                        <button 
-                          onClick={() => void updateClusterAccountRole(admin)}
-                          disabled={busyClusterUserId === admin.user_id || (isSelf && isPendingDemotion)}
-                          className="text-[10px] text-emerald-600 font-bold uppercase hover:bg-emerald-50 dark:hover:bg-emerald-900/20 px-1.5 py-0.5 rounded disabled:opacity-30"
-                        >
-                          {busyClusterUserId === admin.user_id ? '...' : 'Save'}
-                        </button>
-                        {!isSelf && (
+                      <div className="flex items-center gap-3">
+                        {isSelf ? (
+                          <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-stone-100 dark:bg-stone-900 border border-stone-200 dark:border-stone-800" title="You cannot downgrade your own primary administrative access.">
+                            <ShieldCheck size={12} className="text-emerald-500" />
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500 dark:text-stone-400">Primary Authority</span>
+                          </div>
+                        ) : (
                           <>
+                            <select
+                              className="text-[10px] bg-stone-50 dark:bg-stone-900 border-stone-200 dark:border-stone-700 rounded px-1.5 py-1 outline-none focus:ring-1 focus:ring-emerald-500 transition-all font-medium"
+                              value={pendingClusterRoles[admin.user_id] || admin.role}
+                              onChange={(e) => setPendingClusterRoles(prev => ({ ...prev, [admin.user_id]: e.target.value as any }))}
+                            >
+                              <option value="cluster_admin">Admin</option>
+                              <option value="cluster_operator">Operator</option>
+                              <option value="viewer">Viewer</option>
+                            </select>
+                            <button 
+                              onClick={() => void updateClusterAccountRole(admin)}
+                              disabled={busyClusterUserId === admin.user_id}
+                              className="text-[10px] text-emerald-600 font-bold uppercase hover:bg-emerald-50 dark:hover:bg-emerald-900/20 px-2 py-1 rounded disabled:opacity-30 transition-colors"
+                            >
+                              {busyClusterUserId === admin.user_id ? '...' : 'Save'}
+                            </button>
                             <button 
                               onClick={() => void resetUserPassword(admin.user_id)}
                               disabled={busyClusterUserId === admin.user_id}
-                              className="text-[10px] text-stone-400 hover:text-emerald-600 px-1.5 py-0.5 rounded disabled:opacity-30"
+                              className="text-[10px] text-stone-400 hover:text-emerald-600 px-1.5 py-0.5 rounded disabled:opacity-30 transition-colors"
                               title="Send Password Reset Email"
                             >
                               Reset
@@ -858,7 +861,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                               onClick={() => void deleteClusterAccount(admin)}
                               disabled={busyClusterUserId === admin.user_id || isLastAdmin}
                               title={isLastAdmin ? "Cannot remove the last remaining cluster admin." : undefined}
-                              className="text-[10px] text-stone-400 hover:text-red-600 px-1.5 py-0.5 rounded disabled:opacity-30"
+                              className="text-[10px] text-stone-400 hover:text-red-600 px-1.5 py-0.5 rounded disabled:opacity-30 transition-colors"
                             >
                               Remove
                             </button>
