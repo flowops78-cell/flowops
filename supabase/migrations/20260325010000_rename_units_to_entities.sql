@@ -12,8 +12,8 @@ alter table if exists unit_account_entries rename to entity_account_entries;
 alter table if exists entries rename column unit_id to entity_id;
 alter table if exists adjustment_requests rename column unit_id to entity_id;
 alter table if exists output_requests rename column unit_id to entity_id;
-alter table if exists activity_logs rename column unit_id to entity_id;
-alter table if exists operator_activities rename column unit_id to entity_id;
+alter table if exists allocations rename column unit_id to entity_id;
+alter table if exists adjustments rename column unit_id to entity_id;
 alter table if exists entity_account_entries rename column unit_id to entity_id;
 
 -- 4. Rename Functions
