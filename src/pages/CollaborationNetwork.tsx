@@ -1,11 +1,13 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Plus, Trash2, Calendar, Filter, Archive, RotateCcw, Activity, Handshake, Search, UserPlus, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
-import { useData } from '../lib/DataContext';
+import { useData } from '../context/DataContext';
+import { useAppRole } from '../context/AppRoleContext';
+import { useNotification } from '../context/NotificationContext';
+import { Entity, Associate, AssociateAllocation, Entry, Workspace } from '../types';
 import { formatValue, formatDate, parseNonNegativeNumber } from '../lib/utils';
 import { cn } from '../lib/utils';
-import { notify } from '../components/InAppNotification';
-import { CollapsibleWorkspaceSection } from '../components/CollapsibleWorkspaceSection';
-import { MobileRecordCard } from '../components/MobileRecordCard';
+import CollapsibleWorkspaceSection from '../components/CollapsibleWorkspaceSection';
+import MobileRecordCard from '../components/MobileRecordCard';
 
 const getCollaborationRoleLabel = (role: string) => {
   switch (role) {
@@ -18,7 +20,9 @@ const getCollaborationRoleLabel = (role: string) => {
 
 const getCollaborationDisplayName = (name?: string) => name || 'Unnamed Collaboration';
 
-export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedded = false }) => {
+export default function CollaborationNetwork({ embedded = false }: { embedded?: boolean }) {
+  const { notify } = useNotification();
+  const { role: appRole, canManageValue } = useAppRole();
   const { 
     associates, 
     units: participants, 
@@ -30,8 +34,7 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
     updateAssociate,
     addAssociateAllocation: addAssociateParticipation,
     deleteAssociateAllocation: deleteAssociateParticipation,
-    recordSystemEvent,
-    userRole 
+    recordSystemEvent
   } = useData();
 
   const [selectedCollaborationId, setSelectedCollaborationId] = useState<string | null>(null);
@@ -70,8 +73,6 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
 
   const [alignmentStartDate, setAlignmentStartDate] = useState('');
   const [alignmentEndDate, setAlignmentEndDate] = useState('');
-
-  const canManageValue = userRole === 'admin' || userRole === 'operator';
 
   const handleAddCollaboration = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -129,13 +130,13 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to remove collaboration.' });
     } finally {
-      setDeletingCollaborationId(current => (current === associateId ? null : current));
+      setDeletingCollaborationId((current: string | null) => (current === associateId ? null : current));
     }
   };
 
   const handleArchiveCollaboration = async (associateId: string) => {
     if (!canManageValue) return;
-    const associate = associates.find(item => item.id === associateId);
+    const associate = associates.find((item: Associate) => item.id === associateId);
     if (!associate || associate.status === 'inactive') return;
 
     try {
@@ -157,7 +158,7 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
 
   const handleUnarchiveCollaboration = async (associateId: string) => {
     if (!canManageValue) return;
-    const associate = associates.find(item => item.id === associateId);
+    const associate = associates.find((item: Associate) => item.id === associateId);
     if (!associate || associate.status !== 'inactive') return;
 
     try {
@@ -186,12 +187,12 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to remove participation.' });
     } finally {
-      setDeletingParticipationId(current => (current === participationId ? null : current));
+      setDeletingParticipationId((current: string | null) => (current === participationId ? null : current));
     }
   };
 
   const handleArchiveParticipation = (participationId: string) => {
-    setArchivedAssociateParticipationIds(current => (current.includes(participationId) ? current : [...current, participationId]));
+    setArchivedAssociateParticipationIds((current: string[]) => (current.includes(participationId) ? current : [...current, participationId]));
     void (recordSystemEvent as any)({ 
       action: 'associate_participation_archived',
       entity: 'associate_participation',
@@ -202,7 +203,7 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
   };
 
   const handleUnarchiveParticipation = (participationId: string) => {
-    setArchivedAssociateParticipationIds(current => current.filter(item => item !== participationId));
+    setArchivedAssociateParticipationIds((current: string[]) => current.filter((item: string) => item !== participationId));
     void (recordSystemEvent as any)({ 
       action: 'associate_participation_unarchived',
       entity: 'associate_participation',
@@ -212,25 +213,25 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
     notify({ type: 'success', message: 'Participation restored.' });
   };
 
-  const selectedCollaboration = associates.find(a => a.id === selectedCollaborationId);
+  const selectedCollaboration = associates.find((a: Associate) => a.id === selectedCollaborationId);
   
   const selectedCollaborationParticipants = useMemo(
     () => participants
-      .filter(participant => participant.attributed_associate_id === selectedCollaborationId)
+      .filter((participant: Entity) => participant.attributed_associate_id === selectedCollaborationId)
       .sort((a, b) => (b.total || 0) - (a.total || 0)),
     [participants, selectedCollaborationId]
   );
 
-  const selectedParticipations = associateParticipations.filter(t => t.attributed_associate_id === selectedCollaborationId);
+  const selectedParticipations = associateParticipations.filter((p: AssociateAllocation) => p.attributed_associate_id === selectedCollaborationId);
   const archivedAssociateParticipationIdSet = useMemo(() => new Set(archivedAssociateParticipationIds), [archivedAssociateParticipationIds]);
   
   const activeSelectedParticipations = useMemo(
-    () => selectedParticipations.filter(participation => !archivedAssociateParticipationIdSet.has(participation.id)),
+    () => selectedParticipations.filter((participation: AssociateAllocation) => !archivedAssociateParticipationIdSet.has(participation.id)),
     [selectedParticipations, archivedAssociateParticipationIdSet]
   );
   
   const archivedSelectedParticipations = useMemo(
-    () => selectedParticipations.filter(participation => archivedAssociateParticipationIdSet.has(participation.id)),
+    () => selectedParticipations.filter((participation: AssociateAllocation) => archivedAssociateParticipationIdSet.has(participation.id)),
     [selectedParticipations, archivedAssociateParticipationIdSet]
   );
 
@@ -239,7 +240,7 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
 
     if (participationSearchQuery) {
       const q = participationSearchQuery.toLowerCase();
-      filtered = filtered.filter(a => 
+      filtered = filtered.filter((a: AssociateAllocation) => 
         a.id.toLowerCase().includes(q) || 
         a.amount.toString().includes(q) ||
         a.type.toLowerCase().includes(q) ||
@@ -248,10 +249,10 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
     }
     
     if (participationTypeFilter !== 'all') {
-      filtered = filtered.filter(a => a.type === participationTypeFilter);
+      filtered = filtered.filter((a: AssociateAllocation) => a.type === participationTypeFilter);
     }
-    if (entryDateStart) filtered = filtered.filter(a => a.date >= entryDateStart);
-    if (entryDateEnd) filtered = filtered.filter(a => a.date <= entryDateEnd);
+    if (entryDateStart) filtered = filtered.filter((a: AssociateAllocation) => a.date >= entryDateStart);
+    if (entryDateEnd) filtered = filtered.filter((a: AssociateAllocation) => a.date <= entryDateEnd);
 
     return filtered;
   }, [activeSelectedParticipations, participationTypeFilter, entryDateStart, entryDateEnd, participationSearchQuery]);
@@ -261,7 +262,7 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
 
     if (participationSearchQuery) {
       const q = participationSearchQuery.toLowerCase();
-      filtered = filtered.filter(a => 
+      filtered = filtered.filter((a: AssociateAllocation) => 
         a.id.toLowerCase().includes(q) || 
         a.amount.toString().includes(q) ||
         a.type.toLowerCase().includes(q) ||
@@ -270,10 +271,10 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
     }
     
     if (participationTypeFilter !== 'all') {
-      filtered = filtered.filter(a => a.type === participationTypeFilter);
+      filtered = filtered.filter((a: AssociateAllocation) => a.type === participationTypeFilter);
     }
-    if (entryDateStart) filtered = filtered.filter(a => a.date >= entryDateStart);
-    if (entryDateEnd) filtered = filtered.filter(a => a.date <= entryDateEnd);
+    if (entryDateStart) filtered = filtered.filter((a: AssociateAllocation) => a.date >= entryDateStart);
+    if (entryDateEnd) filtered = filtered.filter((a: AssociateAllocation) => a.date <= entryDateEnd);
 
     return filtered;
   }, [archivedSelectedParticipations, participationTypeFilter, entryDateStart, entryDateEnd, participationSearchQuery]);
@@ -289,15 +290,15 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
     threshold.setDate(threshold.getDate() - retentionDaysNumber);
     const thresholdTime = threshold.getTime();
     return associateParticipations
-      .filter(participation => !archivedAssociateParticipationIdSet.has(participation.id))
-      .filter(participation => {
+      .filter((participation: AssociateAllocation) => !archivedAssociateParticipationIdSet.has(participation.id))
+      .filter((participation: AssociateAllocation) => {
         const date = new Date(participation.date);
         return Number.isFinite(date.getTime()) && date.getTime() < thresholdTime;
       })
-      .map(participation => participation.id);
+      .map((participation: AssociateAllocation) => participation.id);
   }, [associateParticipations, archivedAssociateParticipationIdSet, retentionDaysNumber]);
-  const activeCollaborations = useMemo(() => associates.filter(associate => associate.status !== 'inactive'), [associates]);
-  const archivedCollaborations = useMemo(() => associates.filter(associate => associate.status === 'inactive'), [associates]);
+  const activeCollaborations = useMemo(() => associates.filter((associate: Associate) => associate.status !== 'inactive'), [associates]);
+  const archivedCollaborations = useMemo(() => associates.filter((associate: Associate) => associate.status === 'inactive'), [associates]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -316,9 +317,9 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
 
   useEffect(() => {
     if (!autoArchiveEnabled || oldAssociateParticipationIds.length === 0) return;
-    setArchivedAssociateParticipationIds(current => {
+    setArchivedAssociateParticipationIds((current: string[]) => {
       const next = new Set(current);
-      oldAssociateParticipationIds.forEach(id => next.add(id));
+      oldAssociateParticipationIds.forEach((id: string) => next.add(id));
       if (next.size === current.length) return current;
       void (recordSystemEvent as any)({ 
         action: 'associate_participations_auto_archived',
@@ -344,14 +345,14 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
 
     const attributedParticipantIds = new Set(
       participants
-        .filter(participant => participant.attributed_associate_id === selectedCollaboration.id)
-        .map(participant => participant.id)
+        .filter((participant: Entity) => participant.attributed_associate_id === selectedCollaboration.id)
+        .map((participant: Entity) => participant.id)
     );
 
     const relatedWorkspaceDateSet = new Set<string>();
-    entries.forEach(entry => {
+    entries.forEach((entry: Entry) => {
       if (!attributedParticipantIds.has(entry.unit_id)) return;
-      const workspace = workspaces.find(item => item.id === entry.workspace_id);
+      const workspace = workspaces.find((item: Workspace) => item.id === entry.workspace_id);
       if (workspace?.date) relatedWorkspaceDateSet.add(workspace.date);
     });
 
@@ -403,14 +404,14 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
 
     const attributedParticipantIds = new Set(
       participants
-        .filter(participant => participant.attributed_associate_id === selectedCollaboration.id)
-        .map(participant => participant.id)
+        .filter((participant: Entity) => participant.attributed_associate_id === selectedCollaboration.id)
+        .map((participant: Entity) => participant.id)
     );
 
-    const workspaceLookup = new Map(workspaces.map(w => [w.id, w]));
+    const workspaceLookup = new Map(workspaces.map((w: Workspace) => [w.id, w]));
     const alignmentAccumulator = new Map<string, { workspaceId: string; date: string; channel: string; activityUnits: number; systemContribution: number }>();
 
-    entries.forEach(entry => {
+    entries.forEach((entry: Entry) => {
       if (!attributedParticipantIds.has(entry.unit_id)) return;
       const workspace = workspaceLookup.get(entry.workspace_id);
       if (!workspace || !isInDateRange(workspace.date)) return;
@@ -427,7 +428,7 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
     });
 
     const perWorkspaceAlignments = Array.from(alignmentAccumulator.values())
-      .map(item => {
+      .map((item: { workspaceId: string; date: string; channel: string; activityUnits: number; systemContribution: number }) => {
         const associateAdjustment = (selectedCollaboration.role === 'associate' || selectedCollaboration.role === 'hybrid')
           ? item.activityUnits * (selectedCollaboration.allocation_factor || 0)
           : 0;
@@ -465,20 +466,20 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
   const allCollaborationMetrics = useMemo(() => {
     const metricsMap = new Map<string, { participants: number; activity: number; contribution: number }>();
     
-    associates.forEach(associate => {
+    associates.forEach((associate: Associate) => {
       const participantIds = new Set(
         participants
-          .filter(p => p.attributed_associate_id === associate.id)
-          .map(p => p.id)
+          .filter((p: Entity) => p.attributed_associate_id === associate.id)
+          .map((p: Entity) => p.id)
       );
       
       let activityUnits = 0;
       let contributionSum = 0;
       
-      entries.forEach(entry => {
+      entries.forEach((entry: Entry) => {
         if (!participantIds.has(entry.unit_id)) return;
         activityUnits += entry.activity_units || 0;
-        const workspace = workspaces.find(w => w.id === entry.workspace_id);
+        const workspace = workspaces.find((w: Workspace) => w.id === entry.workspace_id);
         if (workspace?.operational_contribution) {
           contributionSum += workspace.operational_contribution;
         }
@@ -546,15 +547,15 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
     }
 
     const targetedIds = activeSelectedParticipations
-      .filter(p => p.date >= entryDateStart && p.date <= entryDateEnd)
-      .map(p => p.id);
+      .filter((p: AssociateAllocation) => p.date >= entryDateStart && p.date <= entryDateEnd)
+      .map((p: AssociateAllocation) => p.id);
 
     if (targetedIds.length === 0) {
       notify({ type: 'error', message: 'No active participations matching this criteria.' });
       return;
     }
 
-    setArchivedAssociateParticipationIds(current => Array.from(new Set([...current, ...targetedIds])));
+    setArchivedAssociateParticipationIds((current: string[]) => Array.from(new Set([...current, ...targetedIds])));
     void (recordSystemEvent as any)({ 
       action: 'associate_participations_archived_range',
       entity: 'associate_participation',
@@ -571,7 +572,7 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
       notify({ type: 'error', message: `No participations found older than ${retentionDaysNumber} days.` });
       return;
     }
-    setArchivedAssociateParticipationIds(current => Array.from(new Set([...current, ...legacyIds])));
+    setArchivedAssociateParticipationIds((current: string[]) => Array.from(new Set([...current, ...legacyIds])));
     void (recordSystemEvent as any)({ 
       action: 'associate_participations_archived_legacy',
       entity: 'associate_participation',
@@ -583,13 +584,13 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
 
   const handleRestoreAllArchivedParticipations = () => {
     if (!canManageValue || !selectedCollaborationId) return;
-    const targets = archivedSelectedParticipations.map(p => p.id);
+    const targets = archivedSelectedParticipations.map((p: AssociateAllocation) => p.id);
     if (targets.length === 0) {
       notify({ type: 'error', message: 'No hidden participations available to restore for this collaboration.' });
       return;
     }
 
-    setArchivedAssociateParticipationIds(current => current.filter(id => !targets.includes(id)));
+    setArchivedAssociateParticipationIds((current: string[]) => current.filter((id: string) => !targets.includes(id)));
     void (recordSystemEvent as any)({ 
       action: 'associate_participations_restored_bulk',
       entity: 'associate_participation',
@@ -729,7 +730,7 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
             <h3 className="text-sm font-medium text-stone-900 dark:text-stone-100">Directory</h3>
             <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">Search collaborations from the list below.</p>
           </div>
-          {activeCollaborations.map(associate => (
+          {activeCollaborations.map((associate: Associate) => (
             <div 
               key={associate.id}
               onClick={() => setSelectedCollaborationId(associate.id)}
@@ -749,7 +750,7 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
                     </span>
                   </div>
                   <div className="text-xs text-stone-400 mt-1">
-                    {participants.filter(p => p.attributed_associate_id === associate.id).length} Linked Participants
+                    {participants.filter((p: Entity) => p.attributed_associate_id === associate.id).length} Linked Participants
                   </div>
                 </div>
                 <div className="text-right">
@@ -811,7 +812,7 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
 
               {isArchivedCollaborationListExpanded && (
                 <div className="mt-3 space-y-3 animate-in fade-in slide-in-from-top-2">
-                  {archivedCollaborations.map(associate => (
+                  {archivedCollaborations.map((associate: Associate) => (
                     <div
                       key={associate.id}
                       className="rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 p-3"
@@ -964,7 +965,7 @@ export const CollaborationNetwork: React.FC<{ embedded?: boolean }> = ({ embedde
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                        {selectedCollaborationMetrics.perWorkspaceAlignments.map(item => (
+                        {selectedCollaborationMetrics.perWorkspaceAlignments.map((item: { workspaceId: string; date: string; channel: string; activityUnits: number; systemContribution: number; associateAdjustment: number; overheadAdjustment: number; totalAdjustment: number; }) => (
                           <tr key={item.workspaceId}>
                             <td className="px-3 py-2 text-stone-600 dark:text-stone-300">{formatDate(item.date)}</td>
                             <td className="px-3 py-2 text-stone-600 dark:text-stone-300">{item.channel}</td>
