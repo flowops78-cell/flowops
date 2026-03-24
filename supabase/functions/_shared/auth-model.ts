@@ -188,7 +188,18 @@ export const getCallerAuthorityContext = async (
   if (legacyRole || legacyProfile?.org_id || legacyProfile?.meta_org_id || isPlatformAdmin) {
     let managedOrgIds = legacyProfile?.org_id ? [legacyProfile.org_id] : [];
 
-    if (legacyProfile?.meta_org_id) {
+    if (legacyIsGlobalAdmin) {
+      const { data: allOrgRows, error: allOrgError } = await adminClient
+        .from('orgs')
+        .select('id');
+      
+      if (!allOrgError && allOrgRows) {
+        managedOrgIds = dedupeStrings([
+          ...managedOrgIds,
+          ...allOrgRows.map(row => row.id),
+        ]);
+      }
+    } else if (legacyProfile?.meta_org_id) {
       const { data: mappingRows, error: mappingError } = await adminClient
         .from('org_meta_mapping')
         .select('org_id')

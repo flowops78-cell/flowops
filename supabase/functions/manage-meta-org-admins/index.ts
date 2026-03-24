@@ -346,7 +346,9 @@ Deno.serve(async (request: Request) => {
   let clusterContext;
   try {
     clusterContext = await loadClusterContext(adminClient, callerUserId, normalizeOrgId(payload.org_id) ?? undefined);
+    console.log(`[manage-meta-org-admins] Context loaded for ${callerUserId}: isAdmin=${!!clusterContext.metaOrgId || clusterContext.isPlatformAdmin}, managedOrgs=${clusterContext.managedOrgIds.length}`);
   } catch (error) {
+    console.error(`[manage-meta-org-admins] Failed to load cluster context for ${callerUserId}:`, error);
     return json(403, { error: error instanceof Error ? error.message : 'Unable to resolve admin scope.' }, origin);
   }
 
@@ -522,11 +524,15 @@ Deno.serve(async (request: Request) => {
     }
 
     const users = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
-    const targetUser = users.data.users.find((item: AuthUserSummary) => item.id === targetUserId);
-    if (targetUser) {
-      await adminClient.auth.admin.updateUserById(targetUserId, {
-        user_metadata: { ...(targetUser.user_metadata ?? {}), app_role: targetRole },
-      });
+    if (users.error) {
+      console.error(`[manage-meta-org-admins] Failed to list users during role update:`, users.error);
+    } else if (users.data?.users) {
+      const targetUser = users.data.users.find((item: AuthUserSummary) => item.id === targetUserId);
+      if (targetUser) {
+        await adminClient.auth.admin.updateUserById(targetUserId, {
+          user_metadata: { ...(targetUser.user_metadata ?? {}), app_role: targetRole },
+        });
+      }
     }
 
     clusterContext = await loadClusterContext(adminClient, callerUserId, payload.org_id);
@@ -578,7 +584,8 @@ Deno.serve(async (request: Request) => {
   }
 
   const managedOrgIds = clusterContext.managedOrgIds;
-  if (managedOrgIds.length === 0) {
+  console.log(`[manage-meta-org-admins] Listing accounts for scope: ${managedOrgIds.length} orgs`);
+  if (managedOrgIds.length === 0 && !clusterContext.isPlatformAdmin && clusterContext.metaOrgId !== null) {
     return json(200, {
       ok: true,
       meta_org_id: clusterContext.metaOrgId,
@@ -587,10 +594,13 @@ Deno.serve(async (request: Request) => {
     }, origin);
   }
 
-  const { data: profileRows, error: profileRowsError } = await adminClient
+  const profileQuery = adminClient
     .from('profiles')
-    .select('id, org_id, meta_org_id, created_at')
-    .in('org_id', managedOrgIds);
+    .select('id, org_id, meta_org_id, created_at');
+
+  const { data: profileRows, error: profileRowsError } = (clusterContext.isPlatformAdmin || clusterContext.metaOrgId === null)
+    ? await profileQuery
+    : await profileQuery.in('org_id', managedOrgIds);
 
   if (profileRowsError) {
     return json(400, { error: `Unable to load managed profiles: ${profileRowsError.message}` }, origin);
@@ -627,6 +637,13 @@ Deno.serve(async (request: Request) => {
   }
 
   const authUsers = await adminClient.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  if (authUsers.error) {
+    return json(400, { error: `Unable to list auth users: ${authUsers.error.message}` }, origin);
+  }
+  if (!authUsers.data?.users) {
+    return json(400, { error: 'Auth user directory is currently unreachable. Please retry.' }, origin);
+  }
+
   const emailByUserId = new Map<string, string | null>(
     authUsers.data.users.map((item: AuthUserSummary) => [item.id, typeof item.email === 'string' ? item.email : null]),
   );

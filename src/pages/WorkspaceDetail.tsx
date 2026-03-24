@@ -8,7 +8,7 @@ import { cn } from '../lib/utils';
 import Papa from 'papaparse';
 import TelemetrySidebar from '../components/TelemetrySidebar';
 import ContextPanel from '../components/ContextPanel';
-import EntitySnapshot from '../components/EntitySnapshot';
+import ParticipantSnapshot from '../components/ParticipantSnapshot';
 import CollapsibleWorkspaceSection from '../components/CollapsibleWorkspaceSection';
 import DataActionMenu from '../components/DataActionMenu';
 import { useAppRole } from '../context/AppRoleContext';
@@ -1088,7 +1088,7 @@ export default function WorkspaceDetail() {
 
         <ContextPanel isOpen={!!viewingUnitId} onClose={() => setViewingUnitId(null)}>
           {viewingEntity && (
-            <EntitySnapshot 
+            <ParticipantSnapshot 
               entity={viewingEntity} 
               type="entity"
               onClose={() => setViewingUnitId(null)}

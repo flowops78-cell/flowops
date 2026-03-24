@@ -137,6 +137,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [metaOrgAdminsNotice, setMetaOrgAdminsNotice] = React.useState<string | null>(null);
   const [pendingMetaOrgRoles, setPendingMetaOrgRoles] = React.useState<Record<string, Extract<DbRole, 'admin' | 'operator'>>>({});
   const [busyMetaOrgUserId, setBusyMetaOrgUserId] = React.useState<string | null>(null);
+  const [metaOrgSearch, setMetaOrgSearch] = React.useState('');
 
   const canManageGlobalData = canAccessAdminUi;
   const profileId = user?.id ?? '';
@@ -604,6 +605,14 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     invite.id.toLowerCase().includes(inviteSearch.toLowerCase())
   );
 
+  const filteredMetaOrgAccounts = metaOrgAccounts.filter(account =>
+    (account.login_id ?? '').toLowerCase().includes(metaOrgSearch.toLowerCase()) ||
+    (account.member_name ?? '').toLowerCase().includes(metaOrgSearch.toLowerCase()) ||
+    (account.member_id ?? '').toLowerCase().includes(metaOrgSearch.toLowerCase()) ||
+    (account.org_id ?? '').toLowerCase().includes(metaOrgSearch.toLowerCase()) ||
+    (account.user_id ?? '').toLowerCase().includes(metaOrgSearch.toLowerCase())
+  );
+
   return (
     <div className={cn(embedded ? 'space-y-6' : 'page-shell', 'w-full min-w-0 overflow-x-hidden')}>
       {!embedded && (
@@ -845,6 +854,15 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               defaultExpanded
               maxExpandedHeightClass="max-h-[420px]"
               maxCollapsedHeightClass="max-h-[96px]"
+              extraHeaderContent={
+                <input
+                  type="text"
+                  placeholder="Search accounts..."
+                  value={metaOrgSearch}
+                  onChange={e => setMetaOrgSearch(e.target.value)}
+                  className="control-input py-1 px-2 text-xs min-w-[150px]"
+                />
+              }
             >
               <table className="desktop-grid w-full workspace-auto text-left text-[13px]">
                 <thead className="sticky top-0 z-10 bg-white dark:bg-stone-900 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-800">
@@ -858,7 +876,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                  {metaOrgAccounts.map((account) => {
+                  {filteredMetaOrgAccounts.map((account) => {
                     const currentSelectableRole: Extract<DbRole, 'admin' | 'operator'> = account.role === 'admin' ? 'admin' : 'operator';
                     const pendingRole = pendingMetaOrgRoles[account.user_id] || currentSelectableRole;
                     return (

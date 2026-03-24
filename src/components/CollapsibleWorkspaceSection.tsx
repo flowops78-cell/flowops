@@ -56,7 +56,7 @@ export default function CollapsibleWorkspaceSection({
         ref={contentRef}
         onScroll={onContentScroll}
         className={cn(
-          'overflow-x-auto overflow-y-auto transition-[max-height] duration-200',
+          'overflow-x-auto overflow-y-auto bg-white/90 dark:bg-stone-950/60 transition-[max-height] duration-200',
           isExpanded ? maxExpandedHeightClass : maxCollapsedHeightClass,
           contentClassName,
         )}

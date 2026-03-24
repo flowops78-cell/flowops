@@ -1558,7 +1558,6 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     disabled={!canOperateValue || isSavingEntry}
                   />
                   <div className="flex items-center rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 overflow-hidden focus-within:ring-2 focus-within:ring-stone-500">
-                    <span className="inline-flex h-full items-center justify-center px-3 bg-stone-100 dark:bg-stone-700 text-stone-500 dark:text-stone-300 text-sm font-medium">$</span>
                     <input 
                       type="number" 
                       className="w-full bg-transparent border-0 px-3 py-2.5 text-stone-900 dark:text-stone-100 focus:outline-none" 
@@ -1811,9 +1810,10 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
               defaultExpanded={false}
               maxExpandedHeightClass="max-h-[560px]"
               maxCollapsedHeightClass="max-h-[96px]"
+              contentClassName="bg-white dark:bg-stone-900"
             >
-              <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] workspace-fixed text-left text-[13px]">
-                <thead className="sticky top-0 z-10 bg-stone-50 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-700">
+              <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] workspace-fixed bg-white dark:bg-stone-900 text-left text-[13px]">
+                <thead className="sticky top-0 z-10 bg-stone-50 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-700">
                   <tr>
                     <th className="sticky-col px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Date</th>
                     <th className="px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Type</th>
@@ -1823,7 +1823,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     <th className="sticky-col-right px-6 py-2.5 w-[170px] text-right text-[11px] font-semibold uppercase tracking-wide">Actions</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
+                <tbody className="divide-y divide-stone-100 bg-white dark:divide-stone-800 dark:bg-stone-900">
                   {filteredActiveChannelEntries.map(t => (
                     <tr key={t.id} className={cn(
                       "hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors",
@@ -1913,9 +1913,10 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     defaultExpanded={false}
                     maxExpandedHeightClass="max-h-[420px]"
                     maxCollapsedHeightClass="max-h-[96px]"
+                    contentClassName="bg-white dark:bg-stone-900"
                   >
-                    <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] workspace-fixed text-left text-[13px]">
-                      <thead className="sticky top-0 z-10 bg-stone-50 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-700">
+                    <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] workspace-fixed bg-white dark:bg-stone-900 text-left text-[13px]">
+                      <thead className="sticky top-0 z-10 bg-stone-50 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-700">
                         <tr>
                           <th className="sticky-col px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Date</th>
                           <th className="px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Type</th>
@@ -1925,7 +1926,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                           <th className="sticky-col-right px-6 py-2.5 w-[170px] text-right text-[11px] font-semibold uppercase tracking-wide">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
+                      <tbody className="divide-y divide-stone-100 bg-white dark:divide-stone-800 dark:bg-stone-900">
                         {filteredArchivedChannelEntries.map(t => (
                           <tr key={t.id} className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors">
                             <td className="sticky-col px-6 py-2.5 text-stone-500 dark:text-stone-400">{formatDate(t.date)}</td>
@@ -2137,7 +2138,6 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     <option value="output">Inflow</option>
                   </select>
                   <div className="flex items-center rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 overflow-hidden focus-within:ring-2 focus-within:ring-stone-500">
-                    <span className="inline-flex h-full items-center justify-center px-3 bg-stone-100 dark:bg-stone-700 text-stone-500 dark:text-stone-300 text-sm font-medium">$</span>
                     <input 
                       type="number" 
                       className="w-full bg-transparent border-0 px-3 py-2.5 text-stone-900 dark:text-stone-100 focus:outline-none" 

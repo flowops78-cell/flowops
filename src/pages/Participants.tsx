@@ -10,7 +10,7 @@ import MobileRecordCard from '../components/MobileRecordCard';
 import CollapsibleWorkspaceSection from '../components/CollapsibleWorkspaceSection';
 import { useAppRole } from '../context/AppRoleContext';
 import DataActionMenu from '../components/DataActionMenu';
-import EntitySnapshot from '../components/EntitySnapshot';
+import ParticipantSnapshot from '../components/ParticipantSnapshot';
 import { useLabels } from '../lib/labels';
 
 const getParticipantDisplayName = (name?: string | null) => {
@@ -960,7 +960,7 @@ export default function Participants({ embedded = false }: { embedded?: boolean 
       )}
 
       {quickViewParticipant && (
-        <EntitySnapshot
+        <ParticipantSnapshot
           entity={quickViewParticipant}
           type="entity"
           onClose={() => setQuickViewParticipant(null)}

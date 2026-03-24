@@ -5,7 +5,7 @@ import { formatValue, formatDate } from '../lib/utils';
 import { cn } from '../lib/utils';
 import { useLabels } from '../lib/labels';
 
-interface EntitySnapshotProps {
+interface ParticipantSnapshotProps {
   entity: Entity | Member;
   type: 'entity' | 'member';
   onClose: () => void;
@@ -16,7 +16,7 @@ interface EntitySnapshotProps {
   variant?: 'modal' | 'sidebar';
 }
 
-export default function EntitySnapshot({ entity, type, onClose, onUpdateTags, workspaceNet, currentMemberActivity, variant = 'modal' }: EntitySnapshotProps) {
+export default function ParticipantSnapshot({ entity, type, onClose, onUpdateTags, workspaceNet, currentMemberActivity, variant = 'modal' }: ParticipantSnapshotProps) {
   const [newTag, setNewTag] = useState('');
   const [isAddingTag, setIsAddingTag] = useState(false);
   const { tx } = useLabels();
@@ -62,7 +62,7 @@ export default function EntitySnapshot({ entity, type, onClose, onUpdateTags, wo
       <div className="pt-12 pb-6 px-6 text-center flex-1 overflow-y-auto">
         <h2 className="text-xl font-bold text-stone-900 dark:text-stone-100">{entity.name}</h2>
         <p className="text-sm text-stone-500 dark:text-stone-400 capitalize flex items-center justify-center gap-1 mt-1">
-          {type === 'entity' ? <User size={12} /> : <Activity size={12} />}
+          {type === 'entity' ? <User size={12} className="mr-1" /> : <Activity size={12} className="mr-1" />}
           {type === 'entity' ? 'Participant' : (entity as Member).role}
         </p>
 
@@ -99,6 +99,12 @@ export default function EntitySnapshot({ entity, type, onClose, onUpdateTags, wo
                 <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Status</p>
                 <p className={`text-sm font-medium mt-1 capitalize ${(entity as Member).status === 'active' ? 'text-emerald-600' : 'text-stone-500'}`}>
                   {(entity as Member).status}
+                </p>
+              </div>
+              <div className="bg-stone-50 dark:bg-stone-800 p-3 rounded-xl">
+                <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Arrangement</p>
+                <p className="text-sm font-medium text-stone-900 dark:text-stone-100 mt-1 capitalize">
+                  {(entity as Member).arrangement_type || 'None'}
                 </p>
               </div>
             </>

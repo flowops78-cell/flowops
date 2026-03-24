@@ -4,7 +4,6 @@ import { useData } from '../context/DataContext';
 import { Plus, Clock, User, LayoutGrid, List, Trash2 } from 'lucide-react';
 import { formatValue, formatDate } from '../lib/utils';
 import ContextPanel from '../components/ContextPanel';
-import EntitySnapshot from '../components/EntitySnapshot';
 import MobileRecordCard from '../components/MobileRecordCard';
 import CollapsibleWorkspaceSection from '../components/CollapsibleWorkspaceSection';
 import { cn } from '../lib/utils';
@@ -334,17 +333,6 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
 
   return (
     <div className="page-shell">
-      <ContextPanel isOpen={!!selectedMemberId} onClose={() => setSelectedMemberId(null)}>
-        {selectedMember && (
-          <EntitySnapshot 
-            entity={selectedMember} 
-            type="member" 
-            onClose={() => setSelectedMemberId(null)}
-            onUpdateTags={handleUpdateTags}
-            variant="sidebar"
-          />
-        )}
-      </ContextPanel>
 
       {!embedded && (
         <div className="section-card p-5 lg:p-6 flex flex-col gap-4">
