@@ -261,12 +261,17 @@ Deno.serve(async (request: Request) => {
   const payloadBearerToken = (payload.access_token ?? '').trim() || null;
   const bearerToken = headerBearerToken || payloadBearerToken;
   if (!bearerToken) {
-    return json(401, { error: 'Missing bearer token.' }, origin);
+    return json(401, { error: 'Missing authentication token. Please sign in.' }, origin);
+  }
+
+  // Detect if only anon key is provided
+  if (bearerToken === Deno.env.get('SUPABASE_ANON_KEY')) {
+    return json(401, { error: 'User session required (only anon key provided). Please refresh your session.' }, origin);
   }
 
   const { data: authUserData, error: authUserError } = await adminClient.auth.getUser(bearerToken);
   if (authUserError || !authUserData.user) {
-    return json(401, { error: 'Unable to resolve authenticated user.' }, origin);
+    return json(401, { error: 'Invalid or expired user session. Please sign in again.' }, origin);
   }
 
   const callerUserId = authUserData.user.id;

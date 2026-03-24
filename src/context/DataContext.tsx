@@ -1336,7 +1336,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [user, activeOrgId, loading, authorityResolved]);
 
   useEffect(() => {
-    if (isDemoMode || !supabase || !user || !activeOrgId || operatorLogsUnavailableRef.current) return;
+    if (isDemoMode || !supabase || !user || !activeOrgId || operatorLogsUnavailableRef.current) {
+      if (currentOperatorLogIdRef.current) {
+        currentOperatorLogIdRef.current = null;
+        currentOperatorLogStartedAtRef.current = null;
+      }
+      return;
+    }
     if (typeof window === 'undefined') return;
 
     const currentUserId = user.id;

@@ -313,10 +313,15 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
       if (error) {
         const detailedError = (error as any)?.message ?? String(error);
+        const status = (error as any)?.status;
         setMetaOrgAccounts([]);
         setManagedMetaOrgId(null);
         setMetaManagedOrgIds([]);
-        setMetaOrgAdminsNotice(`Unable to load meta-org admins: ${detailedError}`);
+        if (status === 401) {
+          setMetaOrgAdminsNotice('Session expired or unauthorized. Please sign in again.');
+        } else {
+          setMetaOrgAdminsNotice(`Unable to load meta-org admins: ${detailedError}`);
+        }
         return;
       }
 
