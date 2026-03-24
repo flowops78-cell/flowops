@@ -9,7 +9,7 @@ import { useAppRole } from '../context/AppRoleContext';
 import { useLabels } from '../lib/labels';
 
 const Activities = lazy(() => import('./Activities'));
-const Units = lazy(() => import('./Units'));
+const Entities = lazy(() => import('./Entities'));
 
 export default function ActivityMonitor() {
   const location = useLocation();
@@ -20,13 +20,13 @@ export default function ActivityMonitor() {
     [canAccessAdminUi],
   );
   const [activeTab, setActiveTab] = useState<'workspaces' | 'crm'>(
-    (canAccessAdminUi && location.pathname === '/units')
+    (canAccessAdminUi && location.pathname === '/entities')
       ? 'crm'
       : 'workspaces'
   );
 
   useEffect(() => {
-    const nextTab = (canAccessAdminUi && location.pathname === '/units')
+    const nextTab = (canAccessAdminUi && location.pathname === '/entities')
       ? 'crm'
       : 'workspaces';
     setActiveTab(nextTab);
@@ -47,7 +47,7 @@ export default function ActivityMonitor() {
   }, [allowedTabs]);
 
   const breadcrumbItems = activeTab === 'crm'
-    ? [tx('Activity'), tx('Participants')]
+    ? [tx('Activity'), 'Entities']
     : [tx('Activity'), tx('Overview')];
 
   return (
@@ -76,7 +76,7 @@ export default function ActivityMonitor() {
           {canAccessAdminUi && (
             <button
               onClick={() => setActiveTab('crm')}
-              title={tx('Participant profiles and relationship activity')}
+              title="Entity profiles and relationship activity"
               className={cn(
                   'interactive-3d px-2.5 py-1.5 rounded-lg text-sm font-medium transition-colors inline-flex items-center justify-center gap-1.5 min-h-[36px]',
                 activeTab === 'crm'
@@ -85,7 +85,7 @@ export default function ActivityMonitor() {
               )}
             >
               <UserRound size={16} />
-              {tx('Participants')}
+              Entities
             </button>
           )}
         </div>
@@ -100,7 +100,7 @@ export default function ActivityMonitor() {
           </div>
         }
       >
-        {activeTab === 'workspaces' ? <Activities embedded /> : <Units embedded />}
+        {activeTab === 'workspaces' ? <Activities embedded /> : <Entities embedded />}
       </Suspense>
     </div>
   );

@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { X, Plus, Tag, User, Circle, Clock, Award, Activity } from 'lucide-react';
-import { Unit, Member } from '../types';
+import { Entity, Member } from '../types';
 import { formatValue, formatDate } from '../lib/utils';
 import { cn } from '../lib/utils';
 import { tx } from '../lib/labels';
 
 interface EntitySnapshotProps {
-  entity: Unit | Member;
-  type: 'unit' | 'member';
+  entity: Entity | Member;
+  type: 'entity' | 'member';
   onClose: () => void;
   onUpdateTags: (id: string, tags: string[]) => void;
   // Optional context data
@@ -61,24 +61,24 @@ export default function EntitySnapshot({ entity, type, onClose, onUpdateTags, wo
       <div className="pt-12 pb-6 px-6 text-center flex-1 overflow-y-auto">
         <h2 className="text-xl font-bold text-stone-900 dark:text-stone-100">{entity.name}</h2>
         <p className="text-sm text-stone-500 dark:text-stone-400 capitalize flex items-center justify-center gap-1 mt-1">
-          {type === 'unit' ? <User size={12} /> : <Circle size={12} />}
-          {type === 'unit' ? 'Participant' : (entity as Member).role}
+          {type === 'entity' ? <User size={12} /> : <Circle size={12} />}
+          {type === 'entity' ? 'Entity' : (entity as Member).role}
         </p>
 
         {/* Stats Grid */}
         <div className="grid grid-cols-2 gap-4 mt-6">
-          {type === 'unit' ? (
+          {type === 'entity' ? (
             <>
               <div className="bg-stone-50 dark:bg-stone-800 p-3 rounded-xl">
                 <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Total Net</p>
-                <p className={`text-lg font-mono font-medium ${(entity as Unit).total_net && (entity as Unit).total_net! > 0 ? 'text-emerald-600' : 'text-stone-900 dark:text-stone-100'}`}>
-                  {formatValue((entity as Unit).total_net || 0)}
+                <p className={`text-lg font-mono font-medium ${(entity as Entity).total_net && (entity as Entity).total_net! > 0 ? 'text-emerald-600' : 'text-stone-900 dark:text-stone-100'}`}>
+                  {formatValue((entity as Entity).total_net || 0)}
                 </p>
               </div>
               <div className="bg-stone-50 dark:bg-stone-800 p-3 rounded-xl">
                 <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Last Active</p>
                 <p className="text-sm font-medium text-stone-900 dark:text-stone-100 mt-1">
-                  {(entity as Unit).last_active_at ? formatDate((entity as Unit).last_active_at!) : 'Never'}
+                  {(entity as Entity).last_active_at ? formatDate((entity as Entity).last_active_at!) : 'Never'}
                 </p>
               </div>
               {workspaceNet !== undefined && (
@@ -164,7 +164,7 @@ export default function EntitySnapshot({ entity, type, onClose, onUpdateTags, wo
         {/* Contact Info */}
         {type === 'member' && (entity as Member).member_id && (
           <div className="mt-6 pt-6 border-t border-stone-100 dark:border-stone-800 text-left">
-            <h3 className="text-xs font-medium text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-3">Participant Details</h3>
+            <h3 className="text-xs font-medium text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-3">Entity Details</h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-stone-500 dark:text-stone-400">Member ID</span>

@@ -12,7 +12,7 @@ import { useAppRole } from '../context/AppRoleContext';
 const DashboardCharts = lazy(() => import('../components/dashboard/DashboardCharts'));
 
 export default function Dashboard({ embedded = false }: { embedded?: boolean }) {
-  const { units, workspaces, entries, channelEntries, adjustments } = useData();
+  const { entities, workspaces, entries, channelEntries, adjustments } = useData();
   const { canAccessAdminUi } = useAppRole();
   const { theme } = useTheme();
   const navigate = useNavigate();
@@ -24,7 +24,7 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
 
   // Stats Calculation
   const totalWorkspaces = workspaces.length;
-  const totalUnits = units.length;
+  const totalEntities = entities.length;
   const totalEntryFlow = useMemo(() => entries.reduce((sum, entry) => sum + entry.input_amount, 0), [entries]);
   const currentChannelTotal = useMemo(
     () => channelEntries.reduce((sum, entry) => sum + (entry.type === 'increment' ? entry.amount : -entry.amount), 0),
@@ -39,21 +39,21 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
     [channelEntries],
   );
   const totalDeferredActive = useMemo(() => {
-    const unitTotals: Record<string, number> = {};
+    const entityTotals: Record<string, number> = {};
     adjustments.forEach(entry => {
-      if (!unitTotals[entry.unit_id]) unitTotals[entry.unit_id] = 0;
-      unitTotals[entry.unit_id] += entry.type === 'input' ? entry.amount : -entry.amount;
+      if (!entityTotals[entry.entity_id]) entityTotals[entry.entity_id] = 0;
+      entityTotals[entry.entity_id] += entry.type === 'input' ? entry.amount : -entry.amount;
     });
-    return Object.values(unitTotals).reduce((sum, value) => sum + value, 0);
+    return Object.values(entityTotals).reduce((sum, value) => sum + value, 0);
   }, [adjustments]);
   const activeWorkspacesCount = useMemo(() => workspaces.filter(g => !g.end_time).length, [workspaces]);
 
   // Optimize O(N^2) operations with indexed lookups
-  const entriesByUnit = useMemo(() => {
+  const entriesByEntity = useMemo(() => {
     const map: Record<string, typeof entries> = {};
     entries.forEach(entry => {
-      if (!map[entry.unit_id]) map[entry.unit_id] = [];
-      map[entry.unit_id].push(entry);
+      if (!map[entry.entity_id]) map[entry.entity_id] = [];
+      map[entry.entity_id].push(entry);
     });
     return map;
   }, [entries]);
@@ -69,15 +69,15 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
     return map;
   }, [entries]);
 
-  // Calculate unit net value_change - Optimized to O(N)
-  const unitStats = useMemo(() => units.map(unit => {
-    const unitEntries = entriesByUnit[unit.id] || [];
-    const net = unitEntries.reduce((sum, entry) => sum + entry.net, 0);
-    const workspacesPlayed = unitEntries.length;
+  // Calculate entity.net value_change - Optimized to O(N)
+  const entityStats = useMemo(() => entities.map(unit => {
+    const entityEntries = entriesByEntity[unit.id] || [];
+    const net = entityEntries.reduce((sum, entry) => sum + entry.net, 0);
+    const workspacesPlayed = entityEntries.length;
     return { ...unit, net, workspacesPlayed };
-  }), [units, entriesByUnit]);
+  }), [entities, entriesByEntity]);
 
-  const topOutcomes = useMemo(() => [...unitStats].sort((a, b) => b.net - a.net).slice(0, 5), [unitStats]);
+  const topOutcomes = useMemo(() => [...entityStats].sort((a, b) => b.net - a.net).slice(0, 5), [entityStats]);
   
   // Recent activity (last 5 workspaces)
   const recentWorkspaces = useMemo(() => [...workspaces]
@@ -134,7 +134,7 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
           <div className="flex flex-col items-start lg:items-end gap-3">
             <div className="hidden lg:flex items-center gap-2 text-xs">
               <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
-                {getMetricLabel('participants')}: <span className="font-mono text-stone-900 dark:text-stone-100">{totalUnits}</span>
+                Entities: <span className="font-mono text-stone-900 dark:text-stone-100">{totalEntities}</span>
               </span>
               <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
                 {getMetricLabel('activitys')}: <span className="font-mono text-stone-900 dark:text-stone-100">{totalWorkspaces}</span>
@@ -165,14 +165,14 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
           </button>
           <button
             type="button"
-            onClick={() => navigate('/units?action=add-participant')}
+            onClick={() => navigate('/entities?action=add-participant')}
             className="action-btn-secondary justify-center min-h-[40px]"
           >
-            {getActionText('addUnit')}
+            {getActionText('addEntity')}
           </button>
           <button
             type="button"
-            onClick={() => navigate('/units?action=add-deferred')}
+            onClick={() => navigate('/entities?action=add-deferred')}
             className="action-btn-secondary justify-center min-h-[40px]"
           >
             {getActionText('recordDeferredEntry')}
@@ -239,8 +239,8 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
           />
           <StatCard
             label={`Avg Entry ${getMetricLabel('flow')}`}
-            value={totalWorkspaces ? formatCompactValue(totalEntryFlow / totalWorkspaces) : '0 units'}
-            fullValue={totalWorkspaces ? formatValue(totalEntryFlow / totalWorkspaces) : '0 units'}
+            value={totalWorkspaces ? formatCompactValue(totalEntryFlow / totalWorkspaces) : '0 entities'}
+            fullValue={totalWorkspaces ? formatValue(totalEntryFlow / totalWorkspaces) : '0 entities'}
             icon={<Award className="text-[var(--accent)]" />}
             numericValue={totalWorkspaces ? (totalEntryFlow / totalWorkspaces) : 0}
             className="sm:col-span-2 lg:col-span-1"
@@ -295,10 +295,10 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
                         </button>
                         <button
                           type="button"
-                          onClick={() => navigate('/units?action=add-participant')}
+                          onClick={() => navigate('/entities?action=add-participant')}
                           className="action-btn-secondary text-xs px-2.5 py-1.5"
                         >
-                          {getActionText('addUnit')}
+                          {getActionText('addEntity')}
                         </button>
                       </div>
                     </div>
@@ -306,7 +306,7 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
                     recentWorkspaces.map(workspace => {
                       const workspaceEntries = entries.filter(l => l.workspace_id === workspace.id);
                       const entryFlow = workspaceEntries.reduce((sum, e) => sum + e.input_amount, 0);
-                      const unitCount = new Set(workspaceEntries.map(e => e.unit_id)).size;
+                      const entityCount = new Set(workspaceEntries.map(e => e.entity_id)).size;
 
                       return (
                         <div key={workspace.id} className="interactive-3d grid grid-cols-[1fr_auto] items-center gap-2 py-2.5 first:pt-1 last:pb-0.5">
@@ -319,7 +319,7 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
                           </div>
                           <div className="text-right">
                             <p className="font-mono font-medium text-stone-900 dark:text-stone-100 text-[13px]">{formatValue(entryFlow)}</p>
-                            <p className="text-xs text-stone-500 dark:text-stone-400">{unitCount} {getMetricLabel('participants').toLowerCase()}</p>
+                            <p className="text-xs text-stone-500 dark:text-stone-400">{entityCount} entities</p>
                           </div>
                         </div>
                       );

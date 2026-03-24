@@ -8,7 +8,7 @@ import { useNotification } from '../context/NotificationContext';
 import { tx } from '../lib/labels';
 import { cn } from '../lib/utils';
 
-type RequestedRole = Exclude<AppRole, 'admin'>;
+type RequestedRole = AppRole;
 
 type SubmitAccessRequestResult = {
   ok?: boolean;
@@ -17,6 +17,7 @@ type SubmitAccessRequestResult = {
 };
 
 const ROLE_DOMAIN_MAP: Record<RequestedRole, string> = {
+  admin: 'admin.os',
   operator: 'operator.os',
   viewer: 'viewer.os',
 };

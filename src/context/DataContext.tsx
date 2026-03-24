@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { getSupabase, getSupabaseAccessToken, getUserAuthorityContext, isSupabaseConfigured, SUPABASE_ANON_KEY, supabase } from '../lib/supabase';
-import { Unit, Workspace, Entry, Member, ActivityLog, Expense, Adjustment, AdjustmentRequest, ChannelEntry, Associate, AssociateAllocation, SystemEvent, OperatorLog, TransferAccount, UnitAccountEntry, OutputRequest } from '../types';
+import { Entity, Workspace, Entry, Member, ActivityLog, Expense, Adjustment, AdjustmentRequest, ChannelEntry, Associate, AssociateAllocation, SystemEvent, OperatorLog, TransferAccount, EntityAccountEntry, OutputRequest } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 import { APP_MIN_DATE, isDateOnOrAfter, isValidIsoDate } from '../lib/utils';
 import { DbRole, appRoleToDbRole, dbRoleToAppRole } from '../lib/roles';
@@ -19,7 +19,7 @@ type ProvisionOrgContextResult = {
 };
 
 interface DataContextType {
-  units: Unit[];
+  entities: Entity[];
   workspaces: Workspace[];
   entries: Entry[];
   members: Member[];
@@ -28,7 +28,7 @@ interface DataContextType {
   adjustments: Adjustment[];
   adjustmentRequests: AdjustmentRequest[];
   channelEntries: ChannelEntry[];
-  unitAccountEntries: UnitAccountEntry[];
+  entityAccountEntries: EntityAccountEntry[];
   outputRequests: OutputRequest[];
   transferAccounts: TransferAccount[];
   associates: Associate[];
@@ -42,14 +42,14 @@ interface DataContextType {
   isDemoMode: boolean;
   
   // Expense Actions
-  addUnit: (unit: Omit<Unit, 'id' | 'created_at'>) => Promise<string>;
-  updateUnit: (unit: Unit) => Promise<void>;
-  deleteUnit: (id: string) => Promise<void>;
-  importUnits: (units: Omit<Unit, 'id' | 'created_at'>[]) => Promise<void>;
-  transferUnitTotal: (fromUnitId: string, toUnitId: string, amount: number) => Promise<void>;
+  addEntity: (entity: Omit<Entity, 'id' | 'created_at'>) => Promise<string>;
+  updateEntity: (entity: Entity) => Promise<void>;
+  deleteEntity: (id: string) => Promise<void>;
+  importEntities: (entities: Omit<Entity, 'id' | 'created_at'>[]) => Promise<void>;
+  transferEntityTotal: (fromEntityId: string, toEntityId: string, amount: number) => Promise<void>;
   transferChannelValues: (fromMethod: string, toMethod: string, amount: number, date: string) => Promise<string>;
-  recordOutputRequest: (unitId: string, amount: number, workspaceId?: string, method?: string, details?: string) => Promise<void>;
-  addUnitAccountEntry: (entry: Omit<UnitAccountEntry, 'id' | 'created_at'>) => Promise<UnitAccountEntry>;
+  recordOutputRequest: (entityId: string, amount: number, workspaceId?: string, method?: string, details?: string) => Promise<void>;
+  addEntityAccountEntry: (entry: Omit<EntityAccountEntry, 'id' | 'created_at'>) => Promise<EntityAccountEntry>;
   requestOutput: (request: Omit<OutputRequest, 'id' | 'created_at' | 'status'>) => Promise<OutputRequest>;
   resolveOutputRequest: (requestId: string, status: 'approved' | 'rejected') => Promise<void>;
   requestAdjustment: (request: Omit<AdjustmentRequest, 'id' | 'created_at' | 'status'>) => Promise<AdjustmentRequest>;
@@ -115,7 +115,7 @@ let lastKnownDataContextValue: DataContextType | undefined;
 let hasWarnedDataContextFallback = false;
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [units, setUnits] = useState<Unit[]>([]);
+  const [entities, setEntities] = useState<Entity[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [entries, setEntries] = useState<Entry[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
@@ -124,7 +124,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [adjustmentRequests, setAdjustmentRequests] = useState<AdjustmentRequest[]>([]);
   const [channelEntries, setChannelEntries] = useState<ChannelEntry[]>([]);
-  const [unitAccountEntries, setUnitAccountEntries] = useState<UnitAccountEntry[]>([]);
+  const [entityAccountEntries, setEntityAccountEntries] = useState<EntityAccountEntry[]>([]);
   const [outputRequests, setOutputRequests] = useState<OutputRequest[]>([]);
   const [transferAccounts, setTransferAccounts] = useState<TransferAccount[]>([]);
   const [associates, setAssociates] = useState<Associate[]>([]);
@@ -169,22 +169,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const currentOperatorLogIdRef = useRef<string | null>(null);
   const currentOperatorLogStartedAtRef = useRef<string | null>(null);
   const warnedRuntimeIssuesRef = useRef<Set<string>>(new Set());
-  const missingWorkspacesRef = useRef<Set<string>>(new Set());
-  const unitPartnerColumnUnavailableRef = useRef(false);
-  const entriesActivityUnitsColumnUnavailableRef = useRef(false);
-  const entriesUnavailableColumnsRef = useRef<Set<string>>(new Set());
-
-  const profilesUnavailableRef = useRef(false);
-  const [managedOrgIds, setManagedOrgIds] = useState<string[]>([]);
   const auditEventsUnavailableRef = useRef(false);
   const outputRequestsUnavailableRef = useRef(false);
   const operatorLogsUnavailableRef = useRef(false);
+  const profilesUnavailableRef = useRef(false);
+  const missingWorkspacesRef = useRef<Set<string>>(new Set());
+  const entityPartnerColumnUnavailableRef = useRef(false);
+  const entriesActivityEntitiesColumnUnavailableRef = useRef(false);
+  const entriesUnavailableColumnsRef = useRef<Set<string>>(new Set());
+
+  const [managedOrgIds, setManagedOrgIds] = useState<string[]>([]);
   const { role, loading: roleLoading, canAccessAdminUi, canOperateLog, canManageValue, canAlign } = useAppRole();
   const { user, loading: authLoading } = useAuth();
 
   const isDemoMode = !isSupabaseConfigured;
   const AUDIT_EVENTS_KEY = 'flow_ops_audit_events_v2';
-  const UNIT_ACCOUNT_TX_KEY = 'flow_ops_unit_account_entrys_v1';
+  const ENTITY_ACCOUNT_TX_KEY = 'flow_ops_entity_account_entries_v1';
   const OUTFLOW_REQUESTS_KEY = 'flow_ops_output_requests_v1';
   const ADJUSTMENT_REQUESTS_KEY = 'flow_ops_adjustment_requests_v1';
   const OPERATOR_LOG_ID_KEY = 'flow_ops_operator_log_id';
@@ -348,7 +348,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (entriesUnavailableColumnsRef.current.has(columnName)) return;
     entriesUnavailableColumnsRef.current.add(columnName);
     if (columnName === 'activity_count') {
-      entriesActivityUnitsColumnUnavailableRef.current = true;
+      if (!entriesActivityEntitiesColumnUnavailableRef.current) {
+        entriesActivityEntitiesColumnUnavailableRef.current = true;
+      }
     }
     warnOnce(
       `missing-entries-column-${columnName}`,
@@ -365,7 +367,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     });
 
-    if (entriesActivityUnitsColumnUnavailableRef.current && 'activity_count' in next) {
+    if (entriesActivityEntitiesColumnUnavailableRef.current && 'activity_count' in next) {
       delete next.activity_count;
     }
 
@@ -532,6 +534,29 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     warnOnce(`audit-write-rpc-${rpcResult.error.code ?? 'unknown'}`, 'Audit event persistence failed.', rpcResult.error.message);
   };
 
+  const registerEntryActivityMismatch = (workspaceId: string) => {
+    if (!entriesActivityEntitiesColumnUnavailableRef.current) {
+      entriesActivityEntitiesColumnUnavailableRef.current = true;
+      warnOnce(
+        'missing-entry-entity-id',
+        `Supabase entries.entity_id column is missing for workspace ${workspaceId}. Activity logs will continue without entity tracking until migration is applied.`
+      );
+    }
+  };
+
+  const logEntryOutput = async (workspaceId: string, entryId: string) => {
+    if (!supabase) return;
+    const scopedOrgId = requireOrgScope();
+    const now = new Date().toISOString();
+    const { error: logError } = await supabase.from('entries').update({ left_at: now }).eq('id', entryId).eq('org_id', scopedOrgId);
+    if (logError) {
+      if (isMissingColumnError(logError, 'entries', 'entity_id')) {
+        registerEntryActivityMismatch(workspaceId);
+        return;
+      }
+      throw normalizeSupabaseWriteError(logError);
+    }
+  };
   const isTotaldWorkspace = (workspaceId: string) => {
     const workspaceEntries = entries.filter(entry => entry.workspace_id === workspaceId);
     const totalInflow = workspaceEntries.reduce((sum, entry) => sum + entry.input_amount, 0);
@@ -543,20 +568,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const workspace = workspaces.find(item => item.id === workspaceId);
     if (!workspace) throw new Error('Associated workspace was not found.');
     if (workspace.status !== 'active') throw new Error('Only active activities are ediworkspace.');
-    if (operation === 'add' && workspace.status !== 'active') throw new Error('Units can only be added while activity is active.');
+    if (operation === 'add' && workspace.status !== 'active') throw new Error('Entities can only be added while activity is active.');
   };
 
-  const sanitizeUnitInput = (unitData: Omit<Unit, 'id' | 'created_at'>) => ({
-    ...unitData,
-    name: unitData.name?.trim() ?? '',
-    tags: unitData.tags?.map(tag => tag.trim()).filter(Boolean) ?? [],
-    attributed_associate_id: unitData.attributed_associate_id ?? undefined,
+  const sanitizeEntityInput = (entityData: Omit<Entity, 'id' | 'created_at'>) => ({
+    name: (entityData.name || '').trim(),
+    tags: Array.isArray(entityData.tags) ? entityData.tags : [],
+    attributed_associate_id: entityData.attributed_associate_id || undefined,
   });
 
-  const stripUnitAssociateColumn = <T extends { attributed_associate_id?: string | undefined; referred_by_partner_id?: string | undefined }>(
-    payload: T,
+  const stripEntityAssociateColumn = <T extends { attributed_associate_id?: string | undefined; referred_by_partner_id?: string | undefined }>(
+    obj: T
   ): Omit<T, 'attributed_associate_id' | 'referred_by_partner_id'> => {
-    const { attributed_associate_id, referred_by_partner_id, ...rest } = payload;
+    const { attributed_associate_id, referred_by_partner_id, ...rest } = obj;
     return rest;
   };
 
@@ -794,7 +818,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const normalizeWorkspacesLifecycle = (items: Workspace[]) => items.map(normalizeWorkspaceLifecycle);
 
   const clearScopedDatasets = () => {
-    setUnits([]);
+    setEntities([]);
     setWorkspaces([]);
     setEntries([]);
     setMembers([]);
@@ -803,7 +827,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAdjustments([]);
     setAdjustmentRequests([]);
     setChannelEntries([]);
-    setUnitAccountEntries([]);
+    setEntityAccountEntries([]);
     setOutputRequests([]);
     setTransferAccounts([]);
     setAssociates([]);
@@ -903,29 +927,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const authority = await getUserAuthorityContext(user.id);
       if (authority.source === 'memberships') {
         resolvedOrgId = authority.activeOrgId;
-        setActiveOrgId(resolvedOrgId);
-        setActiveMetaOrgId(authority.metaOrgId);
+        updateActiveOrgId(resolvedOrgId);
+        updateActiveMetaOrgId(authority.metaOrgId);
         setManagedOrgIds(authority.managedOrgIds);
-        if (typeof window !== 'undefined') {
-          if (resolvedOrgId) localStorage.setItem('flow_ops_last_org_id', resolvedOrgId);
-          else localStorage.removeItem('flow_ops_last_org_id');
-          if (authority.metaOrgId) localStorage.setItem('flow_ops_last_meta_org_id', authority.metaOrgId);
-          else localStorage.removeItem('flow_ops_last_meta_org_id');
-        }
         return resolvedOrgId;
       }
 
       if (authority.source === 'legacy') {
         resolvedOrgId = authority.activeOrgId;
-        setActiveOrgId(resolvedOrgId);
-        setActiveMetaOrgId(authority.metaOrgId);
+        updateActiveOrgId(resolvedOrgId);
+        updateActiveMetaOrgId(authority.metaOrgId);
         setManagedOrgIds(authority.managedOrgIds);
-        if (typeof window !== 'undefined') {
-          if (resolvedOrgId) localStorage.setItem('flow_ops_last_org_id', resolvedOrgId);
-          else localStorage.removeItem('flow_ops_last_org_id');
-          if (authority.metaOrgId) localStorage.setItem('flow_ops_last_meta_org_id', authority.metaOrgId);
-          else localStorage.removeItem('flow_ops_last_meta_org_id');
-        }
         return resolvedOrgId;
       }
     }
@@ -993,7 +1005,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         adjustmentsRes,
         adjustmentRequestsRes,
         channelEntriesRes,
-        unitAccountEntriesRes,
+        entityAccountEntriesRes,
         outputRequestsRes,
         associatesRes,
         associateAllocationsRes,
@@ -1004,7 +1016,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         queryWorkspace<Adjustment>('adjustments', () => client.from('adjustments').select('*').order('date', { ascending: false })),
         queryWorkspace<AdjustmentRequest>('adjustment_requests', () => client.from('adjustment_requests').select('*').order('requested_at', { ascending: false })),
         queryWorkspace<ChannelEntry>('channel_entries', () => client.from('channel_entries').select('*').order('date', { ascending: false })),
-        queryWorkspace<UnitAccountEntry>('unit_account_entrys', () => client.from('unit_account_entries').select('*').order('date', { ascending: false })),
+        queryWorkspace<EntityAccountEntry>('entity_account_entrys', () => client.from('entity_account_entries').select('*').order('date', { ascending: false })),
         queryWorkspace<OutputRequest>('output_requests', () => client.from('output_requests').select('*').order('requested_at', { ascending: false })),
         queryWorkspace<Associate>('associates', () => client.from('associates').select('*').order('name')),
         queryWorkspace<AssociateAllocation>('associate_allocations', () => client.from('associate_allocations').select('*').order('date', { ascending: false })),
@@ -1021,7 +1033,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAdjustments(resolveRows<Adjustment>(adjustmentsRes, 'adjustments'));
       setAdjustmentRequests(resolveRows<AdjustmentRequest>(adjustmentRequestsRes, 'adjustment_requests'));
       setChannelEntries(resolveRows<ChannelEntry>(channelEntriesRes, 'channel_entries'));
-      setUnitAccountEntries(resolveRows<UnitAccountEntry>(unitAccountEntriesRes, 'unit_account_entrys'));
+      setEntityAccountEntries(resolveRows<EntityAccountEntry>(entityAccountEntriesRes, 'entity_account_entrys'));
       setOutputRequests(resolveRows<OutputRequest>(outputRequestsRes, 'output_requests'));
       setAssociates(resolveRows<Associate>(associatesRes, 'associates').map(sanitizeAssociateRecord));
       setAssociateAllocations(resolveRows<AssociateAllocation>(associateAllocationsRes, 'associate_allocations').map(normalizeAssociateAllocationRecord));
@@ -1139,8 +1151,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      const [unitsRes, workspacesRes, entriesRes, membersRes] = await Promise.all([
-        queryWorkspace<Unit>('units', () => client.from('units').select('*').order('name')),
+      const [entitiesRes, workspacesRes, entriesRes, membersRes] = await Promise.all([
+        queryWorkspace<Entity>('entities', () => client.from('entities').select('*').order('name')),
         queryWorkspace<Workspace>('workspaces', () => client.from('workspaces').select('*').order('date', { ascending: false })),
         queryWorkspace<Entry>('entries', () => client.from('entries').select('*')),
         queryWorkspace<Member>('members', () => client.from('members').select('*').order('name')),
@@ -1151,7 +1163,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
-      setUnits(resolveRows<Unit>(unitsRes, 'units'));
+      setEntities(resolveRows<Entity>(entitiesRes, 'entities'));
       setWorkspaces(normalizeWorkspacesLifecycle(resolveRows<Workspace>(workspacesRes, 'workspaces')));
       setEntries(resolveRows<Entry>(entriesRes, 'entries'));
       setMembers(resolveRows<Member>(membersRes, 'members').map(normalizeMemberArrangement));
@@ -1173,7 +1185,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const isFetchingRef = useRef(false);
+
   const fetchData = async () => {
+    if (isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    
     beginLoadingProgress();
     setLoading(true);
     if (isDemoMode) {
@@ -1203,7 +1220,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const [
-        unitsRes,
+        entitiesRes,
         workspacesRes,
         entriesRes,
         membersRes,
@@ -1212,47 +1229,35 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         adjustmentsRes,
         adjustmentRequestsRes,
         channelEntriesRes,
-        unitAccountEntriesRes,
+        entityAccountEntriesRes,
         outputRequestsRes,
+        transferAccountsRes,
         associatesRes,
         associateAllocationsRes,
-        auditEventsRes,
+        systemEventsRes,
         operatorLogsRes,
-        transferAccountsRes,
       ] = await Promise.all([
-        queryWorkspace<Unit>('units', () => client.from('units').select('*').order('name')),
+        queryWorkspace<Entity>('entities', () => client.from('entities').select('*').order('name')),
         queryWorkspace<Workspace>('workspaces', () => client.from('workspaces').select('*').order('date', { ascending: false })),
-        queryWorkspace<Entry>('entries', () => client.from('entries').select('*')),
+        queryWorkspace<Entry>('entries', () => client.from('entries').select('*').order('created_at', { ascending: false })),
         queryWorkspace<Member>('members', () => client.from('members').select('*').order('name')),
         queryWorkspace<ActivityLog>('activity_logs', () => client.from('activity_logs').select('*').order('start_time', { ascending: false })),
         queryWorkspace<Expense>('expenses', () => client.from('expenses').select('*').order('date', { ascending: false })),
         queryWorkspace<Adjustment>('adjustments', () => client.from('adjustments').select('*').order('date', { ascending: false })),
         queryWorkspace<AdjustmentRequest>('adjustment_requests', () => client.from('adjustment_requests').select('*').order('requested_at', { ascending: false })),
         queryWorkspace<ChannelEntry>('channel_entries', () => client.from('channel_entries').select('*').order('date', { ascending: false })),
-        queryWorkspace<UnitAccountEntry>('unit_account_entrys', () => client.from('unit_account_entries').select('*').order('date', { ascending: false })),
+        queryWorkspace<EntityAccountEntry>('entity_account_entrys', () => client.from('entity_account_entries').select('*').order('date', { ascending: false })),
         queryWorkspace<OutputRequest>('output_requests', () => client.from('output_requests').select('*').order('requested_at', { ascending: false })),
+        queryWorkspace<TransferAccount>('channel_transfer_accounts', () => client.from('channel_transfer_accounts').select('*').order('name')),
         queryWorkspace<Associate>('associates', () => client.from('associates').select('*').order('name')),
         queryWorkspace<AssociateAllocation>('associate_allocations', () => client.from('associate_allocations').select('*').order('date', { ascending: false })),
-        queryWorkspace<AuditEventRow>('audit_events', () =>
-          client
-            .from('audit_events')
-            .select('id, created_at, actor_user_id, actor_label, actor_role, action, entity, entity_id, amount, details, operator_activity_id')
-            .order('created_at', { ascending: false })
-            .limit(1000),
-        ),
-        queryWorkspace<OperatorLogRow>(OPERATOR_ACTIVITY_WORKSPACE, () =>
-          client
-            .from(OPERATOR_ACTIVITY_WORKSPACE)
-            .select('id, created_at, org_id, actor_user_id, actor_role, actor_label, started_at, last_active_at, ended_at, duration_seconds, is_active')
-            .order('last_active_at', { ascending: false })
-            .limit(500) as any,
-        ),
-        queryWorkspace<TransferAccount>('transfer_accounts', () => client.from('transfer_accounts').select('*').order('name')),
+        queryWorkspace<SystemEvent>('system_events', () => client.from('system_events').select('*').order('timestamp', { ascending: false })),
+        queryWorkspace<OperatorLog>(OPERATOR_ACTIVITY_WORKSPACE, () => client.from(OPERATOR_ACTIVITY_WORKSPACE).select('*').order('started_at', { ascending: false })),
       ]);
 
       if (fetchVersion !== fetchVersionRef.current) return;
 
-      const unitsData = resolveRows<Unit>(unitsRes, 'units');
+      const entitiesData = resolveRows<Entity>(entitiesRes, 'entities');
       const workspacesData = normalizeWorkspacesLifecycle(resolveRows<Workspace>(workspacesRes, 'workspaces'));
       const entriesData = resolveRows<Entry>(entriesRes, 'entries');
       const membersData = resolveRows<Member>(membersRes, 'members');
@@ -1261,20 +1266,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const adjustmentsData = resolveRows<Adjustment>(adjustmentsRes, 'adjustments');
       const adjustmentRequestsData = resolveRows<AdjustmentRequest>(adjustmentRequestsRes, 'adjustment_requests');
       const channelEntriesData = resolveRows<ChannelEntry>(channelEntriesRes, 'channel_entries');
-      const unitAccountEntriesData = resolveRows<UnitAccountEntry>(unitAccountEntriesRes, 'unit_account_entrys');
+      const entityAccountEntriesData = resolveRows<EntityAccountEntry>(entityAccountEntriesRes, 'entity_account_entrys');
       const outputRequestsData = resolveRows<OutputRequest>(outputRequestsRes, 'output_requests');
       const associatesData = resolveRows<Associate>(associatesRes, 'associates').map(sanitizeAssociateRecord);
       const associateAllocationsData = resolveRows<AssociateAllocation>(associateAllocationsRes, 'associate_allocations').map(normalizeAssociateAllocationRecord);
-      const transferAccountsData = resolveRows<TransferAccount>(transferAccountsRes, 'transfer_accounts');
-      const auditRows = resolveRows<AuditEventRow>(auditEventsRes, 'audit_events');
-      const operatorLogsRows = resolveRows<OperatorLogRow>(operatorLogsRes, OPERATOR_ACTIVITY_WORKSPACE);
-      const auditEventsData = mapAuditRowsToSystemEvents(auditRows);
+      const transferAccountsData = resolveRows<TransferAccount>(transferAccountsRes, 'channel_transfer_accounts');
+      const systemEventsData = resolveRows<SystemEvent>(systemEventsRes, 'system_events');
+      const operatorLogsRows = resolveRows<OperatorLog>(operatorLogsRes, OPERATOR_ACTIVITY_WORKSPACE);
       const operatorLogsData = operatorLogsRows.map((activity) => ({
         ...activity,
         actor_role: dbRoleToAppRole(activity.actor_role),
       }));
 
-      setUnits(unitsData);
+      setEntities(entitiesData);
       setWorkspaces(workspacesData);
       setEntries(entriesData);
       setMembers(membersData.map(normalizeMemberArrangement));
@@ -1283,16 +1287,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAdjustments(adjustmentsData);
       setAdjustmentRequests(adjustmentRequestsData);
       setChannelEntries(channelEntriesData);
-      setUnitAccountEntries(unitAccountEntriesData);
+      setEntityAccountEntries(entityAccountEntriesData);
       setOutputRequests(outputRequestsData);
       setAssociates(associatesData);
       setAssociateAllocations(associateAllocationsData);
       setTransferAccounts(transferAccountsData);
-      setSystemEvents(auditEventsData);
+      setSystemEvents(systemEventsData);
       setOperatorLogs(operatorLogsData);
     } catch (error) {
       console.error("Error fetching data:", error);
     } finally {
+      isFetchingRef.current = false;
       setLoading(false);
       completeLoadingProgress();
     }
@@ -1532,191 +1537,191 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // --- Actions ---
 
-  const addUnit = async (unitData: Omit<Unit, 'id' | 'created_at'>): Promise<string> => {
-    const sanitizedUnit = sanitizeUnitInput(unitData);
+  const addEntity = async (entityData: Omit<Entity, 'id' | 'created_at'>): Promise<string> => {
+    const sanitizedEntity = sanitizeEntityInput(entityData);
     if (isDemoMode) {
-      const newUnit = { ...sanitizedUnit, id: uuidv4(), created_at: new Date().toISOString() };
-      const updated = [...units, newUnit];
-      setUnits(updated);
-      localStorage.setItem('flow_ops_units', JSON.stringify(updated));
-      void appendSystemEvent({ action: 'unit_added', entity: 'unit', entity_id: newUnit.id, details: newUnit.name });
-      return newUnit.id;
+      const newEntity = { ...sanitizedEntity, id: uuidv4(), created_at: new Date().toISOString() };
+      const updated = [...entities, newEntity];
+      setEntities(updated);
+      localStorage.setItem('flow_ops_entities', JSON.stringify(updated));
+      void appendSystemEvent({ action: 'entity_added', entity: 'entity', entity_id: newEntity.id, details: newEntity.name });
+      return newEntity.id;
     } else {
       const scopedOrgId = requireOrgScope();
       if (!supabase) throw new Error('Supabase not initialized');
       const insertPayload = {
-        ...sanitizedUnit,
+        ...sanitizedEntity,
         org_id: scopedOrgId,
-        ...(unitPartnerColumnUnavailableRef.current ? {} : { attributed_associate_id: sanitizedUnit.attributed_associate_id })
+        ...(entityPartnerColumnUnavailableRef.current ? {} : { attributed_associate_id: sanitizedEntity.attributed_associate_id })
       };
 
-      const insertResult = await supabase.from('units').insert([insertPayload]).select('id').single();
+      const insertResult = await supabase.from('entities').insert([insertPayload]).select('id').single();
       if (insertResult.error) {
         const error = insertResult.error;
-        if (isMissingColumnError(error, 'units', 'attributed_associate_id')) {
-          unitPartnerColumnUnavailableRef.current = true;
+        if (isMissingColumnError(error, 'entities', 'attributed_associate_id')) {
+          entityPartnerColumnUnavailableRef.current = true;
           warnOnce(
-            'missing-units-attributed-associate-id',
-            'Supabase units.attributed_associate_id column is missing. Unit writes will continue without associate attribution until migration is applied.',
+            'missing-entities-attributed-associate-id',
+            'Supabase entities.attributed_associate_id column is missing. Entity writes will continue without associate attribution until migration is applied.',
             error.message ?? undefined,
           );
-          const fallbackPayload = stripUnitAssociateColumn(sanitizedUnit);
-          const fallbackResult = await supabase.from('units').insert([{ ...fallbackPayload, org_id: scopedOrgId }]).select('id').single();
+          const fallbackPayload = stripEntityAssociateColumn(sanitizedEntity);
+          const fallbackResult = await supabase.from('entities').insert([{ ...fallbackPayload, org_id: scopedOrgId }]).select('id').single();
           if (fallbackResult.error) throw fallbackResult.error;
-          if (!fallbackResult.data?.id) throw new Error('Unit was created but no id was returned.');
+          if (!fallbackResult.data?.id) throw new Error('Entity was created but no id was returned.');
           await fetchData();
-          void appendSystemEvent({ action: 'unit_added', entity: 'unit', entity_id: fallbackResult.data.id, details: sanitizedUnit.name });
+          void appendSystemEvent({ action: 'entity_added', entity: 'entity', entity_id: fallbackResult.data.id, details: sanitizedEntity.name });
           return fallbackResult.data.id;
         } else {
           throw error;
         }
       }
-      if (!insertResult.data?.id) throw new Error('Unit was created but no id was returned.');
+      if (!insertResult.data?.id) throw new Error('Entity was created but no id was returned.');
       await fetchData();
-      void appendSystemEvent({ action: 'unit_added', entity: 'unit', entity_id: insertResult.data.id, details: sanitizedUnit.name });
+      void appendSystemEvent({ action: 'entity_added', entity: 'entity', entity_id: insertResult.data.id, details: sanitizedEntity.name });
       return insertResult.data.id;
     }
   };
 
-  const importUnits = async (newUnitsData: Omit<Unit, 'id' | 'created_at'>[]) => {
-    const sanitizedUnits = newUnitsData.map(sanitizeUnitInput);
+  const importEntities = async (newEntitiesData: Omit<Entity, 'id' | 'created_at'>[]) => {
+    const sanitizedEntities = newEntitiesData.map(sanitizeEntityInput);
     if (isDemoMode) {
-      const newUnits = sanitizedUnits.map(p => ({
+      const newEntities = sanitizedEntities.map(p => ({
         ...p,
         id: uuidv4(),
         created_at: new Date().toISOString()
       }));
-      const updated = [...units, ...newUnits];
-      setUnits(updated);
-      localStorage.setItem('flow_ops_units', JSON.stringify(updated));
-      void appendSystemEvent({ action: 'units_imported', entity: 'unit', amount: newUnits.length, details: `${newUnits.length} units imported` });
+      const updated = [...entities, ...newEntities];
+      setEntities(updated);
+      localStorage.setItem('flow_ops_entities', JSON.stringify(updated));
+      void appendSystemEvent({ action: 'entities_imported', entity: 'entity', amount: newEntities.length, details: `${newEntities.length} entities imported` });
     } else {
       const scopedOrgId = requireOrgScope();
       if (!supabase) return;
-      const insertPayload = sanitizedUnits.map(unit => ({
-        ...unit,
+      const insertPayload = sanitizedEntities.map(entity => ({
+        ...entity,
         org_id: scopedOrgId,
-        ...(unitPartnerColumnUnavailableRef.current ? {} : { attributed_associate_id: unit.attributed_associate_id })
+        ...(entityPartnerColumnUnavailableRef.current ? {} : { attributed_associate_id: entity.attributed_associate_id })
       }));
 
-      const { error } = await supabase.from('units').insert(insertPayload);
+      const { error } = await supabase.from('entities').insert(insertPayload);
       if (error) {
-        if (isMissingColumnError(error, 'units', 'attributed_associate_id')) {
-          unitPartnerColumnUnavailableRef.current = true;
+        if (isMissingColumnError(error, 'entities', 'attributed_associate_id')) {
+          entityPartnerColumnUnavailableRef.current = true;
           warnOnce(
-            'missing-units-attributed-associate-id',
-            'Supabase units.attributed_associate_id column is missing. Unit writes will continue without associate attribution until migration is applied.',
+            'missing-entities-attributed-associate-id',
+            'Supabase entities.attributed_associate_id column is missing. Entity writes will continue without associate attribution until migration is applied.',
             error.message ?? undefined,
           );
-          const fallbackPayload = sanitizedUnits.map(item => ({ ...stripUnitAssociateColumn(item), org_id: scopedOrgId }));
-          const fallbackResult = await supabase.from('units').insert(fallbackPayload);
+          const fallbackPayload = sanitizedEntities.map(item => ({ ...stripEntityAssociateColumn(item), org_id: scopedOrgId }));
+          const fallbackResult = await supabase.from('entities').insert(fallbackPayload);
           if (fallbackResult.error) throw fallbackResult.error;
         } else {
           throw error;
         }
       }
       await fetchData();
-      void appendSystemEvent({ action: 'units_imported', entity: 'unit', amount: sanitizedUnits.length, details: `${sanitizedUnits.length} units imported` });
+      void appendSystemEvent({ action: 'entities_imported', entity: 'entity', amount: sanitizedEntities.length, details: `${sanitizedEntities.length} entities imported` });
     }
   };
 
-  const updateUnit = async (unit: Unit) => {
-    const sanitizedUnit = sanitizeUnitInput(unit);
+  const updateEntity = async (entity: Entity) => {
+    const sanitizedEntity = sanitizeEntityInput(entity);
     if (isDemoMode) {
-      const updated = units.map(p => p.id === unit.id ? { ...unit, ...sanitizedUnit } : p);
-      setUnits(updated);
-      localStorage.setItem('flow_ops_units', JSON.stringify(updated));
-      void appendSystemEvent({ action: 'unit_updated', entity: 'unit', entity_id: unit.id, details: unit.name });
+      const updated = entities.map(p => p.id === entity.id ? { ...entity, ...sanitizedEntity } : p);
+      setEntities(updated);
+      localStorage.setItem('flow_ops_entities', JSON.stringify(updated));
+      void appendSystemEvent({ action: 'entity_updated', entity: 'entity', entity_id: entity.id, details: entity.name });
     } else {
       const scopedOrgId = requireOrgScope();
       if (!supabase) return;
       const updatePayload = {
-        ...sanitizedUnit,
+        ...sanitizedEntity,
         org_id: scopedOrgId,
-        ...(unitPartnerColumnUnavailableRef.current ? {} : { attributed_associate_id: sanitizedUnit.attributed_associate_id })
+        ...(entityPartnerColumnUnavailableRef.current ? {} : { attributed_associate_id: sanitizedEntity.attributed_associate_id })
       };
 
-      const { error } = await supabase.from('units').update(updatePayload).eq('id', unit.id).eq('org_id', scopedOrgId);
+      const { error } = await supabase.from('entities').update(updatePayload).eq('id', entity.id).eq('org_id', scopedOrgId);
       if (error) {
-        if (isMissingColumnError(error, 'units', 'attributed_associate_id')) {
-          unitPartnerColumnUnavailableRef.current = true;
+        if (isMissingColumnError(error, 'entities', 'attributed_associate_id')) {
+          entityPartnerColumnUnavailableRef.current = true;
           warnOnce(
-            'missing-units-attributed-associate-id',
-            'Supabase units.attributed_associate_id column is missing. Unit writes will continue without associate attribution until migration is applied.',
+            'missing-entities-attributed-associate-id',
+            'Supabase entities.attributed_associate_id column is missing. Entity writes will continue without associate attribution until migration is applied.',
             error.message ?? undefined,
           );
-          const fallbackPayload = stripUnitAssociateColumn({ ...unit, ...sanitizedUnit });
-          const fallbackResult = await supabase.from('units').update({ ...fallbackPayload, org_id: scopedOrgId }).eq('id', unit.id).eq('org_id', scopedOrgId);
+          const fallbackPayload = stripEntityAssociateColumn({ ...entity, ...sanitizedEntity });
+          const fallbackResult = await supabase.from('entities').update({ ...fallbackPayload, org_id: scopedOrgId }).eq('id', entity.id).eq('org_id', scopedOrgId);
           if (fallbackResult.error) throw fallbackResult.error;
         } else {
           throw error;
         }
       }
       await fetchData();
-      void appendSystemEvent({ action: 'unit_updated', entity: 'unit', entity_id: unit.id, details: unit.name });
+      void appendSystemEvent({ action: 'entity_updated', entity: 'entity', entity_id: entity.id, details: entity.name });
     }
   };
 
-  const deleteUnit = async (id: string) => {
-    requirePermission(canManageValue, 'Only admin/operator can delete unit profiles.');
+  const deleteEntity = async (id: string) => {
+    requirePermission(canManageValue, 'Only admin/operator can delete entity profiles.');
 
-    const existingUnit = units.find(unit => unit.id === id);
-    if (!existingUnit) return;
+    const existingEntity = entities.find(entity => entity.id === id);
+    if (!existingEntity) return;
 
-    const hasActiveActivityEntry = entries.some(entry => entry.unit_id === id && !entry.left_at);
+    const hasActiveActivityEntry = entries.some(entry => entry.entity_id === id && !entry.left_at);
     if (hasActiveActivityEntry) {
-      throw new Error('Cannot delete unit with an active activity. Output and remove from workspace first.');
+      throw new Error('Cannot delete entity with an active activity. Output and remove from workspace first.');
     }
 
-    const hasEntriesHistory = entries.some(entry => entry.unit_id === id);
+    const hasEntriesHistory = entries.some(entry => entry.entity_id === id);
     if (hasEntriesHistory) {
-      throw new Error('Cannot delete unit with activity history. Remove related entries entries first.');
+      throw new Error('Cannot delete entity with activity history. Remove related entries entries first.');
     }
 
-    const hasAdjustmentHistory = adjustments.some(adjustment => adjustment.unit_id === id);
+    const hasAdjustmentHistory = adjustments.some(adjustment => adjustment.entity_id === id);
     if (hasAdjustmentHistory) {
-      throw new Error('Cannot delete unit with adjustment history. Resolve or remove related adjustment records first.');
+      throw new Error('Cannot delete entity with adjustment history. Resolve or remove related adjustment records first.');
     }
 
     if (isDemoMode) {
-      const updatedUnits = units.filter(unit => unit.id !== id);
-      setUnits(updatedUnits);
-      localStorage.setItem('flow_ops_units', JSON.stringify(updatedUnits));
-      void appendSystemEvent({ action: 'unit_deleted', entity: 'unit', entity_id: id, details: existingUnit.name ?? 'Unit deleted' });
+      const updatedEntities = entities.filter(entity => entity.id !== id);
+      setEntities(updatedEntities);
+      localStorage.setItem('flow_ops_entities', JSON.stringify(updatedEntities));
+      void appendSystemEvent({ action: 'entity_deleted', entity: 'entity', entity_id: id, details: existingEntity.name ?? 'Entity deleted' });
       return;
     }
 
     if (!supabase) throw new Error('Supabase project connectivity is not configured in environment variables.');
     const scopedOrgId = requireOrgScope();
-    const { error } = await supabase.from('units').delete().eq('id', id).eq('org_id', scopedOrgId);
+    const { error } = await supabase.from('entities').delete().eq('id', id).eq('org_id', scopedOrgId);
     if (error) throw normalizeSupabaseWriteError(error);
-    void appendSystemEvent({ action: 'unit_deleted', entity: 'unit', entity_id: id, details: existingUnit.name ?? 'Unit deleted' });
+    void appendSystemEvent({ action: 'entity_deleted', entity: 'entity', entity_id: id, details: existingEntity.name ?? 'Entity deleted' });
     await fetchData();
   };
 
-  const transferUnitTotal = async (fromUnitId: string, toUnitId: string, amount: number) => {
-    requirePermission(canAlign, 'Only admin can transfer unit totals.');
-    if (fromUnitId === toUnitId) throw new Error('Select two different units for transfer.');
+  const transferEntityTotal = async (fromEntityId: string, toEntityId: string, amount: number) => {
+    requirePermission(canAlign, 'Only admin can transfer entity totals.');
+    if (fromEntityId === toEntityId) throw new Error('Select two different entities for transfer.');
     requirePositiveAmount(amount, 'Transfer amount');
 
-    const fromUnit = units.find(unit => unit.id === fromUnitId);
-    const toUnit = units.find(unit => unit.id === toUnitId);
-    if (!fromUnit || !toUnit) throw new Error('One or both selected units were not found.');
+    const fromEntity = entities.find(entity => entity.id === fromEntityId);
+    const toEntity = entities.find(entity => entity.id === toEntityId);
+    if (!fromEntity || !toEntity) throw new Error('One or both selected entities were not found.');
 
-    const fromTotal = fromUnit.total ?? 0;
-    const toTotal = toUnit.total ?? 0;
+    const fromTotal = fromEntity.total ?? 0;
+    const toTotal = toEntity.total ?? 0;
     if (fromTotal < amount) {
       throw new Error('Insufficient total for transfer.');
     }
 
-    const updatedFrom: Unit = { ...fromUnit, total: fromTotal - amount };
-    const updatedTo: Unit = { ...toUnit, total: toTotal + amount };
+    const updatedFrom: Entity = { ...fromEntity, total: fromTotal - amount };
+    const updatedTo: Entity = { ...toEntity, total: toTotal + amount };
 
     if (!isDemoMode && supabase) {
       const scopedOrgId = requireOrgScope();
-      const rpcAttempt = await supabase.rpc('unit_total_transfer', {
-        p_from_unit_id: fromUnitId,
-        p_to_unit_id: toUnitId,
+      const rpcAttempt = await supabase.rpc('entity_total_transfer', {
+        p_from_entity_id: fromEntityId,
+        p_to_entity_id: toEntityId,
         p_amount: amount,
         p_note: null,
         p_org_id: scopedOrgId,
@@ -1725,48 +1730,48 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!rpcAttempt.error) {
         await fetchData();
         void appendSystemEvent({
-          action: 'unit_total_transfer',
+          action: 'entity_total_transfer',
           entity: 'entries',
           amount,
-          details: `${fromUnit.name || fromUnit.id} → ${toUnit.name || toUnit.id}`,
+          details: `${fromEntity.name || fromEntity.id} → ${toEntity.name || toEntity.id}`,
         });
         return;
       }
 
-      if (!isMissingFunctionError(rpcAttempt.error, 'unit_total_transfer')) {
+      if (!isMissingFunctionError(rpcAttempt.error, 'entity_total_transfer')) {
         throw rpcAttempt.error;
       }
     }
 
     if (isDemoMode) {
-      const updated = units.map(unit => {
-        if (unit.id === updatedFrom.id) return updatedFrom;
-        if (unit.id === updatedTo.id) return updatedTo;
-        return unit;
+      const updated = entities.map(entity => {
+        if (entity.id === updatedFrom.id) return updatedFrom;
+        if (entity.id === updatedTo.id) return updatedTo;
+        return entity;
       });
-      setUnits(updated);
-      localStorage.setItem('flow_ops_units', JSON.stringify(updated));
+      setEntities(updated);
+      localStorage.setItem('flow_ops_entities', JSON.stringify(updated));
     } else {
       if (!supabase) return;
       const scopedOrgId = requireOrgScope();
 
-      const updateUnitRecord = async (unitRecord: Unit) => {
+      const updateEntityRecord = async (entityRecord: Entity) => {
         const client = supabase;
         if (!client) return;
-        const updatePayload = unitPartnerColumnUnavailableRef.current
-          ? stripUnitAssociateColumn(unitRecord)
-          : unitRecord;
-        const { error } = await client.from('units').update({ ...updatePayload, org_id: scopedOrgId }).eq('id', unitRecord.id).eq('org_id', scopedOrgId);
+        const updatePayload = entityPartnerColumnUnavailableRef.current
+          ? stripEntityAssociateColumn(entityRecord)
+          : entityRecord;
+        const { error } = await client.from('entities').update({ ...updatePayload, org_id: scopedOrgId }).eq('id', entityRecord.id).eq('org_id', scopedOrgId);
         if (error) {
-          if (isMissingColumnError(error, 'units', 'attributed_associate_id')) {
-            unitPartnerColumnUnavailableRef.current = true;
+          if (isMissingColumnError(error, 'entities', 'attributed_associate_id')) {
+            entityPartnerColumnUnavailableRef.current = true;
             warnOnce(
-              'missing-units-attributed-associate-id',
-              'Supabase units.attributed_associate_id column is missing. Unit writes will continue without associate attribution until migration is applied.',
+              'missing-entities-attributed-associate-id',
+              'Supabase entities.attributed_associate_id column is missing. Entity writes will continue without associate attribution until migration is applied.',
               error.message ?? undefined,
             );
-            const fallbackPayload = stripUnitAssociateColumn(unitRecord);
-            const fallbackResult = await client.from('units').update({ ...fallbackPayload, org_id: scopedOrgId }).eq('id', unitRecord.id).eq('org_id', scopedOrgId);
+            const fallbackPayload = stripEntityAssociateColumn(entityRecord);
+            const fallbackResult = await client.from('entities').update({ ...fallbackPayload, org_id: scopedOrgId }).eq('id', entityRecord.id).eq('org_id', scopedOrgId);
             if (fallbackResult.error) throw fallbackResult.error;
             return;
           }
@@ -1774,12 +1779,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       };
 
-      await updateUnitRecord(updatedFrom);
+      await updateEntityRecord(updatedFrom);
 
       try {
-        await updateUnitRecord(updatedTo);
+        await updateEntityRecord(updatedTo);
       } catch (error) {
-        await updateUnitRecord(fromUnit);
+        await updateEntityRecord(fromEntity);
         throw error;
       }
 
@@ -1787,10 +1792,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     void appendSystemEvent({
-      action: 'unit_total_transfer',
+      action: 'entity_total_transfer',
       entity: 'entries',
       amount,
-      details: `${fromUnit.name || fromUnit.id} → ${toUnit.name || toUnit.id}`,
+      details: `${fromEntity.name || fromEntity.id} → ${toEntity.name || toEntity.id}`,
     });
   };
 
@@ -2032,7 +2037,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const addEntry = async (entryData: Omit<Entry, 'id' | 'created_at' | 'net'>) => {
-    requirePermission(canOperateLog, 'Only admin or operator can add units to a activity.');
+    requirePermission(canOperateLog, 'Only admin or operator can add entities to a activity.');
     requireEntriesMutationAllowed(entryData.workspace_id, 'add');
     requireMinimumAmount(entryData.input_amount, 'Input amount', 10);
     requireNonNegativeAmount(entryData.output_amount, 'Output amount');
@@ -2048,7 +2053,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const updated = [...entries, newEntry];
       setEntries(updated);
       localStorage.setItem('flow_ops_entries', JSON.stringify(updated));
-      void appendSystemEvent({ action: 'entries_entry_added', entity: 'entries', entity_id: newEntry.id, amount: newEntry.input_amount, details: 'Unit input recorded' });
+      void appendSystemEvent({ action: 'entries_entry_added', entity: 'entries', entity_id: newEntry.id, amount: newEntry.input_amount, details: 'Entity input recorded' });
     } else {
       if (!supabase) return;
       const scopedOrgId = requireOrgScope();
@@ -2068,7 +2073,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (insertResult.error) {
         throw insertResult.error;
       }
-      void appendSystemEvent({ action: 'entries_entry_added', entity: 'entries', amount: fullEntry.input_amount, details: 'Unit input recorded' });
+      void appendSystemEvent({ action: 'entries_entry_added', entity: 'entries', amount: fullEntry.input_amount, details: 'Entity input recorded' });
       await fetchData();
     }
   };
@@ -2462,23 +2467,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     void appendSystemEvent({ action: 'channel_entry_deleted', entity: 'channel', entity_id: id, amount: existingEntry.amount, details: existingEntry.type });
   };
 
-  const addUnitAccountEntry = async (
-    entry: Omit<UnitAccountEntry, 'id' | 'created_at'>,
-  ): Promise<UnitAccountEntry> => {
-    requirePermission(canManageValue, 'Only admin or operator can post unit adjustments or approved outputs.');
+  const addEntityAccountEntry = async (entry: Omit<EntityAccountEntry, 'id' | 'created_at'>): Promise<EntityAccountEntry> => {
+    requirePermission(canManageValue, 'Only admin or operator can post entity adjustments or approved outputs.');
 
-    const normalizedUnitId = requireNonEmpty(entry.unit_id, 'Unit');
+    const normalizedEntityId = requireNonEmpty(entry.entity_id, 'Entity');
     const normalizedType = entry.type;
     if (normalizedType === 'decrement' && !entry.request_id) {
-      throw new Error('Outputs must be approved from a unit output request.');
+      throw new Error('Outputs must be approved from a entity output request.');
     }
     if (normalizedType === 'decrement') {
-      requirePermission(canAlign, 'Only admin can post approved unit outputs.');
+      requirePermission(canAlign, 'Only admin can post approved entity outputs.');
     }
     const normalizedAmount = requirePositiveAmount(entry.amount, 'Entry amount');
     const normalizedDate = requireValidDate(entry.date, 'Entry date');
-    const normalized: Omit<UnitAccountEntry, 'id' | 'created_at'> = {
-      unit_id: normalizedUnitId,
+    const normalized: Omit<EntityAccountEntry, 'id' | 'created_at'> = {
+      entity_id: normalizedEntityId,
       type: normalizedType,
       amount: normalizedAmount,
       date: normalizedDate,
@@ -2487,18 +2490,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     if (isDemoMode) {
-      const created: UnitAccountEntry = {
+      const created: EntityAccountEntry = {
         id: uuidv4(),
         created_at: new Date().toISOString(),
         ...normalized,
       };
-      const updated = [created, ...unitAccountEntries];
-      setUnitAccountEntries(updated);
-      localStorage.setItem(UNIT_ACCOUNT_TX_KEY, JSON.stringify(updated));
+      const updated = [created, ...entityAccountEntries];
+      setEntityAccountEntries(updated);
+      localStorage.setItem(ENTITY_ACCOUNT_TX_KEY, JSON.stringify(updated));
       void appendSystemEvent({
-        action: `unit_${normalizedType}_posted`,
-        entity: 'unit',
-        entity_id: normalizedUnitId,
+        action: `entity_${normalizedType}_posted`,
+        entity: 'entity',
+        entity_id: normalizedEntityId,
         amount: normalizedAmount,
       });
       return created;
@@ -2510,7 +2513,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (normalizedType === 'decrement' && entry.request_id) {
       const requestCheck = await supabase
         .from('output_requests')
-        .select('id, unit_id, amount, status')
+        .select('id, entity_id, amount, status')
         .eq('id', entry.request_id)
         .eq('org_id', orgId)
         .single();
@@ -2520,11 +2523,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (!requestCheck.data || requestCheck.data.status !== 'approved') {
-        throw new Error('Unit output must be approved before it can be posted.');
+        throw new Error('Entity output must be approved before it can be posted.');
       }
 
-      if (requestCheck.data.unit_id !== normalizedUnitId) {
-        throw new Error('Approved request does not match the selected unit.');
+      if (requestCheck.data.entity_id !== normalizedEntityId) {
+        throw new Error('Approved request does not match the selected entity.');
       }
 
       if (Number(requestCheck.data.amount) !== normalizedAmount) {
@@ -2536,16 +2539,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ...normalized,
       org_id: orgId,
     };
-    const insertRes = await supabase.from('unit_account_entries').insert([insertPayload]).select('*').single();
+    const insertRes = await supabase.from('entity_account_entries').insert([insertPayload]).select('*').single();
     if (insertRes.error) throw normalizeSupabaseWriteError(insertRes.error);
-    await refreshDeferredDatasets();
+    await fetchData();
     void appendSystemEvent({
-      action: `unit_${normalizedType}_posted`,
-      entity: 'unit',
-      entity_id: normalizedUnitId,
+      action: `entity_${normalizedType}_posted`,
+      entity: 'entity',
+      entity_id: normalizedEntityId,
       amount: normalizedAmount,
     });
-    return insertRes.data as UnitAccountEntry;
+    return insertRes.data as EntityAccountEntry;
   };
 
   const requestOutput = async (
@@ -2553,11 +2556,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   ): Promise<OutputRequest> => {
     requirePermission(canManageValue, 'Only admin or operator can log output requests.');
 
-    const normalizedUnitId = requireNonEmpty(request.unit_id, 'Unit');
+    const normalizedEntityId = requireNonEmpty(request.entity_id, 'Entity');
     const normalizedAmount = requirePositiveAmount(request.amount, 'Output request amount');
     const normalizedRequestedAt = request.requested_at || new Date().toISOString();
     const normalized: Omit<OutputRequest, 'id' | 'created_at'> = {
-      unit_id: normalizedUnitId,
+      entity_id: normalizedEntityId,
       amount: normalizedAmount,
       workspace_id: request.workspace_id,
       method: request.method,
@@ -2572,13 +2575,31 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         created_at: new Date().toISOString(),
         ...normalized,
       };
+
+      if (canAlign) {
+        created.status = 'approved';
+        created.resolved_at = new Date().toISOString();
+        created.resolved_by = user?.id || undefined;
+      }
+
       const updated = [created, ...outputRequests];
       setOutputRequests(updated);
       localStorage.setItem(OUTFLOW_REQUESTS_KEY, JSON.stringify(updated));
+
+      if (canAlign) {
+        await addEntityAccountEntry({
+          entity_id: created.entity_id,
+          type: 'decrement',
+          amount: created.amount,
+          date: new Date().toISOString().split('T')[0],
+          request_id: created.id,
+        });
+      }
+
       void appendSystemEvent({
-        action: 'unit_output_requested',
-        entity: 'unit',
-        entity_id: normalizedUnitId,
+        action: canAlign ? 'entity_output_approved' : 'entity_output_requested',
+        entity: 'entity',
+        entity_id: normalizedEntityId,
         amount: normalizedAmount,
       });
       return created;
@@ -2586,20 +2607,104 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (!supabase) throw new Error('Supabase not initialized.');
     const orgId = requireOrgScope();
-    const insertPayload = {
+    const insertPayload: any = {
       ...normalized,
       org_id: orgId,
     };
-    const insertRes = await supabase.from('output_requests').insert([insertPayload]).select('*').single();
-    if (insertRes.error) throw normalizeSupabaseWriteError(insertRes.error);
-    await refreshDeferredDatasets();
+
+    if (canAlign) {
+      insertPayload.status = 'approved';
+      insertPayload.resolved_at = new Date().toISOString();
+      insertPayload.resolved_by = user?.id || undefined;
+    }
+
+    const { data: created, error } = await supabase.from('output_requests').insert([insertPayload]).select('*').single();
+    if (error) throw normalizeSupabaseWriteError(error);
+
+    if (canAlign && created) {
+      await addEntityAccountEntry({
+        entity_id: created.entity_id,
+        type: 'decrement',
+        amount: created.amount,
+        date: new Date().toISOString().split('T')[0],
+        request_id: created.id,
+      });
+    }
+
+    await fetchData();
     void appendSystemEvent({
-      action: 'unit_output_requested',
-      entity: 'unit',
-      entity_id: normalizedUnitId,
+      action: canAlign ? 'entity_output_approved' : 'entity_output_requested',
+      entity: 'entity',
+      entity_id: normalizedEntityId,
       amount: normalizedAmount,
     });
-    return insertRes.data as OutputRequest;
+    return created as OutputRequest;
+  };
+
+  const resolveOutputRequest = async (requestId: string, status: 'approved' | 'rejected') => {
+    requirePermission(canAlign, 'Only admin can approve or reject output requests.');
+    const normalizedRequestId = requireNonEmpty(requestId, 'Output request');
+    const existing = outputRequests.find(item => item.id === normalizedRequestId);
+    if (!existing) throw new Error('Output request not found.');
+    if (existing.status !== 'pending') throw new Error('Output request already resolved.');
+
+    const resolvedPayload: Partial<OutputRequest> = {
+      status: status as 'approved' | 'rejected',
+      resolved_at: new Date().toISOString(),
+      resolved_by: user?.id || undefined,
+    };
+
+    if (isDemoMode) {
+      const updatedRequests = outputRequests.map(item => (
+        item.id === normalizedRequestId
+          ? { ...item, ...resolvedPayload }
+          : item
+      ));
+      setOutputRequests(updatedRequests);
+      localStorage.setItem(OUTFLOW_REQUESTS_KEY, JSON.stringify(updatedRequests));
+    } else {
+      if (!supabase) throw new Error('Supabase not initialized.');
+      const scopedOrgId = requireOrgScope();
+      const { error } = await supabase
+        .from('output_requests')
+        .update(resolvedPayload)
+        .eq('id', normalizedRequestId)
+        .eq('org_id', scopedOrgId)
+        .eq('status', 'pending');
+      if (error) throw normalizeSupabaseWriteError(error);
+      await fetchData();
+    }
+
+    if (status === 'approved') {
+      await addEntityAccountEntry({
+        entity_id: existing.entity_id,
+        type: 'decrement',
+        amount: existing.amount,
+        date: new Date().toISOString().split('T')[0],
+        request_id: existing.id,
+      });
+    }
+
+    void appendSystemEvent({
+      action: status === 'approved' ? 'entity_output_approved' : 'entity_output_rejected',
+      entity: 'entity',
+      entity_id: existing.entity_id,
+      amount: existing.amount,
+    });
+  };
+
+  const recordOutputRequest = async (entityId: string, amount: number, workspaceId?: string, method?: string, details?: string) => {
+    const normalizedEntityId = requireNonEmpty(entityId, 'Entity');
+    const normalizedAmount = requirePositiveAmount(amount, 'Output amount');
+
+    await requestOutput({
+      entity_id: normalizedEntityId,
+      amount: normalizedAmount,
+      workspace_id: workspaceId,
+      method: method,
+      details: details,
+      requested_at: new Date().toISOString(),
+    });
   };
 
   const requestAdjustment = async (
@@ -2607,12 +2712,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   ): Promise<AdjustmentRequest> => {
     requirePermission(canManageValue, 'Only admin or operator can submit deferred entry requests.');
 
-    const normalizedUnitId = requireNonEmpty(request.unit_id, 'Unit');
+    const normalizedEntityId = requireNonEmpty(request.entity_id, 'Entity');
     const normalizedAmount = requirePositiveAmount(request.amount, 'Deferred entry amount');
     const normalizedRequestedAt = request.requested_at || new Date().toISOString();
     const normalizedType = request.type === 'output' ? 'output' : 'input';
     const normalized: Omit<AdjustmentRequest, 'id' | 'created_at'> = {
-      unit_id: normalizedUnitId,
+      entity_id: normalizedEntityId,
       amount: normalizedAmount,
       type: normalizedType,
       requested_at: normalizedRequestedAt,
@@ -2625,13 +2730,30 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         created_at: new Date().toISOString(),
         ...normalized,
       };
+
+      if (canAlign) {
+        created.status = 'approved';
+        created.resolved_at = new Date().toISOString();
+        created.resolved_by = user?.id || undefined;
+      }
+
       const updated = [created, ...adjustmentRequests];
       setAdjustmentRequests(updated);
       localStorage.setItem(ADJUSTMENT_REQUESTS_KEY, JSON.stringify(updated));
+
+      if (canAlign) {
+        await addAdjustment({
+          entity_id: created.entity_id,
+          amount: created.amount,
+          type: created.type,
+          date: new Date().toISOString().split('T')[0],
+        });
+      }
+
       void appendSystemEvent({
-        action: 'adjustment_requested',
+        action: canAlign ? 'adjustment_approved' : 'adjustment_requested',
         entity: 'adjustment',
-        entity_id: normalizedUnitId,
+        entity_id: normalizedEntityId,
         amount: normalizedAmount,
         details: normalizedType,
       });
@@ -2640,17 +2762,34 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (!supabase) throw new Error('Supabase not initialized.');
     const orgId = requireOrgScope();
-    const insertPayload = {
+    const insertPayload: any = {
       ...normalized,
       org_id: orgId,
     };
+
+    if (canAlign) {
+      insertPayload.status = 'approved';
+      insertPayload.resolved_at = new Date().toISOString();
+      insertPayload.resolved_by = user?.id || undefined;
+    }
+
     const insertRes = await supabase.from('adjustment_requests').insert([insertPayload]).select('*').single();
     if (insertRes.error) throw normalizeSupabaseWriteError(insertRes.error);
-    await refreshDeferredDatasets();
+    
+    if (canAlign) {
+      await addAdjustment({
+        entity_id: normalizedEntityId,
+        amount: normalizedAmount,
+        type: normalizedType,
+        date: new Date().toISOString().split('T')[0],
+      });
+    }
+
+    await fetchData();
     void appendSystemEvent({
-      action: 'adjustment_requested',
+      action: canAlign ? 'adjustment_approved' : 'adjustment_requested',
       entity: 'adjustment',
-      entity_id: normalizedUnitId,
+      entity_id: normalizedEntityId,
       amount: normalizedAmount,
       details: normalizedType,
     });
@@ -2692,95 +2831,23 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     if (status === 'approved') {
       await addAdjustment({
-        unit_id: existing.unit_id,
+        entity_id: existing.entity_id,
         amount: existing.amount,
         type: existing.type,
         date: new Date().toISOString().split('T')[0],
       });
     }
 
-    if (!isDemoMode) {
-      await refreshDeferredDatasets();
-    }
+    await fetchData();
 
     void appendSystemEvent({
       action: status === 'approved' ? 'adjustment_approved' : 'adjustment_rejected',
       entity: 'adjustment',
-      entity_id: existing.unit_id,
+      entity_id: existing.entity_id,
       amount: existing.amount,
       details: existing.type,
     });
   };
-
-  const resolveOutputRequest = async (requestId: string, status: 'approved' | 'rejected') => {
-    requirePermission(canAlign, 'Only admin can approve or reject output requests.');
-    const normalizedRequestId = requireNonEmpty(requestId, 'Output request');
-    const existing = outputRequests.find(item => item.id === normalizedRequestId);
-    if (!existing) throw new Error('Output request not found.');
-    if (existing.status !== 'pending') throw new Error('Output request already resolved.');
-
-    const resolvedPayload: Partial<OutputRequest> = {
-      status: status as 'approved' | 'rejected',
-      resolved_at: new Date().toISOString(),
-      resolved_by: user?.id || undefined,
-    };
-
-    if (isDemoMode) {
-      const updatedRequests = outputRequests.map(item => (
-        item.id === normalizedRequestId
-          ? { ...item, ...resolvedPayload }
-          : item
-      ));
-      setOutputRequests(updatedRequests);
-      localStorage.setItem(OUTFLOW_REQUESTS_KEY, JSON.stringify(updatedRequests));
-    } else {
-      if (!supabase) throw new Error('Supabase not initialized.');
-      const scopedOrgId = requireOrgScope();
-      const { error } = await supabase
-        .from('output_requests')
-        .update(resolvedPayload)
-        .eq('id', normalizedRequestId)
-        .eq('org_id', scopedOrgId)
-        .eq('status', 'pending');
-      if (error) throw normalizeSupabaseWriteError(error);
-      await refreshDeferredDatasets();
-    }
-
-    if (status === 'approved') {
-      await addUnitAccountEntry({
-        unit_id: existing.unit_id,
-        type: 'decrement',
-        amount: existing.amount,
-        date: new Date().toISOString().split('T')[0],
-        request_id: existing.id,
-      });
-    }
-
-    void appendSystemEvent({
-      action: status === 'approved' ? 'unit_output_approved' : 'unit_output_rejected',
-      entity: 'unit',
-      entity_id: existing.unit_id,
-      amount: existing.amount,
-    });
-  };
-
-  const recordOutputRequest = async (unitId: string, amount: number, workspaceId?: string, method?: string, details?: string) => {
-    const normalizedUnitId = requireNonEmpty(unitId, 'Unit');
-    const normalizedAmount = requirePositiveAmount(amount, 'Output amount');
-
-    await requestOutput({
-      unit_id: normalizedUnitId,
-      amount: normalizedAmount,
-      workspace_id: workspaceId,
-      method: method,
-      details: details,
-      requested_at: new Date().toISOString(),
-    });
-  };
-
-  // ------------------------------------------------------------------
-  // Transfer Account CRUD
-  // ------------------------------------------------------------------
 
   const addTransferAccount = async (accountData: Omit<TransferAccount, 'id' | 'created_at'>) => {
     requirePermission(canAccessAdminUi, 'Only admin can add transfer accounts.');
@@ -2885,9 +2952,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       throw new Error('Cannot remove entity with entry history. Remove related entries first.');
     }
 
-    const hasReferredUnits = units.some(unit => unit.attributed_associate_id === id);
-    if (hasReferredUnits) {
-      throw new Error('Cannot remove entity while units are still linked. Reassign or clear unit entity links first.');
+    const hasReferredEntities = entities.some(entity => entity.attributed_associate_id === id);
+    if (hasReferredEntities) {
+      throw new Error('Cannot remove entity while entities are still linked. Reassign or clear entity entity links first.');
     }
 
     if (isDemoMode) {
@@ -3191,7 +3258,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const contextValue: DataContextType = {
-    units,
+    entities,
     workspaces,
     entries,
     members,
@@ -3200,7 +3267,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     adjustments,
     adjustmentRequests,
     channelEntries,
-    unitAccountEntries,
+    entityAccountEntries,
     outputRequests,
     transferAccounts,
     associates,
@@ -3212,13 +3279,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loading,
     loadingProgress,
     isDemoMode,
-    addUnit,
-    updateUnit,
-    deleteUnit,
-    importUnits,
-    transferUnitTotal,
+    addEntity,
+    updateEntity,
+    deleteEntity,
+    importEntities,
+    transferEntityTotal,
     recordOutputRequest,
-    addUnitAccountEntry,
+    addEntityAccountEntry,
     requestOutput,
     resolveOutputRequest,
     requestAdjustment,

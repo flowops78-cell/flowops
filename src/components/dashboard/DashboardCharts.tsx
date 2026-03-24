@@ -175,7 +175,7 @@ export default function DashboardCharts({
               )}
             >
               <Award size={13} />
-              {getMetricLabel('topUnits')}
+              {getMetricLabel('topEntities')}
             </button>
             <button
               onClick={() => setInsightTab('hours')}

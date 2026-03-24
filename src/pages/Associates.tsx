@@ -584,7 +584,7 @@ export function AssociatesPage({ embedded = false }: { embedded?: boolean }) {
       {!embedded ? (
         <div className="section-card p-5 lg:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div>
-            <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Associates</h2>
+            <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Collaborations</h2>
             <p className="text-stone-500 dark:text-stone-400 text-sm">Associate network, configuration, and activity logs.</p>
           </div>
           <div className="flex flex-col items-start lg:items-end gap-3">

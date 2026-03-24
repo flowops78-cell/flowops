@@ -1,4 +1,4 @@
-export interface Unit {
+export interface Entity {
   id: string;
   org_id?: string;
   meta_org_id?: string | null;
@@ -87,7 +87,7 @@ export interface Workspace {
 export interface Entry {
   id: string;
   workspace_id: string;
-  unit_id: string;
+  entity_id: string;
   input_amount: number;
   output_amount: number;
   net: number;
@@ -111,7 +111,7 @@ export interface Entry {
 
 export interface Adjustment {
   id: string;
-  unit_id: string;
+  entity_id: string;
   amount: number; 
   type: 'input' | 'output';
   date: string;
@@ -120,7 +120,7 @@ export interface Adjustment {
 
 export interface AdjustmentRequest {
   id: string;
-  unit_id: string;
+  entity_id: string;
   amount: number;
   type: 'input' | 'output';
   requested_at: string;
@@ -142,11 +142,11 @@ export interface ChannelEntry {
   created_at?: string;
 }
 
-export interface UnitAccountEntry {
+export interface EntityAccountEntry {
   id: string;
   org_id?: string;
   meta_org_id?: string | null;
-  unit_id: string;
+  entity_id: string;
   type: 'increment' | 'adjustment' | 'decrement';
   amount: number;
   date: string;
@@ -157,7 +157,7 @@ export interface UnitAccountEntry {
 
 export interface OutputRequest {
   id: string;
-  unit_id: string;
+  entity_id: string;
   amount: number;
   workspace_id?: string;
   method?: string;
@@ -204,7 +204,7 @@ export interface SystemEvent {
   operator_activity_id?: string;
   actor_role: 'admin' | 'operator' | 'viewer';
   action: string;
-  entity: 'workspace' | 'entries' | 'expense' | 'adjustment' | 'channel' | 'activity' | 'operator' | 'unit' | 'member' | 'activity_log' | 'access_request' | 'partner' | 'partner_entry' | 'associate' | 'associate_allocation' | 'unit_account_entry' | 'log';
+  entity: 'workspace' | 'entries' | 'expense' | 'adjustment' | 'channel' | 'activity' | 'operator' | 'entity' | 'member' | 'activity_log' | 'access_request' | 'partner' | 'partner_entry' | 'associate' | 'associate_allocation' | 'entity_account_entry' | 'log';
   entity_id?: string;
   amount?: number;
   details?: string;
@@ -224,8 +224,8 @@ export interface OperatorLog {
   created_at?: string;
 }
 
-export interface WorkspaceUnit extends Entry {
-  unit_name: string;
+export interface WorkspaceEntity extends Entry {
+  entity_name: string;
 }
 
 export interface TransferAccount {

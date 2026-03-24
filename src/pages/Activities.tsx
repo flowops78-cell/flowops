@@ -213,7 +213,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               <p className="font-mono font-medium text-stone-900 dark:text-stone-100">{formatValue(totalEntryValue)}</p>
             </div>
             <div className="text-left md:text-right">
-              <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Participants</p>
+              <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Entities</p>
               <p className="font-medium text-stone-900 dark:text-stone-100">{unitCount}</p>
             </div>
             <button

@@ -44,7 +44,7 @@ const shortcutGroups: Array<{ title: string; items: ShortcutItem[] }> = [
   {
     title: 'Activity Page',
     items: [
-      { keys: 'U', action: 'Add unit' },
+      { keys: 'U', action: 'Add entity' },
       { keys: 'E', action: 'Record entry' },
       { keys: 'Shift + Enter', action: 'Complete activity' },
       { keys: 'M', action: 'Toggle activity monitor' },

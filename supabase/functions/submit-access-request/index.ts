@@ -94,9 +94,6 @@ Deno.serve(async (request: Request) => {
     return json(400, { error: 'Username tag can only use lowercase letters, numbers, dot, underscore, and hyphen.' }, origin);
   }
 
-  if (rawRequestedRole === 'admin') {
-    return json(403, { error: 'Admin access cannot be requested through invite flow.' }, origin);
-  }
 
   const tokenHash = await sha256Hex(rawInviteToken);
   const { data: inviteRowData, error: inviteError } = await adminClient

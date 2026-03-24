@@ -19,7 +19,8 @@ const BriefFlowOverview = lazy(() => import('./pages/BriefFlowOverview'));
 const AssociateNetwork = lazy(() => import('./pages/AssociateNetwork'));
 const ActivityMonitor = lazy(() => import('./pages/ActivityMonitor'));
 const WorkspaceDetail = lazy(() => import('./pages/WorkspaceDetail'));
-const UnitDetail = lazy(() => import('./pages/UnitDetail'));
+const Entities = lazy(() => import('./pages/Entities'));
+const EntityDetail = lazy(() => import('./pages/EntityDetail'));
 const Team = lazy(() => import('./pages/Team'));
 const Channels = lazy(() => import('./pages/Channels'));
 const Settings = lazy(() => import('./pages/Settings'));
@@ -78,8 +79,8 @@ function AppRoutes() {
           <Route path="/settings" element={canAccessAdminUi ? <Settings /> : <Navigate to="/activity" replace />} />
           <Route path="/distribution" element={<Navigate to="/dashboard" replace />} />
           <Route path="/leaderboard" element={<Navigate to="/dashboard" replace />} />
-          <Route path="/units" element={canAccessAdminUi ? <ActivityMonitor /> : <Navigate to="/activity" replace />} />
-          <Route path="/units/:id" element={canAccessAdminUi ? <UnitDetail /> : <Navigate to="/activity" replace />} />
+          <Route path="/entities" element={canAccessAdminUi ? <Entities /> : <Navigate to="/activity" replace />} />
+          <Route path="/entities/:id" element={canAccessAdminUi ? <EntityDetail /> : <Navigate to="/activity" replace />} />
           <Route path="/accounting" element={<Navigate to={canAccessAdminUi ? '/channels' : '/activity'} replace />} />
           <Route path="/admin/diagnostics" element={<Navigate to="/settings" replace />} />
           <Route path="/workspaces/:id" element={<ActivityDetailRedirect />} />

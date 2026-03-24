@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Circle, Users, Activity, TrendingUp, TrendingDown, Bell, BellOff, AlertCircle } from 'lucide-react';
 import { formatValue } from '../lib/utils';
-import { Entry, Unit, Workspace } from '../types';
+import { Entry, Entity, Workspace } from '../types';
 import ContextPanel from './ContextPanel';
 
 interface TelemetryEvent {
@@ -10,14 +10,14 @@ interface TelemetryEvent {
   timestamp: Date;
   message: string;
   details?: string;
-  unit?: Unit;
+  entity?: Entity;
   amount?: number;
 }
 
 interface TelemetrySidebarProps {
   workspace: Workspace;
   entries: Entry[];
-  units: Unit[];
+  entities: Entity[];
   isOpen: boolean;
   onClose: () => void;
 }
@@ -33,7 +33,7 @@ const eventToneClass: Record<TelemetryEvent['type'], string> = {
   level_up: 'bg-stone-400',
 };
 
-export default function TelemetrySidebar({ workspace, entries, units, isOpen, onClose }: TelemetrySidebarProps) {
+export default function TelemetrySidebar({ workspace, entries, entities, isOpen, onClose }: TelemetrySidebarProps) {
   const [now, setNow] = useState(new Date());
   const [notificationsEnabled, setNotificationsEnabled] = useState(() => {
     const saved = localStorage.getItem('telemetry_notifications');
@@ -123,8 +123,8 @@ export default function TelemetrySidebar({ workspace, entries, units, isOpen, on
 
   // Entries Events
   entries.forEach(entry => {
-    const unit = units.find(p => p.id === entry.unit_id);
-    if (!unit) return;
+    const entity = entities.find(p => p.id === entry.entity_id);
+    if (!entity) return;
 
     // Join / Entry value
     if (entry.created_at) {
@@ -132,9 +132,9 @@ export default function TelemetrySidebar({ workspace, entries, units, isOpen, on
         id: `join-${entry.id}`,
         type: 'inflow',
         timestamp: new Date(entry.created_at),
-        message: `${unit.name} joined`,
+        message: `${entity.name} joined`,
         details: formatValue(entry.input_amount),
-        unit,
+        entity,
         amount: entry.input_amount
       });
     }
@@ -145,9 +145,9 @@ export default function TelemetrySidebar({ workspace, entries, units, isOpen, on
         id: `leave-${entry.id}`,
         type: 'outflow',
         timestamp: new Date(entry.left_at),
-        message: `${unit.name} closed out`,
+        message: `${entity.name} closed out`,
         details: `${formatValue(entry.output_amount)} (Net: ${entry.net > 0 ? '+' : ''}${formatValue(entry.net)})`,
-        unit,
+        entity,
         amount: entry.output_amount
       });
     }
@@ -199,13 +199,13 @@ export default function TelemetrySidebar({ workspace, entries, units, isOpen, on
   const totalInflow = entries.reduce((sum, entry) => sum + entry.input_amount, 0);
   const totalOutflow = entries.reduce((sum, entry) => sum + (entry.output_amount || 0), 0);
   const activeValue = totalInflow - totalOutflow;
-  const activeUnitsCount = entries.filter(entry => !entry.left_at).length;
+  const activeEntitiesCount = entries.filter(entry => !entry.left_at).length;
   const discrepancy = totalOutflow - totalInflow;
   const statCards = [
     {
-      key: 'active-units',
-      label: 'Participants',
-      value: activeUnitsCount,
+      key: 'active-entities',
+      label: 'Entities',
+      value: activeEntitiesCount,
       icon: <Users size={12} />,
       valueClass: 'text-stone-900 dark:text-stone-100',
     },

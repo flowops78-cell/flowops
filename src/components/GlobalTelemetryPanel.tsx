@@ -175,7 +175,7 @@ export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetr
                 <span className="font-mono text-stone-900 dark:text-stone-100">{activeWorkspaceIds.size}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-stone-500 dark:text-stone-400">{getMetricLabel('activeUnits')}</span>
+                <span className="text-stone-500 dark:text-stone-400">{getMetricLabel('activeEntities')}</span>
                 <span className="font-mono text-stone-900 dark:text-stone-100">{activeEntries.length}</span>
               </div>
               <div className="flex justify-between">

@@ -3,7 +3,7 @@ import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { ArrowLeft, Save, Trash2, Edit2, AlertCircle, Share2, User, Circle, Clock, Users, LayoutGrid, List, Timer, Activity, Award, Play, Square } from 'lucide-react';
 import { formatValue, formatDate } from '../lib/utils';
-import { Entry } from '../types';
+import { Entry, Entity } from '../types';
 import { cn } from '../lib/utils';
 import Papa from 'papaparse';
 import TelemetrySidebar from '../components/TelemetrySidebar';
@@ -21,7 +21,7 @@ export default function WorkspaceDetail() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { workspaces, entries, units, members: members, activityLogs, loading, loadingProgress, addUnit, requestAdjustment, addEntry, addActivityLog, endActivityLog, updateEntry, deleteEntry, updateWorkspace, updateUnit, recordOutputRequest, transferAccounts, addChannelEntry } = useData();
+  const { workspaces, entries, entities, members: members, activityLogs, loading, loadingProgress, addEntity, requestAdjustment, addEntry, addActivityLog, endActivityLog, updateEntry, deleteEntry, updateWorkspace, updateEntity, recordOutputRequest, transferAccounts, addChannelEntry } = useData();
   const { role, canOperateLog, canManageValue, canAlign } = useAppRole();
   const { notify } = useNotification();
   const { getActionText, tx } = useLabels();
@@ -42,17 +42,17 @@ export default function WorkspaceDetail() {
   const [isMobileViewport, setIsMobileViewport] = useState(() => (
     typeof window !== 'undefined' ? window.innerWidth < 640 : false
   ));
-  const [viewingUnitId, setViewingUnitId] = useState<string | null>(null);
+  const [viewingEntityId, setViewingUnitId] = useState<string | null>(null);
 
   // Form state
-  const [selectedUnitId, setSelectedUnitId] = useState('');
-  const [quickUnitName, setQuickUnitName] = useState('');
+  const [selectedEntityId, setSelectedUnitId] = useState('');
+  const [quickEntityName, setQuickUnitName] = useState('');
   const [entryValueingType, setEntryValueingType] = useState<'value' | 'deferred'>('value');
   const [entryTransferMethod, setEntryTransferMethod] = useState('');
   const [showValueingOptions, setShowValueingOptions] = useState(false);
   const [entryValue, setEntryValue] = useState('');
-  const [isAddingParticipant, setIsAddingParticipant] = useState(false);
-  const [didAddParticipant, setDidAddParticipant] = useState(false);
+  const [isAddingEntity, setIsAddingEntity] = useState(false);
+  const [didAddEntity, setDidAddEntity] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState('');
   const [isUpdatingWorkforce, setIsUpdatingWorkforce] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
@@ -62,8 +62,8 @@ export default function WorkspaceDetail() {
   const [totalMode, setTotalMode] = useState<'update' | 'sitout' | 'leave'>('update');
   const [totalAlignmentSource, setAlignmentSource] = useState('');
   const [selectedPositionNumber, setSelectedPositionNumber] = useState<number | null>(null);
-  const [positionPanelUnitId, setPositionPanelUnitId] = useState('');
-  const [positionPanelUnitQuery, setPositionPanelUnitQuery] = useState('');
+  const [positionPanelEntityId, setPositionPanelUnitId] = useState('');
+  const [positionPanelEntityQuery, setPositionPanelUnitQuery] = useState('');
   const [positionPanelEntry, setPositionPanelEntryValue] = useState('');
   const [positionPanelTotal, setPositionPanelTotal] = useState('');
   const [positionPanelPlace, setPositionPanelPlace] = useState('');
@@ -72,9 +72,9 @@ export default function WorkspaceDetail() {
   const [isActivityTransitioning, setIsActivityTransitioning] = useState(false);
   const [recentTransitionStatus, setRecentTransitionStatus] = useState<'active' | 'completed' | 'archived' | null>(null);
   const addEntrySectionRef = useRef<HTMLDivElement | null>(null);
-  const addParticipantSelectRef = useRef<HTMLSelectElement | null>(null);
+  const addEntitySelectRef = useRef<HTMLSelectElement | null>(null);
   const recordEntryInputRef = useRef<HTMLInputElement | null>(null);
-  const addParticipantSuccessTimerRef = useRef<number | null>(null);
+  const addEntitySuccessTimerRef = useRef<number | null>(null);
   const activityTransitionSuccessTimerRef = useRef<number | null>(null);
 
   // Workspace Operations State
@@ -88,10 +88,10 @@ export default function WorkspaceDetail() {
   const [intensityLevel, setIntensityLevel] = useState(1);
   const [levelTimeRemaining, setLevelTimeRemaining] = useState('15:00');
 
-  const viewingUnit = units.find(p => p.id === viewingUnitId);
-  const viewingUnitEntry = viewingUnitId
+  const viewingEntity = entities.find(p => p.id === viewingEntityId);
+  const viewingEntityEntry = viewingEntityId
     ? [...workspaceEntries]
-        .filter(entry => entry.unit_id === viewingUnitId)
+        .filter(entry => entry.entity_id === viewingEntityId)
         .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())[0]
     : undefined;
 
@@ -163,9 +163,9 @@ export default function WorkspaceDetail() {
   }, [isMobileViewport, isTelemetryOpen]);
 
   useEffect(() => () => {
-    if (addParticipantSuccessTimerRef.current !== null) {
-      window.clearTimeout(addParticipantSuccessTimerRef.current);
-      addParticipantSuccessTimerRef.current = null;
+    if (addEntitySuccessTimerRef.current !== null) {
+      window.clearTimeout(addEntitySuccessTimerRef.current);
+      addEntitySuccessTimerRef.current = null;
     }
     if (activityTransitionSuccessTimerRef.current !== null) {
       window.clearTimeout(activityTransitionSuccessTimerRef.current);
@@ -173,10 +173,10 @@ export default function WorkspaceDetail() {
     }
   }, []);
 
-  const focusAddParticipant = () => {
+  const focusAddEntity = () => {
     addEntrySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     window.setTimeout(() => {
-      addParticipantSelectRef.current?.focus();
+      addEntitySelectRef.current?.focus();
     }, 80);
   };
 
@@ -192,8 +192,8 @@ export default function WorkspaceDetail() {
     const action = params.get('action');
     if (!action) return;
 
-    if (action === 'add-participant') {
-      focusAddParticipant();
+    if (action === 'add-entity') {
+      focusAddEntity();
     } else if (action === 'record-entry') {
       focusRecordEntry();
     } else if (action === 'toggle-monitor' && !isMobileViewport) {
@@ -222,7 +222,7 @@ export default function WorkspaceDetail() {
 
       if (normalizedKey === 'u') {
         event.preventDefault();
-        focusAddParticipant();
+        focusAddEntity();
         return;
       }
 
@@ -248,14 +248,14 @@ export default function WorkspaceDetail() {
     return () => window.removeEventListener('keydown', handleShortcut);
   }, [totalEntry, workspace?.status, isMobileViewport]);
 
-  const availableUnits = units.filter(unit => !activeWorkspaceEntries.some(entry => entry.unit_id === unit.id));
-  const rosterPositionCandidates = availableUnits;
+  const availableEntities = entities.filter(entity => !activeWorkspaceEntries.some(entry => entry.entity_id === entity.id));
+  const rosterPositionCandidates = availableEntities;
   const unpositionedActiveEntries = activeWorkspaceEntries.filter(entry => !entry.position_id || entry.position_id <= 0);
   const selectedPositionEntry = selectedPositionNumber !== null
     ? activeWorkspaceEntries.find(entry => entry.position_id === selectedPositionNumber) ?? null
     : null;
   const selectedPositionUnit = selectedPositionEntry
-    ? units.find(unit => unit.id === selectedPositionEntry.unit_id) ?? null
+    ? entities.find(unit => unit.id === selectedPositionEntry.entity_id) ?? null
     : null;
   const operators = members.filter(s => s.role === 'operator' || s.role === 'admin');
   const activityWorkActivitys = activityLogs.filter(activity => activity.workspace_id === workspace?.id);
@@ -273,16 +273,16 @@ export default function WorkspaceDetail() {
   const canManageEntries = canManageValue && !isCompleted && !isArchived;
   const positionFinderOptions = [
     ...unpositionedActiveEntries.map(entry => {
-      const unit = units.find(candidate => candidate.id === entry.unit_id);
+      const unit = entities.find(candidate => candidate.id === entry.entity_id);
       return {
-        unitId: entry.unit_id,
+        unitId: entry.entity_id,
         label: `${unit?.name || 'Unknown'} • waiting`,
         kind: 'waiting' as const,
       };
     }),
     ...rosterPositionCandidates.map(unit => ({
       unitId: unit.id,
-      label: `${unit.name || 'Unnamed Participant'} • roster`,
+      label: `${unit.name || 'Unnamed Entity'} • roster`,
       kind: 'roster' as const,
     })),
   ];
@@ -294,7 +294,7 @@ export default function WorkspaceDetail() {
     if (exactLabelMatch) return exactLabelMatch;
 
     const exactNameMatch = positionFinderOptions.find(option => {
-      const unitName = units.find(unit => unit.id === option.unitId)?.name ?? '';
+      const unitName = entities.find(unit => unit.id === option.unitId)?.name ?? '';
       return unitName.trim().toLowerCase() === normalized;
     });
     if (exactNameMatch) return exactNameMatch;
@@ -304,12 +304,12 @@ export default function WorkspaceDetail() {
 
     return positionFinderOptions.find(option => option.label.toLowerCase().includes(normalized)) ?? null;
   };
-  const selectedPositionFinderOption = positionPanelUnitId
-    ? positionFinderOptions.find(option => option.unitId === positionPanelUnitId) ?? null
-    : findPositionFinderOption(positionPanelUnitQuery);
-  const selectedPositionPanelUnitId = positionPanelUnitId || selectedPositionFinderOption?.unitId || '';
-  const isSelectedPositionPanelUnitWaiting = !!selectedPositionPanelUnitId && unpositionedActiveEntries.some(entry => entry.unit_id === selectedPositionPanelUnitId);
-  const hasPositionPanelQuery = positionPanelUnitQuery.trim().length > 0;
+  const selectedPositionFinderOption = positionPanelEntityId
+    ? positionFinderOptions.find(option => option.unitId === positionPanelEntityId) ?? null
+    : findPositionFinderOption(positionPanelEntityQuery);
+  const selectedPositionPanelUnitId = positionPanelEntityId || selectedPositionFinderOption?.unitId || '';
+  const isSelectedPositionPanelUnitWaiting = !!selectedPositionPanelUnitId && unpositionedActiveEntries.some(entry => entry.entity_id === selectedPositionPanelUnitId);
+  const hasPositionPanelQuery = positionPanelEntityQuery.trim().length > 0;
   const requiresPositionPanelEntryValue = !isSelectedPositionPanelUnitWaiting && (Boolean(selectedPositionPanelUnitId) || hasPositionPanelQuery);
   const statusClasses: Record<string, string> = {
     active: 'badge-active',
@@ -328,8 +328,8 @@ export default function WorkspaceDetail() {
     }
 
     if (selectedPositionEntry) {
-      setPositionPanelUnitId(selectedPositionEntry.unit_id);
-      const selectedUnit = units.find(unit => unit.id === selectedPositionEntry.unit_id);
+      setPositionPanelUnitId(selectedPositionEntry.entity_id);
+      const selectedUnit = entities.find(unit => unit.id === selectedPositionEntry.entity_id);
       setPositionPanelUnitQuery(selectedUnit?.name || '');
       setPositionPanelEntryValue('');
       setPositionPanelTotal(String(selectedPositionEntry.output_amount ?? 0));
@@ -342,7 +342,7 @@ export default function WorkspaceDetail() {
     setPositionPanelEntryValue('');
     setPositionPanelTotal('');
     setPositionPanelPlace('');
-  }, [units, selectedPositionEntry, selectedPositionNumber, unpositionedActiveEntries]);
+  }, [entities, selectedPositionEntry, selectedPositionNumber, unpositionedActiveEntries]);
 
   useEffect(() => {
     if (viewMode !== 'workspace') {
@@ -366,9 +366,9 @@ export default function WorkspaceDetail() {
 
   const handleAddUnit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (isAddingParticipant) return;
+    if (isAddingEntity) return;
     if (!canAddUnits) {
-      notify({ type: 'error', message: 'Your current permissions do not allow adding participants to active activities.' });
+      notify({ type: 'error', message: 'Your current permissions do not allow adding entities to active activities.' });
       return;
     }
 
@@ -379,19 +379,19 @@ export default function WorkspaceDetail() {
     }
 
     if (entryValueingType === 'deferred' && !canManageValue) {
-      notify({ type: 'error', message: 'Your current permissions do not allow recording deferred participant entries.' });
+      notify({ type: 'error', message: 'Your current permissions do not allow recording deferred entity entries.' });
       return;
     }
 
     try {
-      setIsAddingParticipant(true);
-      let unitId = selectedUnitId;
-      if (!unitId && quickUnitName.trim()) {
-        unitId = await addUnit({ name: quickUnitName.trim() });
+      setIsAddingEntity(true);
+      let unitId = selectedEntityId;
+      if (!unitId && quickEntityName.trim()) {
+        unitId = await addEntity({ name: quickEntityName.trim() });
       }
 
       if (!unitId) {
-        notify({ type: 'error', message: 'Select a participant or enter a new participant name.' });
+        notify({ type: 'error', message: 'Select an entity or enter a new entity name.' });
         return;
       }
 
@@ -402,7 +402,7 @@ export default function WorkspaceDetail() {
 
       await addEntry({
         workspace_id: workspace.id,
-        unit_id: unitId,
+        entity_id: unitId,
         input_amount: parsedEntryValue,
         output_amount: 0,
         position_id: undefined,
@@ -425,7 +425,7 @@ export default function WorkspaceDetail() {
 
       if (entryValueingType === 'deferred' && parsedEntryValue > 0) {
         await requestAdjustment({
-          unit_id: unitId,
+          entity_id: unitId,
           amount: parsedEntryValue,
           type: 'input',
           requested_at: new Date().toISOString(),
@@ -438,22 +438,22 @@ export default function WorkspaceDetail() {
       setEntryTransferMethod('');
       setShowValueingOptions(false);
       setEntryValue('');
-      setDidAddParticipant(true);
-      if (addParticipantSuccessTimerRef.current !== null) {
-        window.clearTimeout(addParticipantSuccessTimerRef.current);
+      setDidAddEntity(true);
+      if (addEntitySuccessTimerRef.current !== null) {
+        window.clearTimeout(addEntitySuccessTimerRef.current);
       }
-      addParticipantSuccessTimerRef.current = window.setTimeout(() => {
-        setDidAddParticipant(false);
-        addParticipantSuccessTimerRef.current = null;
+      addEntitySuccessTimerRef.current = window.setTimeout(() => {
+        setDidAddEntity(false);
+        addEntitySuccessTimerRef.current = null;
       }, 2000);
       notify({
         type: 'success',
-        message: entryValueingType === 'deferred' ? 'Participant entry recorded and deferred entry sent for admin approval.' : 'Participant entry recorded.',
+        message: entryValueingType === 'deferred' ? 'Entity entry recorded and deferred entry sent for admin approval.' : 'Entity entry recorded.',
       });
     } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to record participant entry.' });
+      notify({ type: 'error', message: error?.message || 'Unable to record entity entry.' });
     } finally {
-      setIsAddingParticipant(false);
+      setIsAddingEntity(false);
     }
   };
 
@@ -615,10 +615,10 @@ export default function WorkspaceDetail() {
     await deleteEntry(entryId);
   };
 
-  const handleUpdateUnitTags = async (id: string, tags: string[]) => {
-    const unit = units.find(p => p.id === id);
-    if (unit && updateUnit) {
-      await updateUnit({ ...unit, tags });
+  const handleUpdateEntityTags = async (id: string, tags: string[]) => {
+    const entity = entities.find(p => p.id === id);
+    if (entity && updateEntity) {
+      await updateEntity({ ...entity, tags });
     }
   };
 
@@ -627,11 +627,11 @@ export default function WorkspaceDetail() {
       `*Activity Report - ${formatDate(workspace.date)}*`,
       `Channel: ${workspace.channel || 'N/A'} • Activity: ${workspace.activity_category || 'N/A'}`,
       `------------------`,
-      `*Participants:*`
+      `*Entities:*`
     ];
 
     workspaceEntries.forEach(entry => {
-      const unit = units.find(p => p.id === entry.unit_id);
+      const unit = entities.find(p => p.id === entry.entity_id);
       const net = entry.net;
       const symbol = net > 0 ? '🟢' : net < 0 ? '🔴' : '⚪️';
       lines.push(`${symbol} ${unit?.name}: ${net > 0 ? '+' : ''}${formatValue(net)}`);
@@ -684,7 +684,7 @@ export default function WorkspaceDetail() {
       return;
     }
     if (entry.left_at) {
-      notify({ type: 'error', message: 'Participant already marked as left.' });
+      notify({ type: 'error', message: 'Entity already marked as left.' });
       return;
     }
 
@@ -704,7 +704,7 @@ export default function WorkspaceDetail() {
       return;
     }
     if (entry.left_at) {
-      notify({ type: 'error', message: 'Participant already marked as left.' });
+      notify({ type: 'error', message: 'Entity already marked as left.' });
       return;
     }
 
@@ -734,19 +734,19 @@ export default function WorkspaceDetail() {
     }
 
     if (entry.left_at) {
-      notify({ type: 'error', message: 'Cannot position a participant already marked as left.' });
+      notify({ type: 'error', message: 'Cannot position an entity already marked as left.' });
       return;
     }
 
     if (entry.position_id && entry.position_id > 0) {
-      notify({ type: 'info', message: `Participant is already positioned at #${entry.position_id}.` });
+      notify({ type: 'info', message: `Entity is already positioned at #${entry.position_id}.` });
       return;
     }
 
     const nextPosition = getNextAvailablePosition(entry.id);
     try {
       await updateEntry({ ...entry, position_id: nextPosition });
-      notify({ type: 'success', message: `Participant positioned at #${nextPosition}.` });
+      notify({ type: 'success', message: `Entity positioned at #${nextPosition}.` });
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to assign position.' });
     }
@@ -761,21 +761,21 @@ export default function WorkspaceDetail() {
     }
 
     if (entry.left_at) {
-      notify({ type: 'error', message: 'Cannot change position for a participant already marked as left.' });
+      notify({ type: 'error', message: 'Cannot change position for an entity already marked as left.' });
       return;
     }
 
     if (nextPosition === null) {
       if (!entry.position_id || entry.position_id <= 0) {
-        notify({ type: 'info', message: 'Participant is already unpositioned.' });
+        notify({ type: 'info', message: 'Entity is already unpositioned.' });
         return;
       }
       try {
         setIsPositionActionPending(true);
         await updateEntry({ ...entry, position_id: undefined });
-        notify({ type: 'success', message: 'Participant moved to waiting / sat-out area.' });
+        notify({ type: 'success', message: 'Entity moved to waiting / sat-out area.' });
       } catch (error: any) {
-        notify({ type: 'error', message: error?.message || 'Unable to set participant to waiting/sat-out.' });
+        notify({ type: 'error', message: error?.message || 'Unable to set entity to waiting/sat-out.' });
       } finally {
         setIsPositionActionPending(false);
       }
@@ -792,20 +792,20 @@ export default function WorkspaceDetail() {
     );
 
     if (conflictingEntry) {
-      const conflictingUnitName = units.find(unit => unit.id === conflictingEntry.unit_id)?.name || 'Another participant';
+      const conflictingUnitName = entities.find(unit => unit.id === conflictingEntry.entity_id)?.name || 'Another entity';
       notify({ type: 'error', message: `Position #${nextPosition} is already occupied by ${conflictingUnitName}.` });
       return;
     }
 
     if (entry.position_id === nextPosition) {
-      notify({ type: 'info', message: `Participant is already at position #${nextPosition}.` });
+      notify({ type: 'info', message: `Entity is already at position #${nextPosition}.` });
       return;
     }
 
     try {
       setIsPositionActionPending(true);
       await updateEntry({ ...entry, position_id: nextPosition });
-      notify({ type: 'success', message: `Participant moved to position #${nextPosition}.` });
+      notify({ type: 'success', message: `Entity moved to position #${nextPosition}.` });
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to update position assignment.' });
     } finally {
@@ -815,65 +815,65 @@ export default function WorkspaceDetail() {
 
   const handleAssignWaitingUnitToSelectedPosition = async () => {
     if (selectedPositionNumber === null) return;
-    const normalizedQuery = positionPanelUnitQuery.trim().toLowerCase();
+    const normalizedQuery = positionPanelEntityQuery.trim().toLowerCase();
 
     let targetUnitId = selectedPositionPanelUnitId;
     if (!targetUnitId && normalizedQuery) {
-      const exactNameMatches = units.filter(unit => (unit.name || '').trim().toLowerCase() === normalizedQuery);
+      const exactNameMatches = entities.filter(entity => (entity.name || '').trim().toLowerCase() === normalizedQuery);
       if (exactNameMatches.length === 1) {
         targetUnitId = exactNameMatches[0].id;
       } else if (exactNameMatches.length > 1) {
-        notify({ type: 'error', message: 'Multiple participants match that name. Choose a specific suggestion from the finder list.' });
+        notify({ type: 'error', message: 'Multiple entities match that name. Choose a specific suggestion from the finder list.' });
         return;
       }
 
       if (!targetUnitId) {
-        const rosterContainsMatches = rosterPositionCandidates.filter(unit => (unit.name || '').toLowerCase().includes(normalizedQuery));
+        const rosterContainsMatches = rosterPositionCandidates.filter(entity => (entity.name || '').toLowerCase().includes(normalizedQuery));
         if (rosterContainsMatches.length === 1) {
           targetUnitId = rosterContainsMatches[0].id;
         } else if (rosterContainsMatches.length > 1) {
-          notify({ type: 'error', message: 'Multiple roster participants match that text. Choose a specific suggestion from the finder list.' });
+          notify({ type: 'error', message: 'Multiple roster entities match that text. Choose a specific suggestion from the finder list.' });
           return;
         }
       }
     }
 
     if (!targetUnitId) {
-      notify({ type: 'error', message: 'Select a waiting/sat-out participant, or type a valid roster participant name.' });
+      notify({ type: 'error', message: 'Select a waiting/sat-out entity, or type a valid roster entity name.' });
       return;
     }
 
     const occupiedEntry = activeWorkspaceEntries.find(entry => entry.position_id === selectedPositionNumber);
     if (occupiedEntry) {
-      const occupiedBy = units.find(unit => unit.id === occupiedEntry.unit_id)?.name || 'another participant';
+      const occupiedBy = entities.find(unit => unit.id === occupiedEntry.entity_id)?.name || 'another entity';
       notify({ type: 'error', message: `Position #${selectedPositionNumber} is already occupied by ${occupiedBy}.` });
       return;
     }
 
-    const existingActiveEntry = activeWorkspaceEntries.find(entry => entry.unit_id === targetUnitId);
+    const existingActiveEntry = activeWorkspaceEntries.find(entry => entry.entity_id === targetUnitId);
     if (existingActiveEntry) {
       await handleAssignPosition(existingActiveEntry, selectedPositionNumber);
       setSelectedPositionNumber(null);
       return;
     }
 
-    const waitingEntry = unpositionedActiveEntries.find(entry => entry.unit_id === targetUnitId);
+    const waitingEntry = unpositionedActiveEntries.find(entry => entry.entity_id === targetUnitId);
     if (waitingEntry) {
       await handleAssignPosition(waitingEntry, selectedPositionNumber);
       setSelectedPositionNumber(null);
       return;
     }
 
-    const historicalEntry = workspaceEntries.find(entry => entry.unit_id === targetUnitId && !!entry.left_at);
+    const historicalEntry = workspaceEntries.find(entry => entry.entity_id === targetUnitId && !!entry.left_at);
     if (historicalEntry) {
       if (!canAddUnits) {
-        notify({ type: 'error', message: 'Activity must be active and permissions must allow adding/re-positioning participants.' });
+        notify({ type: 'error', message: 'Activity must be active and permissions must allow adding/re-positioning entities.' });
         return;
       }
 
       const parsedEntryVal = parseFloat(positionPanelEntry);
       if (!Number.isFinite(parsedEntryVal) || parsedEntryVal < 10) {
-        notify({ type: 'error', message: 'Entry value must be at least 10 to re-position this participant.' });
+        notify({ type: 'error', message: 'Entry value must be at least 10 to re-position this entity.' });
         return;
       }
 
@@ -889,9 +889,9 @@ export default function WorkspaceDetail() {
         setPositionPanelUnitId('');
         setPositionPanelUnitQuery('');
         setSelectedPositionNumber(null);
-        notify({ type: 'success', message: 'Participant re-positioned with additional entry value.' });
+        notify({ type: 'success', message: 'Entity re-positioned with additional entry value.' });
       } catch (error: any) {
-        notify({ type: 'error', message: error?.message || 'Unable to re-position participant from previous activity row.' });
+        notify({ type: 'error', message: error?.message || 'Unable to re-position entity from previous activity row.' });
       } finally {
         setIsPositionActionPending(false);
       }
@@ -900,28 +900,28 @@ export default function WorkspaceDetail() {
 
     const rosterUnit = rosterPositionCandidates.find(unit => unit.id === targetUnitId);
     if (!rosterUnit) {
-      const hasHistoricalEntry = workspaceEntries.some(entry => entry.unit_id === targetUnitId);
+      const hasHistoricalEntry = workspaceEntries.some(entry => entry.entity_id === targetUnitId);
       if (hasHistoricalEntry) {
-        notify({ type: 'error', message: 'This participant already has an entries row in this activity. Re-position the existing row instead of adding from roster.' });
+        notify({ type: 'error', message: 'This entity already has an entry row in this activity. Re-position the existing row instead of adding from roster.' });
       } else {
-        notify({ type: 'error', message: 'Select a valid waiting or roster participant from finder suggestions.' });
+        notify({ type: 'error', message: 'Select a valid waiting or roster entity from finder suggestions.' });
       }
       return;
     }
 
-    if (activeWorkspaceEntries.some(entry => entry.unit_id === targetUnitId)) {
-      notify({ type: 'error', message: 'Participant is already active in this activity.' });
+    if (activeWorkspaceEntries.some(entry => entry.entity_id === targetUnitId)) {
+      notify({ type: 'error', message: 'Entity is already active in this activity.' });
       return;
     }
 
     if (!canAddUnits) {
-      notify({ type: 'error', message: 'Activity must be active and permissions must allow adding participants.' });
+      notify({ type: 'error', message: 'Activity must be active and permissions must allow adding entities.' });
       return;
     }
 
     const parsedEntryVal = parseFloat(positionPanelEntry);
     if (!Number.isFinite(parsedEntryVal) || parsedEntryVal < 10) {
-      notify({ type: 'error', message: 'Entry value must be at least 10 to position a roster participant.' });
+      notify({ type: 'error', message: 'Entry value must be at least 10 to position a roster entity.' });
       return;
     }
 
@@ -929,7 +929,7 @@ export default function WorkspaceDetail() {
       setIsPositionActionPending(true);
       await addEntry({
         workspace_id: workspace.id,
-        unit_id: rosterUnit.id,
+        entity_id: rosterUnit.id,
         input_amount: parsedEntryVal,
         output_amount: 0,
         position_id: selectedPositionNumber,
@@ -938,9 +938,9 @@ export default function WorkspaceDetail() {
       setPositionPanelUnitId('');
       setPositionPanelUnitQuery('');
       setSelectedPositionNumber(null);
-      notify({ type: 'success', message: `${rosterUnit.name || 'Participant'} added and positioned at #${selectedPositionNumber}.` });
+      notify({ type: 'success', message: `${rosterUnit.name || 'Entity'} added and positioned at #${selectedPositionNumber}.` });
     } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to add and position selected participant.' });
+      notify({ type: 'error', message: error?.message || 'Unable to add and position selected entity.' });
     } finally {
       setIsPositionActionPending(false);
     }
@@ -1000,7 +1000,7 @@ export default function WorkspaceDetail() {
     const latestEntry = entries.find(entry => entry.id === totalEntry.id) ?? totalEntry;
     if (latestEntry.left_at) {
       setTotalEntry(null);
-      notify({ type: 'info', message: 'Participant is already marked as left.' });
+      notify({ type: 'info', message: 'Entity is already marked as left.' });
       return;
     }
 
@@ -1043,12 +1043,12 @@ export default function WorkspaceDetail() {
       let alignmentAlertCreated = false;
       if (totalMode === 'leave' && parsedAmount > 0) {
         try {
-          await recordOutputRequest(latestEntry.unit_id, parsedAmount, undefined, workspace.id, totalAlignmentSource || undefined);
+          await recordOutputRequest(latestEntry.entity_id, parsedAmount, undefined, workspace.id, totalAlignmentSource || undefined);
           alignmentAlertCreated = true;
         } catch {
           notify({
             type: 'error',
-            message: 'Participant marked as inactive, but alignment request could not be submitted.',
+            message: 'Entity marked as inactive, but alignment request could not be submitted.',
           });
         }
       }
@@ -1060,11 +1060,11 @@ export default function WorkspaceDetail() {
       notify({
         type: 'success',
         message: totalMode === 'sitout'
-            ? 'Participant moved to standby.'
+            ? 'Entity moved to standby.'
           : totalMode === 'leave'
           ? (alignmentAlertCreated
-              ? 'Participant marked as inactive. Alignment request submitted.'
-              : 'Participant marked as inactive with final total.')
+              ? 'Entity marked as inactive. Alignment request submitted.'
+              : 'Entity marked as inactive with final total.')
           : 'Total updated successfully.',
       });
     } catch (error: any) {
@@ -1080,20 +1080,20 @@ export default function WorkspaceDetail() {
           <TelemetrySidebar 
             workspace={workspace} 
             entries={workspaceEntries} 
-            units={units} 
+            entities={entities} 
             isOpen={isTelemetryOpen} 
             onClose={() => setIsTelemetryOpen(false)} 
           />
         )}
 
-        <ContextPanel isOpen={!!viewingUnitId} onClose={() => setViewingUnitId(null)}>
-          {viewingUnit && (
+        <ContextPanel isOpen={!!viewingEntityId} onClose={() => setViewingUnitId(null)}>
+          {viewingEntity && (
             <EntitySnapshot 
-              entity={viewingUnit} 
-              type="unit" 
+              entity={viewingEntity} 
+              type="entity" 
               onClose={() => setViewingUnitId(null)}
-              onUpdateTags={handleUpdateUnitTags}
-              workspaceNet={viewingUnitEntry?.net}
+              onUpdateTags={handleUpdateEntityTags}
+              workspaceNet={workspaceEntries.filter(e => e.entity_id === viewingEntityId).reduce((sum, e) => sum + e.net, 0)}
               variant="sidebar"
             />
           )}
@@ -1174,8 +1174,8 @@ export default function WorkspaceDetail() {
           <div ref={addEntrySectionRef} className="section-card p-5 lg:p-6">
             <div className="flex items-start justify-between gap-4 mb-4">
               <div>
-                <h3 className="font-medium text-stone-900 dark:text-stone-100">{getActionText('addUnit')}</h3>
-                <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">{tx('Participants can be added while the activity is active. Select an existing participant or enter a new name.')}</p>
+                <h3 className="font-medium text-stone-900 dark:text-stone-100">Add Entity</h3>
+                <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">Entities can be added while the activity is active. Select an existing entity or enter a new name.</p>
               </div>
             </div>
 
@@ -1185,7 +1185,7 @@ export default function WorkspaceDetail() {
                   ? 'This form is locked until the activity is active. Use Activate activity in Operations.'
                   : (isCompleted || isArchived)
                     ? 'This form is locked because the activity is completed or archived.'
-                    : 'Your current permissions do not allow adding participants to this activity.'}
+                    : 'Your current permissions do not allow adding entities to this activity.'}
               </p>
             )}
 
@@ -1193,25 +1193,25 @@ export default function WorkspaceDetail() {
               <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_0.9fr_auto] gap-3 items-start">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <select
-                    ref={addParticipantSelectRef}
+                    ref={addEntitySelectRef}
                     className="control-input"
-                    value={selectedUnitId}
+                    value={selectedEntityId}
                     onChange={e => {
                       setSelectedUnitId(e.target.value);
                       if (e.target.value) setQuickUnitName('');
                     }}
                     disabled={!canAddUnits}
                   >
-                    <option value="">Select Participant or enter a new name</option>
-                    {availableUnits.map(p => (
-                      <option key={p.id} value={p.id}>{p.name || 'Unnamed Participant'}</option>
+                    <option value="">Select Entity or enter a new name</option>
+                    {availableEntities.map(p => (
+                      <option key={p.id} value={p.id}>{p.name || 'Unnamed Entity'}</option>
                     ))}
                   </select>
                   <input
                     type="text"
                     className="control-input"
-                    placeholder="Or enter new participant name"
-                    value={quickUnitName}
+                    placeholder="username"
+                    value={quickEntityName}
                     onChange={e => {
                       setQuickUnitName(e.target.value);
                       if (e.target.value.trim()) setSelectedUnitId('');
@@ -1221,7 +1221,6 @@ export default function WorkspaceDetail() {
                 </div>
 
                 <div className="flex items-center rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 overflow-hidden focus-within:ring-2 focus-within:ring-stone-500">
-                  <span className="inline-flex h-full items-center justify-center px-3 bg-stone-100 dark:bg-stone-700 text-stone-500 dark:text-stone-300 text-sm font-medium">$</span>
                   <input
                     ref={recordEntryInputRef}
                     type="number"
@@ -1237,10 +1236,10 @@ export default function WorkspaceDetail() {
                 <button
                   type="submit"
                   className="action-btn-primary justify-center min-h-[42px] w-full lg:w-auto"
-                  disabled={isAddingParticipant || (!selectedUnitId && !quickUnitName.trim()) || !canAddUnits || !entryValue.trim()}
+                  disabled={isAddingEntity || (!selectedEntityId && !quickEntityName.trim()) || !canAddUnits || !entryValue.trim()}
                   title="Record Entry (E)"
                 >
-                  {isAddingParticipant ? 'Recording…' : didAddParticipant ? 'Recorded ✓' : 'Record Entry'}
+                  {isAddingEntity ? 'Recording…' : didAddEntity ? 'Recorded ✓' : 'Record Entry'}
                 </button>
               </div>
 
@@ -1249,7 +1248,7 @@ export default function WorkspaceDetail() {
                   type="button"
                   onClick={() => setShowValueingOptions(prev => !prev)}
                   className="action-btn-tertiary px-2.5 py-1.5 text-xs"
-                  disabled={!canAddUnits || isAddingParticipant}
+                  disabled={!canAddUnits || isAddingEntity}
                 >
                   {showValueingOptions ? 'Hide Valueing Options' : 'Valueing Options'}
                 </button>
@@ -1383,7 +1382,7 @@ export default function WorkspaceDetail() {
             {workspaceEntries.length === 0 ? (
               <EmptyState
                 title="No entries yet"
-                description="No participant activities have been recorded yet."
+                description="No entity entries have been recorded yet."
                 actionLabel="Add Entry"
                 onAction={() => addEntrySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
               />
@@ -1391,7 +1390,7 @@ export default function WorkspaceDetail() {
             <table className="w-full text-left text-sm">
               <thead className="bg-white dark:bg-stone-900 text-stone-500 dark:text-stone-400 font-medium border-b border-stone-100 dark:border-stone-800">
                 <tr>
-                  <th className="px-6 py-3">Participant</th>
+                  <th className="px-6 py-3">Entity</th>
                   <th className="px-6 py-3 text-right">Entry Value</th>
                   <th className="px-6 py-3 text-right">Total</th>
                   <th className="px-6 py-3 text-right">Delta</th>
@@ -1403,11 +1402,11 @@ export default function WorkspaceDetail() {
                   <EntriesRow 
                     key={entry.id} 
                     entry={entry} 
-                    unit={units.find(p => p.id === entry.unit_id)!}
+                    entity={entities.find(p => p.id === entry.entity_id)!}
                     updateEntry={guardedUpdateEntry}
                     deleteEntry={guardedDeleteEntry}
                     isHighIntensity={workspaceMode === 'high_intensity'}
-                    onViewUnit={(id) => setViewingUnitId(id)}
+                    onViewEntity={(id) => setViewingUnitId(id)}
                     onTotalUpdate={openTotalModal}
                     onSitOut={openSitOutModal}
                     onLeave={openLeaveModal}
@@ -1528,7 +1527,7 @@ export default function WorkspaceDetail() {
             <div className="p-5 border-b border-stone-200 dark:border-stone-800">
               <h3 className="font-medium text-stone-900 dark:text-stone-100">{totalMode === 'sitout' ? 'Move To Standby' : totalMode === 'leave' ? tx('Mark Activity Exit') : 'Update Position Total'}</h3>
               <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">
-                {units.find(p => p.id === totalEntry.unit_id)?.name || 'Participant'}
+                {entities.find(p => p.id === totalEntry.entity_id)?.name || 'Entity'}
               </p>
             </div>
             <div className="p-5 space-y-4">
@@ -1603,13 +1602,13 @@ export default function WorkspaceDetail() {
   );
 }
 
-function EntriesRow({ entry, unit, updateEntry, deleteEntry, isHighIntensity, onViewUnit, onTotalUpdate, onSitOut, onLeave, canManageValue, isTotalActionPending, onNotify }: { 
+function EntriesRow({ entry, entity, updateEntry, deleteEntry, isHighIntensity, onViewEntity, onTotalUpdate, onSitOut, onLeave, canManageValue, isTotalActionPending, onNotify }: { 
   entry: Entry, 
-  unit: any, 
+  entity: Entity, 
   updateEntry: (e: Entry) => Promise<void>,
   deleteEntry: (id: string) => Promise<void>,
   isHighIntensity: boolean,
-  onViewUnit: (id: string) => void,
+  onViewEntity: (id: string) => void,
   onTotalUpdate: (entry: Entry) => void,
   onSitOut: (entry: Entry) => void,
   onLeave: (entry: Entry) => void,
@@ -1651,7 +1650,7 @@ function EntriesRow({ entry, unit, updateEntry, deleteEntry, isHighIntensity, on
 
   const generateReceipt = () => {
     const net = (parseFloat(total) || 0) - (parseFloat(initialValue) || 0);
-    return `🧾 *Activity Total Snapshot*\nParticipant: ${unit.name}\nEntry Value: ${formatValue(parseFloat(initialValue))}\nCurrent Total: ${formatValue(parseFloat(total))}\nDelta: ${net > 0 ? '+' : ''}${formatValue(net)}`;
+    return `🧾 *Activity Total Snapshot*\nEntity: ${entity.name}\nEntry Value: ${formatValue(parseFloat(initialValue))}\nCurrent Total: ${formatValue(parseFloat(total))}\nDelta: ${net > 0 ? '+' : ''}${formatValue(net)}`;
   };
 
   const shareReceipt = () => {
@@ -1676,7 +1675,7 @@ function EntriesRow({ entry, unit, updateEntry, deleteEntry, isHighIntensity, on
 
     return (
       <tr className="bg-stone-50 dark:bg-stone-800">
-        <td className="px-6 py-3 font-medium text-stone-900 dark:text-stone-100">{unit.name}</td>
+        <td className="px-6 py-3 font-medium text-stone-900 dark:text-stone-100">{entity.name}</td>
         <td className="px-6 py-3 text-right">
           <input 
             type="number" 
@@ -1717,17 +1716,17 @@ function EntriesRow({ entry, unit, updateEntry, deleteEntry, isHighIntensity, on
     <tr className="hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors group">
       <td 
         className="px-6 py-3 font-medium text-stone-900 dark:text-stone-100 cursor-pointer hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-        onClick={() => onViewUnit(unit.id)}
+        onClick={() => onViewEntity(entity.id)}
       >
-        {unit?.name || 'Unknown'}
+        {entity?.name || 'Unknown'}
         {entry.left_at && (
           <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">
             Left {new Date(entry.left_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
           </div>
         )}
-        {unit?.tags && unit.tags.length > 0 && (
+        {entity?.tags && entity.tags.length > 0 && (
           <div className="flex gap-1 mt-1">
-            {unit.tags.slice(0, 2).map((tag: string) => (
+            {entity.tags.slice(0, 2).map((tag: string) => (
               <span key={tag} className="text-[10px] bg-stone-100 dark:bg-stone-700 px-1 rounded text-stone-500 dark:text-stone-400">{tag}</span>
             ))}
           </div>

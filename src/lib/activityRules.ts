@@ -31,4 +31,4 @@ export const isTotaldEntries = (entries: Entry[], tolerance = 0.01) => {
   return Math.abs(computeEntriesDiscrepancy(entries)) < tolerance;
 };
 
-export const canAddUnitsForStatus = (status: Workspace['status']) => status === 'active';
+export const canAddEntitiesForStatus = (status: Workspace['status']) => status === 'active';

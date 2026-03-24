@@ -31,10 +31,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       label: '',
       items: [
         { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Brief', hint: 'Operational overview and key metrics' },
-        { to: '/activity', icon: <History size={18} />, label: 'Activities', hint: 'Activity records and participant overview' },
+        { to: '/activity', icon: <History size={18} />, label: 'Activities', hint: 'Activity records and management' },
+        { to: '/entities', icon: <Users size={18} />, label: 'Entities', hint: 'Entity list and detailed profiles' },
         { to: '/channels', icon: <Circle size={18} />, label: 'Channels', hint: 'Channel tracking and settings overview' },
-        { to: '/contacts', icon: <Handshake size={18} />, label: 'Associates', hint: 'Associate network and relationship tracking' },
-        { to: '/team', icon: <Users size={18} />, label: 'Team', hint: 'Team management and operator coverage' },
+        { to: '/contacts', icon: <Handshake size={18} />, label: 'Collaborations', hint: 'Associate network and relationship tracking' },
+        { to: '/team', icon: <UserCog size={18} />, label: 'Team', hint: 'Team management and operator coverage' },
         { to: '/settings', icon: <Settings size={18} />, label: 'Config', hint: 'System preferences and access control' },
       ],
     },
@@ -46,9 +47,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       items: [
         { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Brief' },
         { to: '/activity', icon: <History size={18} />, label: 'Activities' },
+        { to: '/entities', icon: <Users size={18} />, label: 'Entities' },
         { to: '/channels', icon: <Circle size={18} />, label: 'Channels' },
-        { to: '/contacts', icon: <Handshake size={18} />, label: 'Associates' },
-        { to: '/team', icon: <Users size={18} />, label: 'Operations' },
+        { to: '/contacts', icon: <Handshake size={18} />, label: 'Collaborations' },
+        { to: '/team', icon: <UserCog size={18} />, label: 'Operations' },
       ],
     },
   ];
@@ -140,6 +142,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           const goRouteMap: Record<string, string> = {
             d: '/dashboard',
             a: '/activity',
+            e: '/entities',
             p: '/contacts',
             v: '/channels',
             o: '/team',

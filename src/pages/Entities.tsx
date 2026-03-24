@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { Search, Plus, Tag, X, TrendingUp, TrendingDown, Calendar, Award, Edit2, Save, Eye, Clock, Download, LayoutGrid, List, ArrowRightLeft, Trash2 } from 'lucide-react';
-import { Associate, Unit } from '../types';
+import { Associate, Entity } from '../types';
 import { formatValue, formatDate } from '../lib/utils';
 import { cn } from '../lib/utils';
 import MobileRecordCard from '../components/MobileRecordCard';
@@ -12,15 +12,15 @@ import DataActionMenu from '../components/DataActionMenu';
 import EntitySnapshot from '../components/EntitySnapshot';
 import { useLabels } from '../lib/labels';
 
-const getUnitDisplayName = (name?: string | null) => {
+const getEntityDisplayName = (name?: string | null) => {
   const trimmed = name?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : 'Unnamed Participant';
+  return trimmed && trimmed.length > 0 ? trimmed : 'Unnamed Entity';
 };
 
-export default function Units({ embedded = false }: { embedded?: boolean }) {
+export default function Entities({ embedded = false }: { embedded?: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { units, addUnit, requestAdjustment, importUnits, updateUnit, deleteUnit, transferUnitTotal, recordOutputRequest, entries, workspaces, associates } = useData();
+  const { entities, addEntity, requestAdjustment, importEntities, updateEntity, deleteEntity, transferEntityTotal, recordOutputRequest, entries, workspaces, associates } = useData();
   const { canAccessAdminUi, canOperateLog, canManageValue } = useAppRole();
   const { getActionText, tx } = useLabels();
   const canRecordDeferred = canOperateLog;
@@ -30,35 +30,35 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
   const [isRecordingOutputRequest, setIsRecordingOutputRequest] = useState(false);
   const [isRecordingDeferred, setIsRecordingDeferred] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'workspace'>('grid');
-  const [quickViewUnit, setQuickViewUnit] = useState<Unit | null>(null);
-  const [entrysViewUnit, setEntrysViewUnit] = useState<Unit | null>(null);
-  const [unitsWorkspaceScrollTop, setUnitsWorkspaceScrollTop] = useState(0);
-  const unitsWorkspaceContainerRef = useRef<HTMLDivElement | null>(null);
-  const [deletingUnitId, setDeletingUnitId] = useState<string | null>(null);
+  const [quickViewEntity, setQuickViewEntity] = useState<Entity | null>(null);
+  const [entriesViewEntity, setEntriesViewEntity] = useState<Entity | null>(null);
+  const [entitiesWorkspaceScrollTop, setEntitiesWorkspaceScrollTop] = useState(0);
+  const entitiesWorkspaceContainerRef = useRef<HTMLDivElement | null>(null);
+  const [deletingEntityId, setDeletingEntityId] = useState<string | null>(null);
   const [importStatus, setImportStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // New Unit Form
+  // New Entity Form
   const [name, setName] = useState('');
   const [profileTotal, setProfileTotal] = useState('');
   const [tags, setTags] = useState<string[]>([]);
   const [currentTag, setCurrentTag] = useState('');
   const [attributedAssociateId, setAttributedAssociateId] = useState('');
-  const [transferFromUnitId, setTransferFromUnitId] = useState('');
-  const [transferToUnitId, setTransferToUnitId] = useState('');
+  const [transferFromEntityId, setTransferFromEntityId] = useState('');
+  const [transferToEntityId, setTransferToEntityId] = useState('');
   const [transferAmount, setTransferAmount] = useState('');
-  const [outputRequestUnitId, setOutputRequestUnitId] = useState('');
+  const [outputRequestEntityId, setOutputRequestEntityId] = useState('');
   const [outputRequestAmount, setOutputRequestAmount] = useState('');
-  const [deferredUnitId, setDeferredUnitId] = useState('');
+  const [deferredEntityId, setDeferredEntityId] = useState('');
   const [deferredAmount, setDeferredAmount] = useState('');
   const [deferredDirection, setDeferredDirection] = useState<'inbound' | 'outbound'>('outbound');
 
-  const openTransferForm = (fromUnitId?: string) => {
+  const openTransferForm = (fromEntityId?: string) => {
     setIsTransferring(true);
-    if (fromUnitId) {
-      setTransferFromUnitId(fromUnitId);
-      if (transferToUnitId === fromUnitId) {
-        setTransferToUnitId('');
+    if (fromEntityId) {
+      setTransferFromEntityId(fromEntityId);
+      if (transferToEntityId === fromEntityId) {
+        setTransferToEntityId('');
       }
     }
     if (typeof window !== 'undefined') {
@@ -66,9 +66,9 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  const openDeferredForm = (unitId?: string) => {
+  const openDeferredForm = (entityId?: string) => {
     setIsRecordingDeferred(true);
-    setDeferredUnitId(unitId || '');
+    setDeferredEntityId(entityId || '');
     setDeferredAmount('');
     setDeferredDirection('outbound');
     if (typeof window !== 'undefined') {
@@ -76,8 +76,8 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  const openUnitProfile = (unitId: string) => {
-    navigate(`/units/${unitId}`);
+  const openEntityProfile = (entityId: string) => {
+    navigate(`/entities/${entityId}`);
   };
 
   const normalizeValueInput = (value: string, setValue: (next: string) => void) => {
@@ -89,20 +89,20 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
   };
 
   // --- Smart Stats Calculation ---
-  const unitStats = useMemo(() => {
+  const entityStats = useMemo(() => {
     const stats = new Map<string, { net: number; activitys: number; lastActive: string | null; surpluses: number; totalInflow: number; avgActivity: number }>();
 
-    units.forEach(p => {
-      const unitEntries = entries.filter(l => l.unit_id === p.id);
-      const net = unitEntries.reduce((sum, e) => sum + e.net, 0);
-      const totalInflow = unitEntries.reduce((sum, e) => sum + e.input_amount, 0);
-      const activitys = unitEntries.length;
-      const surpluses = unitEntries.filter(e => e.net > 0).length;
+    entities.forEach(p => {
+      const entityEntries = entries.filter(l => l.entity_id === p.id);
+      const net = entityEntries.reduce((sum, e) => sum + e.net, 0);
+      const totalInflow = entityEntries.reduce((sum, e) => sum + e.input_amount, 0);
+      const activitys = entityEntries.length;
+      const surpluses = entityEntries.filter(e => e.net > 0).length;
       
       // Calculate average activity duration
       let totalDuration = 0;
       let durationCount = 0;
-      unitEntries.forEach(e => {
+      entityEntries.forEach(e => {
         if (e.joined_at && e.left_at) {
           totalDuration += (new Date(e.left_at).getTime() - new Date(e.joined_at).getTime()) / (1000 * 60 * 60);
           durationCount++;
@@ -112,9 +112,9 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
       
       // Find last played date
       let lastActive = null;
-      if (unitEntries.length > 0) {
+      if (entityEntries.length > 0) {
         // Get workspace dates
-        const dates = unitEntries.map(e => {
+        const dates = entityEntries.map(e => {
           const workspace = workspaces.find(g => g.id === e.workspace_id);
           return workspace ? workspace.date : '';
         }).filter(d => d).sort();
@@ -125,19 +125,19 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
     });
 
     return stats;
-  }, [units, entries, workspaces]);
+  }, [entities, entries, workspaces]);
 
   const workspaceById = useMemo(() => {
     return new Map(workspaces.map(workspace => [workspace.id, workspace]));
   }, [workspaces]);
 
-  const activeProfileUnit = quickViewUnit ?? entrysViewUnit;
+  const activeProfileEntity = quickViewEntity ?? entriesViewEntity;
 
-  const quickViewEntrys = useMemo(() => {
-    if (!activeProfileUnit) return [];
+  const quickViewEntries = useMemo(() => {
+    if (!activeProfileEntity) return [];
 
     return entries
-      .filter(entry => entry.unit_id === activeProfileUnit.id)
+      .filter(entry => entry.entity_id === activeProfileEntity.id)
       .map(entry => {
         const workspace = workspaceById.get(entry.workspace_id);
         const sortTimestamp =
@@ -159,43 +159,43 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
         };
       })
       .sort((a, b) => new Date(b.sortTimestamp || 0).getTime() - new Date(a.sortTimestamp || 0).getTime());
-  }, [activeProfileUnit, entries, workspaceById]);
+  }, [activeProfileEntity, entries, workspaceById]);
 
-  const filteredUnits = units.filter(unit => 
-    unit.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    unit.tags?.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
+  const filteredEntities = entities.filter(entity => 
+    entity.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    entity.tags?.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
-  const UNIT_ROW_HEIGHT = 58;
-  const UNIT_OVERSCAN = 10;
-  const UNIT_VIEWPORT_HEIGHT = 560;
-  const shouldWindowUnitsWorkspace = viewMode === 'workspace' && filteredUnits.length > 120;
-  const unitVisibleCount = Math.ceil(UNIT_VIEWPORT_HEIGHT / UNIT_ROW_HEIGHT) + UNIT_OVERSCAN * 2;
-  const unitStartIndex = shouldWindowUnitsWorkspace
-    ? Math.max(0, Math.floor(unitsWorkspaceScrollTop / UNIT_ROW_HEIGHT) - UNIT_OVERSCAN)
+  const ENTITY_ROW_HEIGHT = 58;
+  const ENTITY_OVERSCAN = 10;
+  const ENTITY_VIEWPORT_HEIGHT = 560;
+  const shouldWindowEntitiesWorkspace = viewMode === 'workspace' && filteredEntities.length > 120;
+  const entityVisibleCount = Math.ceil(ENTITY_VIEWPORT_HEIGHT / ENTITY_ROW_HEIGHT) + ENTITY_OVERSCAN * 2;
+  const entityStartIndex = shouldWindowEntitiesWorkspace
+    ? Math.max(0, Math.floor(entitiesWorkspaceScrollTop / ENTITY_ROW_HEIGHT) - ENTITY_OVERSCAN)
     : 0;
-  const unitEndIndex = shouldWindowUnitsWorkspace
-    ? Math.min(filteredUnits.length, unitStartIndex + unitVisibleCount)
-    : filteredUnits.length;
-  const visibleUnits = shouldWindowUnitsWorkspace
-    ? filteredUnits.slice(unitStartIndex, unitEndIndex)
-    : filteredUnits;
-  const unitTopSpacerHeight = shouldWindowUnitsWorkspace ? unitStartIndex * UNIT_ROW_HEIGHT : 0;
-  const unitBottomSpacerHeight = shouldWindowUnitsWorkspace
-    ? Math.max(0, (filteredUnits.length - unitEndIndex) * UNIT_ROW_HEIGHT)
+  const entityEndIndex = shouldWindowEntitiesWorkspace
+    ? Math.min(filteredEntities.length, entityStartIndex + entityVisibleCount)
+    : filteredEntities.length;
+  const visibleEntities = shouldWindowEntitiesWorkspace
+    ? filteredEntities.slice(entityStartIndex, entityEndIndex)
+    : filteredEntities;
+  const entityTopSpacerHeight = shouldWindowEntitiesWorkspace ? entityStartIndex * ENTITY_ROW_HEIGHT : 0;
+  const entityBottomSpacerHeight = shouldWindowEntitiesWorkspace
+    ? Math.max(0, (filteredEntities.length - entityEndIndex) * ENTITY_ROW_HEIGHT)
     : 0;
 
   useEffect(() => {
-    setUnitsWorkspaceScrollTop(0);
-    if (unitsWorkspaceContainerRef.current) {
-      unitsWorkspaceContainerRef.current.scrollTop = 0;
+    setEntitiesWorkspaceScrollTop(0);
+    if (entitiesWorkspaceContainerRef.current) {
+      entitiesWorkspaceContainerRef.current.scrollTop = 0;
     }
   }, [searchTerm, viewMode]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const action = params.get('action');
-    if (action !== 'add-participant' && action !== 'add-deferred') return;
+    if (action !== 'add-entity' && action !== 'add-deferred') return;
 
     if (action === 'add-deferred') {
       openDeferredForm();
@@ -207,7 +207,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
     navigate({ pathname: location.pathname, search: next.toString() ? `?${next.toString()}` : '' }, { replace: true });
   }, [location.pathname, location.search, navigate]);
 
-  const handleAddUnit = async (e: React.FormEvent) => {
+  const handleAddEntity = async (e: React.FormEvent) => {
     e.preventDefault();
     const displayName = name.trim();
     if (displayName.length === 0) {
@@ -218,7 +218,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
     try {
       const parsedTotal = profileTotal.trim() === '' ? undefined : Number(profileTotal);
 
-      await addUnit({ 
+      await addEntity({ 
         name: displayName,
         tags,
         total: Number.isFinite(parsedTotal as number) ? parsedTotal : undefined,
@@ -227,7 +227,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
       setIsAdding(false);
       resetForm();
     } catch (error: any) {
-      const message = error?.message || 'Unable to save participant.';
+      const message = error?.message || 'Unable to save entity.';
       setImportStatus({ type: 'error', message });
     }
   };
@@ -263,7 +263,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
   const handleTransferBetweenUnits = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canManageValue) {
-      setImportStatus({ type: 'error', message: 'Only admin can transfer participant totals.' });
+      setImportStatus({ type: 'error', message: 'Only admin can transfer entity totals.' });
       return;
     }
     try {
@@ -273,11 +273,11 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
         return;
       }
 
-      await transferUnitTotal(transferFromUnitId, transferToUnitId, parsedAmount);
-      setImportStatus({ type: 'success', message: 'Participant transfer completed.' });
+      await transferEntityTotal(transferFromEntityId, transferToEntityId, parsedAmount);
+      setImportStatus({ type: 'success', message: 'Entity transfer completed.' });
       setIsTransferring(false);
-      setTransferFromUnitId('');
-      setTransferToUnitId('');
+      setTransferFromEntityId('');
+      setTransferToEntityId('');
       setTransferAmount('');
     } catch (error: any) {
       setImportStatus({ type: 'error', message: error?.message || 'Unable to transfer total.' });
@@ -298,10 +298,10 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
         return;
       }
 
-      await recordOutputRequest(outputRequestUnitId, parsedAmount);
+      await recordOutputRequest(outputRequestEntityId, parsedAmount);
       setImportStatus({ type: 'success', message: 'Outflow request submitted and marked pending for admin approval.' });
       setIsRecordingOutputRequest(false);
-      setOutputRequestUnitId('');
+      setOutputRequestEntityId('');
       setOutputRequestAmount('');
     } catch (error: any) {
       setImportStatus({ type: 'error', message: error?.message || 'Unable to record alignment request.' });
@@ -317,8 +317,8 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
 
     try {
       const parsedAmount = Number(deferredAmount);
-      if (!deferredUnitId) {
-        setImportStatus({ type: 'error', message: 'Select a participant first.' });
+      if (!deferredEntityId) {
+        setImportStatus({ type: 'error', message: 'Select a entity first.' });
         return;
       }
       if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
@@ -327,7 +327,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
       }
 
       await requestAdjustment({
-        unit_id: deferredUnitId,
+        entity_id: deferredEntityId,
         amount: parsedAmount,
         type: deferredDirection === 'outbound' ? 'input' : 'output',
         requested_at: new Date().toISOString(),
@@ -335,7 +335,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
 
       setImportStatus({ type: 'success', message: 'Deferred entry submitted and marked pending for admin approval.' });
       setIsRecordingDeferred(false);
-      setDeferredUnitId('');
+      setDeferredEntityId('');
       setDeferredAmount('');
       setDeferredDirection('outbound');
     } catch (error: any) {
@@ -343,51 +343,51 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  const handleDeleteUnitProfile = async (unit: Unit) => {
-    if (deletingUnitId === unit.id) return;
+  const handleDeleteEntityProfile = async (entity: Entity) => {
+    if (deletingEntityId === entity.id) return;
     if (!canManageValue) {
-      setImportStatus({ type: 'error', message: 'Only admin can delete participant profiles.' });
+      setImportStatus({ type: 'error', message: 'Only admin can delete entity profiles.' });
       return;
     }
 
-    const confirmed = window.confirm(`Delete ${getUnitDisplayName(unit.name)} profile? This cannot be undone.`);
+    const confirmed = window.confirm(`Delete ${getEntityDisplayName(entity.name)} profile? This cannot be undone.`);
     if (!confirmed) return;
 
     try {
-      setDeletingUnitId(unit.id);
-      await deleteUnit(unit.id);
-      setImportStatus({ type: 'success', message: 'Participant profile deleted.' });
-      setQuickViewUnit(current => (current?.id === unit.id ? null : current));
+      setDeletingEntityId(entity.id);
+      await deleteEntity(entity.id);
+      setImportStatus({ type: 'success', message: 'Entity profile deleted.' });
+      setQuickViewEntity(current => (current?.id === entity.id ? null : current));
     } catch (error: any) {
-      setImportStatus({ type: 'error', message: error?.message || 'Unable to delete participant profile.' });
+      setImportStatus({ type: 'error', message: error?.message || 'Unable to delete entity profile.' });
     } finally {
-      setDeletingUnitId(current => (current === unit.id ? null : current));
+      setDeletingEntityId(current => (current === entity.id ? null : current));
     }
   };
 
-  const handleUpdateUnitTags = async (unitId: string, tags: string[]) => {
-    const existing = units.find(unit => unit.id === unitId);
+  const handleUpdateEntityTags = async (entityId: string, tags: string[]) => {
+    const existing = entities.find(entity => entity.id === entityId);
     if (!existing) return;
 
     try {
-      await updateUnit({ ...existing, tags });
-      setImportStatus({ type: 'success', message: 'Participant tags updated.' });
+      await updateEntity({ ...existing, tags });
+      setImportStatus({ type: 'success', message: 'Entity tags updated.' });
     } catch (error: any) {
-      setImportStatus({ type: 'error', message: error?.message || 'Unable to update participant tags.' });
+      setImportStatus({ type: 'error', message: error?.message || 'Unable to update entity tags.' });
     }
   };
 
-  const activeUnits = units.filter(p => (p.total || 0) !== 0).length;
-  const positiveDeltaUnits = units.filter(p => (unitStats.get(p.id)?.net || 0) > 0).length;
-  const unitDataMenuItems = [
-    { key: 'add-unit-profile', label: getActionText('addUnit'), onClick: () => setIsAdding(true) },
+  const activeEntitiesCount = entities.filter(p => (p.total || 0) !== 0).length;
+  const positiveDeltaEntities = entities.filter(p => (entityStats.get(p.id)?.net || 0) > 0).length;
+  const entityDataMenuItems = [
+    { key: 'add-entity-profile', label: getActionText('addEntity'), onClick: () => setIsAdding(true) },
 
     {
       key: 'transfer-totals',
       label: 'Transfer Totals',
       onClick: () => {
         if (!canManageValue) {
-          setImportStatus({ type: 'error', message: 'Only admin can transfer participant totals.' });
+          setImportStatus({ type: 'error', message: 'Only admin can transfer entity totals.' });
           return;
         }
         openTransferForm();
@@ -438,11 +438,11 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
         <div>
           {embedded ? (
             <>
-              <h3 className="text-base font-medium text-stone-900 dark:text-stone-100">Participants</h3>
+              <h3 className="text-base font-medium text-stone-900 dark:text-stone-100">Entities</h3>
             </>
           ) : (
             <>
-              <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Participants</h2>
+              <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Entities</h2>
             </>
           )}
         </div>
@@ -450,15 +450,15 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
           {!embedded && (
             <div className="hidden lg:flex items-center gap-2 text-xs">
               <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
-                <span className="font-mono text-stone-900 dark:text-stone-100">{units.length}</span> participants
+                <span className="font-mono text-stone-900 dark:text-stone-100">{entities.length}</span> entities
               </span>
               <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
-                <span className="font-mono text-stone-900 dark:text-stone-100">{activeUnits}</span> active
+                <span className="font-mono text-stone-900 dark:text-stone-100">{activeEntitiesCount}</span> active
               </span>
             </div>
           )}
           <div className="flex gap-2 flex-wrap">
-            <DataActionMenu items={unitDataMenuItems} />
+            <DataActionMenu items={entityDataMenuItems} />
           </div>
         </div>
       </div>
@@ -489,7 +489,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
 
         <div className="flex items-center justify-between gap-3">
           <p className="text-sm text-stone-500 dark:text-stone-400">
-            <span className="font-medium text-stone-900 dark:text-stone-100">{filteredUnits.length}</span> participants
+            <span className="font-medium text-stone-900 dark:text-stone-100">{filteredEntities.length}</span> entities
           </p>
           <div className="toggle-indirect-track toggle-compact-track">
             <button
@@ -521,8 +521,8 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
       </div>
 
       {isAdding && (
-        <form onSubmit={handleAddUnit} className="section-card p-6 animate-in fade-in slide-in-from-top-4">
-          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">New Participant</h3>
+        <form onSubmit={handleAddEntity} className="section-card p-6 animate-in fade-in slide-in-from-top-4">
+          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">New Entity</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div className="space-y-1">
               <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Name</label>
@@ -533,7 +533,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
                 onChange={e => setName(e.target.value)}
                 required
               />
-              <p className="text-[11px] text-stone-500 dark:text-stone-400">Used to identify this participant.</p>
+              <p className="text-[11px] text-stone-500 dark:text-stone-400">Used to identify this entity.</p>
             </div>
             <input
               type="number"
@@ -585,7 +585,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
               type="submit" 
               className="action-btn-primary"
             >
-              {getActionText('addUnit')}
+              {getActionText('addEntity')}
             </button>
           </div>
         </form>
@@ -594,30 +594,30 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
       {isTransferring && (
         <div className="fixed inset-0 z-40 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center p-4">
           <form onSubmit={handleTransferBetweenUnits} className="section-card w-full max-w-3xl p-6 animate-in fade-in zoom-in-95">
-            <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Transfer Between Participants</h3>
+            <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Transfer Between Entities</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <select
                 className="control-input"
-                value={transferFromUnitId}
-                onChange={e => setTransferFromUnitId(e.target.value)}
+                value={transferFromEntityId}
+                onChange={e => setTransferFromEntityId(e.target.value)}
                 disabled={!canManageValue}
                 required
               >
-                <option value="">From Participant</option>
-                {units.map(unit => (
-                  <option key={unit.id} value={unit.id}>{getUnitDisplayName(unit.name)} ({formatValue(unit.total || 0)})</option>
+                <option value="">From Entity</option>
+                {entities.map(entity => (
+                  <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(entity.total || 0)})</option>
                 ))}
               </select>
               <select
                 className="control-input"
-                value={transferToUnitId}
-                onChange={e => setTransferToUnitId(e.target.value)}
+                value={transferToEntityId}
+                onChange={e => setTransferToEntityId(e.target.value)}
                 disabled={!canManageValue}
                 required
               >
-                <option value="">To Participant</option>
-                {units.map(unit => (
-                  <option key={unit.id} value={unit.id}>{getUnitDisplayName(unit.name)} ({formatValue(unit.total || 0)})</option>
+                <option value="">To Entity</option>
+                {entities.map(entity => (
+                  <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(entity.total || 0)})</option>
                 ))}
               </select>
               <input
@@ -638,8 +638,8 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
                 type="button"
                 onClick={() => {
                   setIsTransferring(false);
-                  setTransferFromUnitId('');
-                  setTransferToUnitId('');
+                  setTransferFromEntityId('');
+                  setTransferToEntityId('');
                   setTransferAmount('');
                 }}
                 className="action-btn-secondary"
@@ -661,14 +661,14 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
               <select
                 className="control-input"
-                value={deferredUnitId}
-                onChange={e => setDeferredUnitId(e.target.value)}
+                value={deferredEntityId}
+                onChange={e => setDeferredEntityId(e.target.value)}
                 disabled={!canRecordDeferred}
                 required
               >
-                <option value="">Select Participant</option>
-                {units.map(unit => (
-                  <option key={unit.id} value={unit.id}>{getUnitDisplayName(unit.name)} ({formatValue(unit.total || 0)})</option>
+                <option value="">Select Entity</option>
+                {entities.map(entity => (
+                  <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(entity.total || 0)})</option>
                 ))}
               </select>
               <input
@@ -698,7 +698,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
                 type="button"
                 onClick={() => {
                   setIsRecordingDeferred(false);
-                  setDeferredUnitId('');
+                  setDeferredEntityId('');
                   setDeferredAmount('');
                   setDeferredDirection('outbound');
                 }}
@@ -717,18 +717,18 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
       {isRecordingOutputRequest && (
         <div className="fixed inset-0 z-40 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center p-4">
           <form onSubmit={handleRecordOutputRequest} className="section-card w-full max-w-3xl p-6 animate-in fade-in zoom-in-95">
-            <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Record Participant Alignment Request</h3>
+            <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Record Entity Alignment Request</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <select
                 className="control-input"
-                value={outputRequestUnitId}
-                onChange={e => setOutputRequestUnitId(e.target.value)}
+                value={outputRequestEntityId}
+                onChange={e => setOutputRequestEntityId(e.target.value)}
                 disabled={!canManageValue}
                 required
               >
-                <option value="">Select Participant</option>
-                {units.map(unit => (
-                  <option key={unit.id} value={unit.id}>{getUnitDisplayName(unit.name)} ({formatValue(unit.total || 0)})</option>
+                <option value="">Select Entity</option>
+                {entities.map(entity => (
+                  <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(entity.total || 0)})</option>
                 ))}
               </select>
               <input
@@ -749,7 +749,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
                 type="button"
                 onClick={() => {
                   setIsRecordingOutputRequest(false);
-                  setOutputRequestUnitId('');
+                  setOutputRequestEntityId('');
                   setOutputRequestAmount('');
                 }}
                 className="action-btn-secondary"
@@ -766,32 +766,32 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
 
       {viewMode === 'grid' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
-          {filteredUnits.map(unit => {
-            const stats = unitStats.get(unit.id) || { net: 0, activitys: 0, lastActive: null, surpluses: 0, totalInflow: 0, avgActivity: 0 };
+          {filteredEntities.map(entity => {
+            const stats = entityStats.get(entity.id) || { net: 0, activitys: 0, lastActive: null, surpluses: 0, totalInflow: 0, avgActivity: 0 };
             return (
-              <UnitGridCard
-                key={unit.id}
-                unit={unit}
+              <EntityGridCard
+                key={entity.id}
+                entity={entity}
                 stats={stats}
-                onOpenProfile={() => openUnitProfile(unit.id)}
-                onOpenSnapshot={() => setQuickViewUnit(unit)}
+                onOpenProfile={() => openEntityProfile(entity.id)}
+                onOpenSnapshot={() => setQuickViewEntity(entity)}
                 canManageValue={canManageValue}
                 canRecordDeferred={canRecordDeferred}
-                onTransferFromUnit={() => openTransferForm(unit.id)}
-                onRecordDeferred={() => openDeferredForm(unit.id)}
-                onDelete={() => { void handleDeleteUnitProfile(unit); }}
+                onTransferFromEntity={() => openTransferForm(entity.id)}
+                onRecordDeferred={() => openDeferredForm(entity.id)}
+                onDelete={() => { void handleDeleteEntityProfile(entity); }}
               />
             );
           })}
-          {filteredUnits.length === 0 && (
+          {filteredEntities.length === 0 && (
             <div className="section-card p-8 text-center text-stone-400 sm:col-span-2 xl:col-span-3">
-              <p>No participants found.</p>
+              <p>No entities found.</p>
               <button
                 type="button"
                 onClick={() => setIsAdding(true)}
                 className="action-btn-primary text-xs px-3 py-1.5 mt-3"
               >
-                Add first participant
+                Add first entity
               </button>
             </div>
           )}
@@ -799,18 +799,18 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
       ) : (
         <div className="section-card overflow-hidden">
           <div className="md:hidden divide-y divide-stone-100 dark:divide-stone-800">
-            {filteredUnits.map(unit => {
-              const stats = unitStats.get(unit.id) || { net: 0, activitys: 0, lastActive: null, surpluses: 0, totalInflow: 0, avgActivity: 0 };
+            {filteredEntities.map(entity => {
+              const stats = entityStats.get(entity.id) || { net: 0, activitys: 0, lastActive: null, surpluses: 0, totalInflow: 0, avgActivity: 0 };
               return (
                 <MobileRecordCard
-                  key={unit.id}
-                  title={getUnitDisplayName(unit.name)}
+                  key={entity.id}
+                  title={getEntityDisplayName(entity.name)}
                   right={
                     <span className={cn(
                       "font-mono text-sm font-medium",
-                      (unit.total || 0) > 0 ? "text-emerald-600 dark:text-emerald-400" : (unit.total || 0) < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
+                      (entity.total || 0) > 0 ? "text-emerald-600 dark:text-emerald-400" : (entity.total || 0) < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
                     )}>
-                      {formatValue(unit.total || 0)}
+                      {formatValue(entity.total || 0)}
                     </span>
                   }
                   meta={<span>{stats.activitys} activities • {stats.lastActive ? formatDate(stats.lastActive) : 'Never active'}</span>}
@@ -825,16 +825,16 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
                     <div className="flex items-center gap-1.5">
                       {canManageValue && (
                         <button
-                          onClick={() => openTransferForm(unit.id)}
+                          onClick={() => openTransferForm(entity.id)}
                           className="p-1.5 text-stone-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition-colors"
-                          title="Transfer from this participant"
+                          title="Transfer from this entity"
                         >
                           <ArrowRightLeft size={16} />
                         </button>
                       )}
                       {canRecordDeferred && (
                         <button
-                          onClick={() => openDeferredForm(unit.id)}
+                          onClick={() => openDeferredForm(entity.id)}
                           className="p-1.5 text-stone-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 rounded-md transition-colors"
                           title="Add pending entry"
                         >
@@ -842,22 +842,22 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
                         </button>
                       )}
                       <button
-                        onClick={() => openUnitProfile(unit.id)}
+                        onClick={() => openEntityProfile(entity.id)}
                         className="action-btn-secondary text-xs px-2.5 py-1"
                       >
                         Open Profile
                       </button>
                       <button
-                        onClick={() => setQuickViewUnit(unit)}
+                        onClick={() => setQuickViewEntity(entity)}
                         className="action-btn-secondary text-xs px-2.5 py-1"
                       >
                         Quick Snapshot
                       </button>
                       {canManageValue && (
                         <button
-                          onClick={() => { void handleDeleteUnitProfile(unit); }}
+                          onClick={() => { void handleDeleteEntityProfile(entity); }}
                           className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-                          title="Delete participant"
+                          title="Delete entity"
                         >
                           <Trash2 size={16} />
                         </button>
@@ -867,29 +867,29 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
                 </MobileRecordCard>
               );
             })}
-            {filteredUnits.length === 0 && (
+            {filteredEntities.length === 0 && (
               <div className="px-6 py-10 text-center text-stone-400 text-sm">
-                <p>No participants found.</p>
+                <p>No entities found.</p>
                 <button
                   type="button"
                   onClick={() => setIsAdding(true)}
                   className="action-btn-primary text-xs px-3 py-1.5 mt-3"
                 >
-                  Add first participant
+                  Add first entity
                 </button>
               </div>
             )}
           </div>
 
           <CollapsibleWorkspaceSection
-            title="Participants"
-            summary={`${filteredUnits.length} participants`}
+            title="Entities"
+            summary={`${filteredEntities.length} entities`}
             className="hidden md:block"
             defaultExpanded={false}
             maxExpandedHeightClass="max-h-[560px]"
             maxCollapsedHeightClass="max-h-[96px]"
-            contentRef={unitsWorkspaceContainerRef}
-            onContentScroll={event => setUnitsWorkspaceScrollTop(event.currentTarget.scrollTop)}
+            contentRef={entitiesWorkspaceContainerRef}
+            onContentScroll={event => setEntitiesWorkspaceScrollTop(event.currentTarget.scrollTop)}
           >
           <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[980px] workspace-fixed text-left text-[13px]">
             <thead className="sticky top-0 z-10 bg-stone-50/95 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-700">
@@ -903,50 +903,50 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-              {unitTopSpacerHeight > 0 && (
+              {entityTopSpacerHeight > 0 && (
                 <tr>
-                  <td colSpan={6} style={{ height: `${unitTopSpacerHeight}px`, padding: 0, border: 0 }} />
+                  <td colSpan={6} style={{ height: `${entityTopSpacerHeight}px`, padding: 0, border: 0 }} />
                 </tr>
               )}
 
-              {visibleUnits.map(unit => {
-                const stats = unitStats.get(unit.id) || { net: 0, activitys: 0, lastActive: null, surpluses: 0, totalInflow: 0, avgActivity: 0 };
+              {visibleEntities.map(entity => {
+                const stats = entityStats.get(entity.id) || { net: 0, activitys: 0, lastActive: null, surpluses: 0, totalInflow: 0, avgActivity: 0 };
                 
                 return (
-                  <UnitRow 
-                    key={unit.id} 
-                    unit={unit} 
+                  <EntityRow 
+                    key={entity.id} 
+                    entity={entity} 
                     stats={stats} 
-                    updateUnit={updateUnit}
-                    onOpenProfile={() => openUnitProfile(unit.id)}
-                    onOpenSnapshot={() => setQuickViewUnit(unit)}
+                    updateEntity={updateEntity}
+                    onOpenProfile={() => openEntityProfile(entity.id)}
+                    onOpenSnapshot={() => setQuickViewEntity(entity)}
                     associates={associates}
                     canManageValue={canManageValue}
                     canRecordDeferred={canRecordDeferred}
-                    onTransferFromUnit={() => openTransferForm(unit.id)}
-                    onRecordDeferred={() => openDeferredForm(unit.id)}
-                    onDelete={() => { void handleDeleteUnitProfile(unit); }}
+                    onTransferFromEntity={() => openTransferForm(entity.id)}
+                    onRecordDeferred={() => openDeferredForm(entity.id)}
+                    onDelete={() => { void handleDeleteEntityProfile(entity); }}
                   />
                 );
               })}
 
-              {unitBottomSpacerHeight > 0 && (
+              {entityBottomSpacerHeight > 0 && (
                 <tr>
-                  <td colSpan={6} style={{ height: `${unitBottomSpacerHeight}px`, padding: 0, border: 0 }} />
+                  <td colSpan={6} style={{ height: `${entityBottomSpacerHeight}px`, padding: 0, border: 0 }} />
                 </tr>
               )}
 
-              {filteredUnits.length === 0 && (
+              {filteredEntities.length === 0 && (
                 <tr>
                   <td colSpan={6} className="px-6 py-12 text-center text-stone-400">
                     <div className="flex flex-col items-center gap-2">
-                      <span>No participants found.</span>
+                      <span>No entities found.</span>
                       <button
                         type="button"
                         onClick={() => setIsAdding(true)}
                         className="action-btn-primary text-xs px-3 py-1.5"
                       >
-                        Add first participant
+                        Add first entity
                       </button>
                     </div>
                   </td>
@@ -958,32 +958,32 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
         </div>
       )}
 
-      {quickViewUnit && (
+      {quickViewEntity && (
         <EntitySnapshot
-          entity={quickViewUnit}
-          type="unit"
-          onClose={() => setQuickViewUnit(null)}
-          onUpdateTags={(unitId, tags) => { void handleUpdateUnitTags(unitId, tags); }}
-          workspaceNet={unitStats.get(quickViewUnit.id)?.net || 0}
+          entity={quickViewEntity}
+          type="entity"
+          onClose={() => setQuickViewEntity(null)}
+          onUpdateTags={(entityId, tags) => { void handleUpdateEntityTags(entityId, tags); }}
+          workspaceNet={entityStats.get(quickViewEntity.id)?.net || 0}
           variant="modal"
         />
       )}
 
-      {entrysViewUnit && (
+      {entriesViewEntity && (
         <div className="fixed inset-0 z-50 p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
           <div className="section-card rounded-2xl shadow-xl w-full max-w-6xl mx-auto h-[92vh] overflow-hidden flex flex-col">
             <div className="p-5 border-b border-stone-200 dark:border-stone-800 flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">{getUnitDisplayName(entrysViewUnit.name)} • Entries</h3>
-                <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">{quickViewEntrys.length} entries</p>
+                <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">{getEntityDisplayName(entriesViewEntity.name)} • Entries</h3>
+                <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">{quickViewEntries.length} entries</p>
               </div>
               <div className="flex items-center gap-2">
 
                 <button
                   type="button"
                   onClick={() => {
-                    setQuickViewUnit(entrysViewUnit);
-                    setEntrysViewUnit(null);
+                    setQuickViewEntity(entriesViewEntity);
+                    setEntriesViewEntity(null);
                   }}
                   className="action-btn-secondary"
                 >
@@ -994,9 +994,9 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
 
             <div className="p-5 overflow-auto">
               <div className="rounded-xl border border-stone-200 dark:border-stone-700 overflow-hidden">
-                {quickViewEntrys.length === 0 ? (
+                {quickViewEntries.length === 0 ? (
                   <div className="px-4 py-8 text-center text-sm text-stone-500 dark:text-stone-400">
-                    No activity entries yet.
+                    No entity entries yet.
                   </div>
                 ) : (
                   <table className="w-full text-sm">
@@ -1010,7 +1010,7 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                      {quickViewEntrys.map(entry => (
+                      {quickViewEntries.map(entry => (
                         <tr key={entry.id} className="bg-white dark:bg-stone-900">
                           <td className="px-4 py-2.5 text-stone-600 dark:text-stone-300 whitespace-nowrap">
                             {entry.date ? formatDate(entry.date) : '—'}
@@ -1057,24 +1057,24 @@ export default function Units({ embedded = false }: { embedded?: boolean }) {
   );
 }
 
-function UnitGridCard({
-  unit,
+function EntityGridCard({
+  entity,
   stats,
   onOpenProfile,
   onOpenSnapshot,
   canManageValue,
   canRecordDeferred,
-  onTransferFromUnit,
+  onTransferFromEntity,
   onRecordDeferred,
   onDelete,
 }: {
-  unit: Unit;
+  entity: Entity;
   stats: { net: number; activitys: number; lastActive: string | null; surpluses: number; totalInflow: number; avgActivity: number };
   onOpenProfile: () => void;
   onOpenSnapshot: () => void;
   canManageValue: boolean;
   canRecordDeferred: boolean;
-  onTransferFromUnit: () => void;
+  onTransferFromEntity: () => void;
   onRecordDeferred: () => void;
   onDelete: () => void;
 }) {
@@ -1082,14 +1082,14 @@ function UnitGridCard({
     <div className="section-card-hover p-5 min-w-0 cursor-pointer" onClick={onOpenProfile}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-            <p className="font-medium text-stone-900 dark:text-stone-100 truncate" title={getUnitDisplayName(unit.name)}>{getUnitDisplayName(unit.name)}</p>
+            <p className="font-medium text-stone-900 dark:text-stone-100 truncate" title={getEntityDisplayName(entity.name)}>{getEntityDisplayName(entity.name)}</p>
           <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">{stats.activitys} activities • {stats.lastActive ? formatDate(stats.lastActive) : 'Never'}</p>
         </div>
         <span className={cn(
           "font-mono text-sm font-medium",
-          (unit.total || 0) > 0 ? "text-emerald-600 dark:text-emerald-400" : (unit.total || 0) < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
+          (entity.total || 0) > 0 ? "text-emerald-600 dark:text-emerald-400" : (entity.total || 0) < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
         )}>
-          {formatValue(unit.total || 0)}
+          {formatValue(entity.total || 0)}
         </span>
       </div>
 
@@ -1105,10 +1105,10 @@ function UnitGridCard({
             <button
               onClick={event => {
                 event.stopPropagation();
-                onTransferFromUnit();
+                onTransferFromEntity();
               }}
               className="p-1.5 text-stone-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition-colors"
-              title="Transfer from this participant"
+              title="Transfer from this entity"
             >
               <ArrowRightLeft size={16} />
             </button>
@@ -1142,7 +1142,7 @@ function UnitGridCard({
                 onDelete();
               }}
               className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-              title="Delete participant"
+              title="Delete entity"
             >
               <Trash2 size={16} />
             </button>
@@ -1153,9 +1153,9 @@ function UnitGridCard({
   );
 }
 
-function UnitRow({ unit, stats, updateUnit, onOpenProfile, onOpenSnapshot, associates, canManageValue, canRecordDeferred, onTransferFromUnit, onRecordDeferred, onDelete }: { unit: Unit, stats: any, updateUnit: (p: Unit) => Promise<void>, onOpenProfile: () => void, onOpenSnapshot: () => void, associates: Associate[], canManageValue: boolean, canRecordDeferred: boolean, onTransferFromUnit: () => void, onRecordDeferred: () => void, onDelete: () => void }) {
+function EntityRow({ entity, stats, updateEntity, onOpenProfile, onOpenSnapshot, associates, canManageValue, canRecordDeferred, onTransferFromEntity, onRecordDeferred, onDelete }: { entity: Entity, stats: any, updateEntity: (p: Entity) => Promise<void>, onOpenProfile: () => void, onOpenSnapshot: () => void, associates: Associate[], canManageValue: boolean, canRecordDeferred: boolean, onTransferFromEntity: () => void, onRecordDeferred: () => void, onDelete: () => void }) {
   const [isEditing, setIsEditing] = useState(false);
-  const [data, setData] = useState(unit);
+  const [data, setData] = useState(entity);
 
   const normalizeValueInput = (value: string, setValue: (next: string) => void) => {
     const trimmed = value.trim();
@@ -1166,7 +1166,7 @@ function UnitRow({ unit, stats, updateUnit, onOpenProfile, onOpenSnapshot, assoc
   };
 
   const handleSave = async () => {
-    await updateUnit(data);
+    await updateEntity(data);
     setIsEditing(false);
   };
 
@@ -1182,7 +1182,7 @@ function UnitRow({ unit, stats, updateUnit, onOpenProfile, onOpenSnapshot, assoc
         </td>
         <td className="px-6 py-3">
           <span className="font-mono text-stone-600 dark:text-stone-300 text-sm">
-            {formatValue(unit.total || 0)}
+            {formatValue(entity.total || 0)}
           </span>
         </td>
         <td className="px-6 py-3" colSpan={2}>
@@ -1224,16 +1224,16 @@ function UnitRow({ unit, stats, updateUnit, onOpenProfile, onOpenSnapshot, assoc
     <tr className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors group">
       <td className="sticky-col px-6 py-2.5 cursor-pointer" onClick={onOpenProfile}>
         <div className="font-medium text-stone-900 dark:text-stone-100 flex items-center gap-2">
-          {getUnitDisplayName(unit.name)}
+          {getEntityDisplayName(entity.name)}
           <Eye size={14} className="opacity-0 group-hover:opacity-50 transition-opacity" />
         </div>
       </td>
       <td className="px-6 py-2.5">
         <div className={cn(
           "font-mono font-medium",
-          (unit.total || 0) > 0 ? "text-emerald-600 dark:text-emerald-400" : (unit.total || 0) < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
+          (entity.total || 0) > 0 ? "text-emerald-600 dark:text-emerald-400" : (entity.total || 0) < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
         )}>
-          {formatValue(unit.total || 0)}
+          {formatValue(entity.total || 0)}
         </div>
       </td>
       <td className="px-6 py-2.5">
@@ -1269,7 +1269,7 @@ function UnitRow({ unit, stats, updateUnit, onOpenProfile, onOpenSnapshot, assoc
             </span>
           )}
 
-          {unit.tags?.map(tag => (
+          {entity.tags?.map(tag => (
             <span key={tag} className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300">
               {tag}
             </span>
@@ -1280,9 +1280,9 @@ function UnitRow({ unit, stats, updateUnit, onOpenProfile, onOpenSnapshot, assoc
         <div className="flex justify-end gap-2 transition-opacity">
           {canManageValue && (
             <button
-              onClick={onTransferFromUnit}
+              onClick={onTransferFromEntity}
               className="p-1.5 text-stone-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition-colors"
-              title="Transfer from this participant"
+              title="Transfer from this entity"
             >
               <ArrowRightLeft size={16} />
             </button>
@@ -1314,7 +1314,7 @@ function UnitRow({ unit, stats, updateUnit, onOpenProfile, onOpenSnapshot, assoc
             <button
               onClick={onDelete}
               className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-              title="Delete participant"
+              title="Delete entity"
             >
               <Trash2 size={16} />
             </button>

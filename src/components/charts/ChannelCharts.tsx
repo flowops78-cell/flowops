@@ -180,7 +180,7 @@ export default function ChannelCharts({ historyData, distributionData }: Channel
               <div className="rounded-lg border border-stone-200 dark:border-stone-800 bg-stone-50/70 dark:bg-stone-800/50 px-3 py-2">
                 <div className="flex items-center justify-between gap-3 text-xs">
                   <span className="text-stone-500 dark:text-stone-400">Selected</span>
-                  <span className="font-mono text-stone-900 dark:text-stone-100">{selectedSlice ? formatValue(selectedSlice.value) : '0 units'}</span>
+                  <span className="font-mono text-stone-900 dark:text-stone-100">{selectedSlice ? formatValue(selectedSlice.value) : '0 entities'}</span>
                 </div>
                 <div className="mt-1 text-xs text-stone-600 dark:text-stone-300 truncate" title={selectedSlice?.name || ''}>
                   {selectedSlice?.name || '—'} · {selectedSliceShare}

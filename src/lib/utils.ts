@@ -10,7 +10,7 @@ export const formatValue = (amount: number) => {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   }).format(amount);
-  return `${formatted} units`;
+  return `${formatted} entities`;
 };
 
 export const formatCompactNumber = (value: number) => {
@@ -28,7 +28,7 @@ export const formatCompactValue = (amount: number) => {
     maximumFractionDigits: 1,
   }).format(Math.abs(amount));
 
-  return `${sign}${compact} units`;
+  return `${sign}${compact} entities`;
 };
 
 export const formatDate = (date: string | Date) => {
