@@ -60,7 +60,7 @@ $$;
 -- The 'set_updated_at' trigger on 'entities' (formerly units) works automatically.
 
 -- 7. Audit Logs Cleanup (Optional: Move old actions to new terminology)
-update system_events set 
+update audit_events set 
   action = replace(action, 'unit_', 'entity_'),
   entity = replace(entity, 'unit', 'entity')
 where action like 'unit_%' or entity = 'unit';
