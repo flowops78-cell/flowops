@@ -106,11 +106,12 @@ type DbRole = 'admin' | 'operator' | 'viewer';
 type ClusterRole = 'cluster_admin' | 'cluster_operator' | 'viewer';
 
 type ManageOrganizationsPayload = {
-  action: 'bootstrap-cluster-admin' | 'list-cluster-admins' | 'provision-organization' | 'switch-active-org' | 'set-cluster-role' | 'delete-user' | 'list';
+  action: 'bootstrap-cluster-admin' | 'list-cluster-admins' | 'provision-organization' | 'switch-active-org' | 'set-cluster-role' | 'delete-user' | 'reset-user-password' | 'list';
   org_id?: string;
   cluster_id?: string;
   target_user_id?: string;
   target_role?: DbRole | ClusterRole;
+  new_password?: string;
   access_token?: string;
 };
 
@@ -322,11 +323,9 @@ Deno.serve(async (request: Request) => {
 
     if (adminError) return json(400, { error: adminError.message }, origin);
 
-    // Fetch emails from auth.admin
     const { data: { users: authUsers } } = await adminClient.auth.admin.listUsers();
-    const emailMap = new Map(authUsers.map(u => [u.id, u.email]));
-
-    const result = (admins ?? []).map(a => ({
+    const emailMap = new Map(authUsers.map((u: any) => [u.id, u.email]));
+    const result = (admins ?? []).map((a: any) => ({
       user_id: a.user_id,
       email: emailMap.get(a.user_id) ?? null,
       role: a.role,
@@ -337,38 +336,119 @@ Deno.serve(async (request: Request) => {
     return json(200, { ok: true, admins: result }, origin);
   }
 
-  // Action: set-cluster-role
-  if (payload.action === 'set-cluster-role') {
-    const clusterId = normalizeId(payload.cluster_id) ?? authority.clusterId;
-    const targetUserId = normalizeId(payload.target_user_id);
-    const role = payload.target_role as ClusterRole;
+    // Action: set-cluster-role
+    if (payload.action === 'set-cluster-role') {
+      const clusterId = normalizeId(payload.cluster_id) ?? authority.clusterId;
+      const targetUserId = normalizeId(payload.target_user_id);
+      const role = payload.target_role as ClusterRole;
 
-    if (!clusterId || !targetUserId || !role) return json(400, { error: 'Missing parameters.' }, origin);
+      if (!clusterId || !targetUserId || !role) return json(400, { error: 'Missing parameters.' }, origin);
 
-    const { error: upsertError } = await adminClient
-      .from('cluster_memberships')
-      .upsert({
-        user_id: targetUserId,
-        cluster_id: clusterId,
-        role: role
-      }, { onConflict: 'user_id,cluster_id' });
+      // Guard 1: Prevent self-demotion
+      if (targetUserId === callerUserId && role !== 'cluster_admin') {
+        return json(403, { error: 'You cannot downgrade your own primary administrative access.' }, origin);
+      }
 
-    if (upsertError) return json(400, { error: upsertError.message }, origin);
+      // Guard 2: Prevent demoting the last admin
+      if (role !== 'cluster_admin') {
+        const { data: admins } = await adminClient
+          .from('cluster_memberships')
+          .select('user_id')
+          .eq('cluster_id', clusterId)
+          .eq('role', 'cluster_admin');
+        
+        if (admins && admins.length <= 1 && admins.some((a: any) => a.user_id === targetUserId)) {
+          return json(403, { error: 'Cannot downgrade the last remaining cluster admin.' }, origin);
+        }
+      }
 
-    return json(200, { ok: true }, origin);
-  }
+      const { error: upsertError } = await adminClient
+        .from('cluster_memberships')
+        .upsert({
+          user_id: targetUserId,
+          cluster_id: clusterId,
+          role: role
+        }, { onConflict: 'user_id,cluster_id' });
 
-  // Action: delete-user (Shared implementation)
-  if (payload.action === 'delete-user') {
-    const targetUserId = normalizeId(payload.target_user_id);
-    if (!targetUserId || targetUserId === callerUserId) return json(400, { error: 'Invalid target_user_id.' }, origin);
+      if (upsertError) return json(400, { error: upsertError.message }, origin);
 
-    // Basic scope check for now - improve if needed
-    const { error: deleteError } = await adminClient.auth.admin.deleteUser(targetUserId);
-    if (deleteError) return json(400, { error: deleteError.message }, origin);
+      return json(200, { ok: true }, origin);
+    }
 
-    return json(200, { ok: true }, origin);
-  }
+    // Action: delete-user (Shared implementation)
+    if (payload.action === 'delete-user') {
+      const targetUserId = normalizeId(payload.target_user_id);
+      const clusterId = normalizeId(payload.cluster_id) ?? authority.clusterId;
+
+      if (!targetUserId) return json(400, { error: 'Invalid target_user_id.' }, origin);
+      if (targetUserId === callerUserId) {
+        return json(403, { error: 'You cannot remove your own administrative access.' }, origin);
+      }
+
+      // Guard: Prevent deleting the last admin
+      if (clusterId) {
+        const { data: admins } = await adminClient
+          .from('cluster_memberships')
+          .select('user_id')
+          .eq('cluster_id', clusterId)
+          .eq('role', 'cluster_admin');
+        
+        if (admins && admins.length <= 1 && admins.some((a: any) => a.user_id === targetUserId)) {
+          return json(403, { error: 'Cannot remove the last remaining cluster admin.' }, origin);
+        }
+      }
+
+      // Basic scope check for now - improve if needed
+      const { error: deleteError } = await adminClient.auth.admin.deleteUser(targetUserId);
+      if (deleteError) return json(400, { error: deleteError.message }, origin);
+
+      return json(200, { ok: true }, origin);
+    }
+
+    // Action: reset-user-password
+    if (payload.action === 'reset-user-password') {
+      const targetUserId = normalizeId(payload.target_user_id);
+      const newPassword = payload.new_password; 
+      
+      if (!targetUserId) {
+        return json(400, { error: 'target_user_id is required.' }, origin);
+      }
+
+      if (targetUserId === callerUserId) {
+        return json(400, { error: 'Use personal settings for self-service password updates.' }, origin);
+      }
+
+      if (!authority.isPlatformAdmin) {
+        const { data: membership } = await adminClient
+          .from('cluster_memberships')
+          .select('cluster_id')
+          .eq('user_id', targetUserId)
+          .eq('cluster_id', authority.clusterId)
+          .maybeSingle();
+
+        if (!membership) {
+          return json(403, { error: 'Target user is outside of your administrative scope.' }, origin);
+        }
+      }
+
+      if (newPassword) {
+        const { error: resetError } = await adminClient.auth.admin.updateUserById(
+          targetUserId,
+          { password: newPassword }
+        );
+        if (resetError) return json(400, { error: resetError.message }, origin);
+        return json(200, { ok: true, message: 'Password updated.' }, origin);
+      }
+
+      // Default to sending reset email via admin API context
+      const { data: targetUser } = await adminClient.auth.admin.getUserById(targetUserId);
+      if (!targetUser?.user?.email) return json(404, { error: 'User email not found.' }, origin);
+
+      const { error: sendError } = await adminClient.auth.resetPasswordForEmail(targetUser.user.email);
+      if (sendError) return json(400, { error: sendError.message }, origin);
+
+      return json(200, { ok: true, message: 'Reset email sent.' }, origin);
+    }
 
   // Default Action: list (all organizations and users in scope)
   const { data: profiles, error: profileError } = await adminClient
@@ -379,9 +459,9 @@ Deno.serve(async (request: Request) => {
   if (profileError) return json(400, { error: profileError.message }, origin);
 
   const { data: { users: authUsers } } = await adminClient.auth.admin.listUsers();
-  const emailMap = new Map(authUsers.map(u => [u.id, u.email]));
+  const emailMap = new Map(authUsers.map((u: any) => [u.id, u.email]));
 
-  const accounts = (profiles ?? []).map(p => ({
+  const accounts = (profiles ?? []).map((p: any) => ({
     user_id: p.id,
     login_id: emailMap.get(p.id) ?? null,
     org_id: p.active_org_id,

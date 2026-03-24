@@ -16,6 +16,8 @@ type AppRoleContextType = {
   canAlign: boolean;
   clusterRole: 'cluster_admin' | 'cluster_operator' | 'viewer' | null;
   isClusterAdmin: boolean;
+  clusterId: string | null;
+  managedOrgIds: string[];
 };
 
 
@@ -29,6 +31,8 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [profileRole, setProfileRole] = useState<AppRole | null>(null);
   const [clusterRoleState, setClusterRoleState] = useState<'cluster_admin' | 'cluster_operator' | 'viewer' | null>(null);
   const [isClusterAdminState, setIsClusterAdminState] = useState(false);
+  const [clusterIdState, setClusterIdState] = useState<string | null>(null);
+  const [managedOrgIdsState, setManagedOrgIdsState] = useState<string[]>([]);
   const [profileRoleLoading, setProfileRoleLoading] = useState(false);
 
   const roleFromMetadata = user?.user_metadata?.app_role;
@@ -67,6 +71,8 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
       setProfileRole(roleFromProfile);
       setClusterRoleState(authority.clusterRole);
       setIsClusterAdminState(authority.isPlatformAdmin);
+      setClusterIdState(authority.clusterId);
+      setManagedOrgIdsState(authority.managedOrgIds);
       setProfileRoleLoading(false);
 
     };
@@ -104,10 +110,12 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
       canOperateLog,
       canManageImpact,
       canAlign,
-      clusterRole: clusterRoleState,
-      isClusterAdmin: isClusterAdminState,
-    };
-  }, [loading, role, roleLocked, clusterRoleState, isClusterAdminState]);
+       clusterRole: clusterRoleState,
+       isClusterAdmin: isClusterAdminState,
+       clusterId: clusterIdState,
+       managedOrgIds: managedOrgIdsState,
+     };
+   }, [loading, role, roleLocked, clusterRoleState, isClusterAdminState, clusterIdState, managedOrgIdsState]);
 
 
   return <AppRoleContext.Provider value={value}>{children}</AppRoleContext.Provider>;

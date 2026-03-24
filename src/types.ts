@@ -11,6 +11,8 @@ export interface Profile {
 export interface Cluster {
   id: string;
   name: string;
+  tag?: string;
+  slug?: string;
   created_by?: string;
   created_at: string;
 }
@@ -19,6 +21,8 @@ export interface Organization {
   id: string;
   cluster_id: string;
   name: string;
+  tag?: string;
+  slug?: string;
   created_at: string;
 }
 

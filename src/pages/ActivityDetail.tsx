@@ -21,7 +21,7 @@ export default function ActivityDetail() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { activities, records, entities, teamMembers, activityLogs, loading, loadingProgress, addUnit, requestAdjustment, addRecord, addActivityLog, endActivityLog, updateRecord, deleteRecord, updateActivity, updateUnit, addChannelRecord, transferUnits } = useData();
+  const { activities, records, entities, teamMembers, activityLogs, channels, loading, loadingProgress, addUnit, requestAdjustment, addRecord, addActivityLog, endActivityLog, updateRecord, deleteRecord, updateActivity, updateUnit, addChannelRecord, transferUnits } = useData();
   const { role, canOperateLog, canManageImpact, canAlign } = useAppRole();
   const { notify } = useNotification();
   const { getActionText, tx } = useLabels();
@@ -261,8 +261,8 @@ export default function ActivityDetail() {
   const activityWorkActivitys = activityLogs.filter(activity => activity.activity_id === activity?.id);
   const activeWorkActivityByTeamMemberId = new Map<string, typeof activityLogs[number]>();
   activityWorkActivitys.forEach(activity => {
-    if (activity.status === 'active' && !activeWorkActivityByTeamMemberId.has(activity.teamMember_id)) {
-      activeWorkActivityByTeamMemberId.set(activity.teamMember_id, activity);
+    if (activity.status === 'active' && !activeWorkActivityByTeamMemberId.has(activity.teamMember_id ?? '')) {
+      activeWorkActivityByTeamMemberId.set(activity.teamMember_id ?? '', activity);
     }
   });
   const availableOperators = teamMembers.filter(teamMember => !activeWorkActivityByTeamMemberId.has(teamMember.id));
@@ -582,17 +582,18 @@ export default function ActivityDetail() {
     }
   };
  
-  const closeTeamMemberActivity = async (activityId: string, teamTeamMemberId: string) => {
+  const closeTeamMemberActivity = async (activityId: string, teamMemberId: string) => {
     if (!canManageWorkforce) {
       notify({ type: 'error', message: 'Activity logs can only be updated while this activity is active.' });
       return;
     }
-    const teamMember = teamMembers.find(item => item.id === teamTeamMemberId);
-    const activity = activityWorkActivitys.find(item => item.id === activityId);
-    if (!activity || !teamMember) return;
+    const teamMember = teamMembers.find(item => item.id === teamMemberId);
+    const activityLog = activityWorkActivitys.find(item => item.id === activityId);
+    if (!activityLog || !teamMember) return;
 
     const endTime = new Date().toISOString();
-    const durationHours = Math.max(0, (new Date(endTime).getTime() - new Date(activity.start_time).getTime()) / (1000 * 60 * 60));
+    const startTime = activityLog.start_time ? new Date(activityLog.start_time).getTime() : new Date().getTime();
+    const durationHours = Math.max(0, (new Date(endTime).getTime() - startTime) / (1000 * 60 * 60));
     const pay = teamMember.arrangement_type === 'hourly' && typeof (teamMember.overhead_weight ?? teamMember.service_rate) === 'number'
       ? durationHours * (teamMember.overhead_weight ?? teamMember.service_rate ?? 0)
       : undefined;
@@ -1045,7 +1046,12 @@ export default function ActivityDetail() {
       let alignmentAlertCreated = false;
       if (totalMode === 'leave' && parsedAmount > 0) {
         try {
-          await requestAdjustment(latestActivityRecord.entity_id, parsedAmount, undefined, activity.id, totalAlignmentSource || undefined);
+          await requestAdjustment({
+            entity_id: latestActivityRecord.entity_id,
+            amount: parsedAmount,
+            activity_id: activity.id,
+            alignment_source: totalAlignmentSource || undefined
+          });
           alignmentAlertCreated = true;
         } catch {
           notify({
@@ -1123,7 +1129,7 @@ export default function ActivityDetail() {
                 )}
                 title="Activity Monitor (M)"
               >
-                <ActivityIcon size={14} />
+                <Activity size={14} />
                 <span className="hidden sm:inline">Activity Monitor</span>
               </button>
             )}
@@ -1279,7 +1285,7 @@ export default function ActivityDetail() {
                       required={recordValueingType === 'value'}
                     >
                       <option value="">{recordValueingType === 'value' ? 'Select transfer source...' : 'No channel source needed'}</option>
-                      {channels.filter(c => c.is_active).map(a => (
+                      {channels.filter(c => c.is_active).map(c => (
                         <option key={c.id} value={`${c.category}::${c.name}`}>
                           {c.name}
                         </option>
@@ -1331,7 +1337,7 @@ export default function ActivityDetail() {
               )}
               {activityWorkActivitys.map(activity => {
                 const teamMember = teamMembers.find(item => item.id === activity.teamMember_id);
-                const windowLabel = `${new Date(activity.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${activity.end_time ? new Date(activity.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}`;
+                const windowLabel = `${(activity.start_time ? new Date(activity.start_time) : new Date()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${activity.end_time ? new Date(activity.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}`;
                 return (
                   <div key={activity.id} className="rounded-lg border border-stone-200 dark:border-stone-800 px-3 py-2 flex items-center justify-between gap-3">
                     <div>
@@ -1350,7 +1356,7 @@ export default function ActivityDetail() {
                       {activity.status === 'active' && (
                         <button
                           type="button"
-                          onClick={() => { void closeTeamMemberActivity(activity.id, activity.teamMember_id); }}
+                          onClick={() => { void closeTeamMemberActivity(activity.id, activity.teamMember_id ?? ''); }}
                           disabled={!canManageWorkforce || isUpdatingWorkforce}
                           className="action-btn-secondary text-xs"
                         >
@@ -1566,7 +1572,7 @@ export default function ActivityDetail() {
                     onChange={e => setAlignmentSource(e.target.value)}
                   >
                     <option value="">— Value (default) —</option>
-                    {channels.filter(c => c.is_active).map(a => (
+                    {channels.filter(c => c.is_active).map(c => (
                       <option key={c.id} value={`${c.category}::${c.name}`}>{c.name}</option>
                     ))}
                   </select>

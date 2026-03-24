@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { Entity, Activity, ActivityRecord, TeamMember, Collaboration, SystemEvent, Channel, OperatorActivity } from '../types';
+import { Entity, Activity, ActivityRecord, TeamMember, Collaboration, SystemEvent, Channel, OperatorActivity, Organization, Cluster } from '../types';
 import { dbRoleToAppRole } from '../lib/roles';
 import { useAppRole } from './AppRoleContext';
 import { useAuth } from './AuthContext';
@@ -20,8 +20,8 @@ interface DataContextType {
   loading: boolean;
   loadingProgress: number;
   isDemoMode: boolean;
-  
-  // Entity Actions
+  availableOrgs: Record<string, Organization>;
+  switchOrg: (orgId: string) => Promise<void>;
   addUnit: (entity: any) => Promise<string>;
   updateUnit: (entity: Entity) => Promise<void>;
   deleteUnit: (id: string) => Promise<void>;
@@ -59,6 +59,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [channels, setChannels] = useState<Channel[]>([]);
   const [systemEvents, setSystemEvents] = useState<SystemEvent[]>([]);
   const [activityLogs, setActivityLogs] = useState<OperatorActivity[]>([]);
+  const [availableOrgs, setAvailableOrgs] = useState<Record<string, Organization>>({});
 
   const [loading, setLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
@@ -67,7 +68,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return localStorage.getItem('flow_ops_last_org_id');
   });
 
-  const { loading: roleLoading } = useAppRole();
+  const { loading: roleLoading, managedOrgIds, isClusterAdmin, clusterId } = useAppRole();
   const { loading: authLoading } = useAuth();
   const isDemoMode = !isSupabaseConfigured;
 
@@ -119,6 +120,21 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           amount: item.amount,
           details: item.details,
         })));
+      }
+
+      // Fetch organization metadata for managedOrgIds
+      if (managedOrgIds.length > 0) {
+        const { data: orgs } = await supabase!
+          .from('organizations')
+          .select('id, name, tag, slug')
+          .in('id', managedOrgIds);
+        if (orgs) {
+          const orgMap = (orgs as any[]).reduce((acc, org) => ({
+            ...acc,
+            [org.id]: org
+          }), {} as Record<string, Organization>);
+          setAvailableOrgs(orgMap);
+        }
       }
     } catch (err) {
       console.error("Fetch error:", err);
@@ -274,6 +290,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await fetchData();
   };
 
+  const switchOrg = async (orgId: string) => {
+    setActiveOrgId(orgId);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('flow_ops_last_org_id', orgId);
+    }
+    
+    const { data: { user } } = await supabase!.auth.getUser();
+    if (user) {
+      await supabase!.from('profiles').update({ active_org_id: orgId }).eq('id', user.id);
+    }
+    
+    // fetchData will be triggered by useEffect dependency on activeOrgId
+  };
+
   const value: DataContextType = {
     entities,
     activities,
@@ -285,6 +315,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     activityLogs,
     activeOrgId,
     setActiveOrgId,
+    availableOrgs,
+    switchOrg,
     loading,
     loadingProgress,
     isDemoMode,

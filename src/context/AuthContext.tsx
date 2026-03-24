@@ -8,6 +8,7 @@ type AuthContextType = {
   loading: boolean;
   signInWithPassword: (email: string, password: string, options?: { keepSignedIn?: boolean }) => Promise<void>;
   signOut: () => Promise<void>;
+  updatePassword: (newPassword: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -177,12 +178,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     throw error;
   };
 
+  const updatePassword = async (newPassword: string) => {
+    if (!supabase) throw new Error('Supabase is not configured.');
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) throw error;
+  };
+
   const value = useMemo<AuthContextType>(() => ({
     user: activity?.user ?? null,
     activity,
     loading,
     signInWithPassword,
     signOut,
+    updatePassword,
   }), [activity, loading]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

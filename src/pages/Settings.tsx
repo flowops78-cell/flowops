@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, LogOut, CheckCircle2, AlertTriangle, Key } from 'lucide-react';
+import { ShieldCheck, LogOut, CheckCircle2, AlertTriangle, Key, Globe } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAppRole } from '../context/AppRoleContext';
 import { useAuth } from '../context/AuthContext';
@@ -10,6 +10,7 @@ import { useNotification } from '../context/NotificationContext';
 import LoadingLine from '../components/LoadingLine';
 import CollapsibleActivitySection from '../components/CollapsibleActivitySection';
 import LiveOperatorsTracker from '../components/LiveOperatorsTracker';
+import IdentityBadge from '../components/IdentityBadge';
 
 type AccessRequestRow = {
   id: string;
@@ -91,6 +92,8 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     teamMembers: rawTeamMembers,
     activityLogs: rawActivityLogs,
     systemEvents: rawSystemEvents,
+    availableOrgs,
+    switchOrg,
     refreshData,
   } = useData();
 
@@ -128,10 +131,16 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   };
   // NOTE: these are wired to real state below after useState declarations
   // clusterId and managedOrgIds are declared after the useState block
-  const { role, clusterRole, isClusterAdmin, canAccessAdminUi } = useAppRole();
+  const { role, clusterRole, isClusterAdmin, canAccessAdminUi, clusterId: contextClusterId } = useAppRole();
 
   const { notify } = useNotification();
-  const { user } = useAuth();
+  const { user, updatePassword: supabaseUpdatePassword } = useAuth();
+  
+  // Password Management State
+  const [newPassword, setNewPassword] = React.useState('');
+  const [confirmPassword, setConfirmPassword] = React.useState('');
+  const [isUpdatingPassword, setIsUpdatingPassword] = React.useState(false);
+
   const canViewOperatorLogs = canAccessAdminUi;
   const canManageMetaOrgAdmins = role === 'admin';
   const [isClearingGlobalData, setIsClearingGlobalData] = React.useState(false);
@@ -160,7 +169,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [clusterManagedOrgIds, setClusterManagedOrgIds] = React.useState<string[]>([]);
 
   // Wire real state to the variables used in JSX
-  const clusterId = managedClusterId;
+  const clusterId = managedClusterId || contextClusterId;
   const managedOrgIds = clusterManagedOrgIds;
   const [clusterAdminsLoading, setClusterAdminsLoading] = React.useState(false);
   const [clusterAdminsNotice, setClusterAdminsNotice] = React.useState<string | null>(null);
@@ -492,6 +501,51 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     setBusyClusterUserId(null);
   };
 
+  const handleUpdatePassword = async () => {
+    if (!newPassword || !confirmPassword) {
+      notify({ type: 'error', message: 'All fields are required.' });
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      notify({ type: 'error', message: 'Passwords do not match.' });
+      return;
+    }
+    if (newPassword.length < 8) {
+      notify({ type: 'error', message: 'Password must be at least 8 characters.' });
+      return;
+    }
+
+    setIsUpdatingPassword(true);
+    try {
+      await supabaseUpdatePassword(newPassword);
+      notify({ type: 'success', message: 'Password updated successfully.' });
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      notify({ type: 'error', message: `Update failed: ${err instanceof Error ? err.message : String(err)}` });
+    } finally {
+      setIsUpdatingPassword(false);
+    }
+  };
+
+  const resetUserPassword = async (targetUserId: string) => {
+    if (!window.confirm('Send password reset email to this user?')) return;
+    setBusyClusterUserId(targetUserId);
+    try {
+      const accessToken = await getSupabaseAccessToken();
+      const { data, error } = await supabase!.functions.invoke('manage-organizations', {
+        headers: { Authorization: `Bearer ${accessToken}`, apikey: SUPABASE_ANON_KEY },
+        body: { action: 'reset-user-password', target_user_id: targetUserId },
+      });
+      if (error) throw error;
+      notify({ type: 'success', message: (data as any)?.message || 'Reset email sent.' });
+    } catch (err) {
+      notify({ type: 'error', message: `Reset failed: ${err instanceof Error ? err.message : String(err)}` });
+    } finally {
+      setBusyClusterUserId(null);
+    }
+  };
+
   const deleteClusterAccount = async (account: ManagedClusterAccount) => {
     if (!supabase || !activeOrgId) return;
     if (!window.confirm(`Delete account ${account.email}?`)) return;
@@ -591,11 +645,12 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       : 'Not configured';
   
   const roleLabel = React.useMemo(() => {
+    if (isClusterAdmin) return 'Cluster Admin';
     if (clusterRole === 'cluster_admin') return 'Cluster Admin';
     if (clusterRole === 'cluster_operator') return 'Cluster Operator';
     if (role === 'admin') return 'Org Admin';
     return role.charAt(0).toUpperCase() + role.slice(1);
-  }, [clusterRole, role]);
+  }, [isClusterAdmin, clusterRole, role]);
 
 
   const provisionOrganization = async () => {
@@ -659,6 +714,46 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
           </div>
         </div>
 
+        {/* Personal Account Section */}
+        <div className="section border-t border-stone-200 dark:border-stone-800 pt-6">
+          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Personal Account</h3>
+          <div className="max-w-md bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl p-4 space-y-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-2">
+              <Key size={16} className="text-stone-400" />
+              <span className="text-xs font-semibold text-stone-500 uppercase tracking-tight">Change Password</span>
+            </div>
+            <div className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase text-stone-400">New Password</label>
+                <input 
+                  type="password" 
+                  className="w-full bg-stone-50 dark:bg-stone-800 border-stone-200 dark:border-stone-700 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-emerald-500 outline-none transition-all"
+                  placeholder="Min 8 characters"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase text-stone-400">Confirm New Password</label>
+                <input 
+                  type="password" 
+                  className="w-full bg-stone-50 dark:bg-stone-800 border-stone-200 dark:border-stone-700 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-emerald-500 outline-none transition-all"
+                  placeholder="Repeat new password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                />
+              </div>
+              <button
+                onClick={() => void handleUpdatePassword()}
+                disabled={isUpdatingPassword}
+                className="w-full py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-lg text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-all active:scale-[0.98]"
+              >
+                {isUpdatingPassword ? 'Updating...' : 'Update Password'}
+              </button>
+            </div>
+          </div>
+        </div>
+
         {/* 1. Cluster Administration */}
         <div className="section border-t border-stone-200 dark:border-stone-800 pt-6">
           <div className="flex items-center justify-between mb-4">
@@ -677,7 +772,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                   <ShieldCheck size={16} className="text-stone-400" />
                   <span className="text-xs font-semibold text-stone-500 uppercase tracking-tight">Active Cluster ID</span>
                 </div>
-                <span className="font-mono text-[11px] text-stone-400 select-all">{clusterId || 'None'}</span>
+                <span className="font-mono text-[11px] text-stone-500 select-all font-semibold uppercase">{clusterId || 'None'}</span>
               </div>
 
               {clusterAdminsLoading ? (
@@ -701,18 +796,42 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                       </span>
                     </div>
                   )}
-                  {filteredClusterAdmins.map(admin => (
+                  {filteredClusterAdmins.map(admin => {
+                    const isSelf = admin.user_id === user?.id;
+                    const isLastAdmin = admin.role === 'cluster_admin' && clusterAdmins.filter(a => a.role === 'cluster_admin').length === 1;
+                    const isPendingDemotion = (pendingClusterRoles[admin.user_id] && pendingClusterRoles[admin.user_id] !== 'cluster_admin');
+                    
+                    return (
 
                     <div key={admin.user_id} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700/50">
                       <div className="min-w-0 flex-1 mr-4">
                         <p className="text-xs font-medium text-stone-900 dark:text-stone-100 truncate">{admin.email}</p>
-                        <p className="text-[10px] text-stone-500 uppercase tracking-tighter">{admin.role.replace('_', ' ')}</p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 font-bold uppercase tracking-tighter">
+                            {admin.role.replace('_', ' ')}
+                          </span>
+                          {admin.active_org_id && availableOrgs[admin.active_org_id] && (
+                            <IdentityBadge 
+                              type="org"
+                              size="sm"
+                              id={admin.active_org_id}
+                              name={availableOrgs[admin.active_org_id]?.name}
+                              tag={availableOrgs[admin.active_org_id]?.tag}
+                              slug={availableOrgs[admin.active_org_id]?.slug}
+                            />
+                          )}
+                          {!admin.active_org_id && (
+                            <span className="text-[10px] text-stone-400 italic">No Active Org</span>
+                          )}
+                        </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <select
-                          className="text-[10px] bg-stone-50 dark:bg-stone-900 border-stone-200 rounded px-1 py-0.5"
+                          className="text-[10px] bg-stone-50 dark:bg-stone-900 border-stone-200 rounded px-1 py-0.5 disabled:opacity-50"
                           value={pendingClusterRoles[admin.user_id] || admin.role}
                           onChange={(e) => setPendingClusterRoles(prev => ({ ...prev, [admin.user_id]: e.target.value as any }))}
+                          disabled={isSelf}
+                          title={isSelf ? "You cannot downgrade your own primary administrative access." : undefined}
                         >
                           <option value="cluster_admin">Admin</option>
                           <option value="cluster_operator">Operator</option>
@@ -720,23 +839,34 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                         </select>
                         <button 
                           onClick={() => void updateClusterAccountRole(admin)}
-                          disabled={busyClusterUserId === admin.user_id}
-                          className="text-[10px] text-emerald-600 font-bold uppercase hover:bg-emerald-50 dark:hover:bg-emerald-900/20 px-1.5 py-0.5 rounded"
+                          disabled={busyClusterUserId === admin.user_id || (isSelf && isPendingDemotion)}
+                          className="text-[10px] text-emerald-600 font-bold uppercase hover:bg-emerald-50 dark:hover:bg-emerald-900/20 px-1.5 py-0.5 rounded disabled:opacity-30"
                         >
                           {busyClusterUserId === admin.user_id ? '...' : 'Save'}
                         </button>
-                        {admin.user_id !== user?.id && (
-                          <button 
-                            onClick={() => void deleteClusterAccount(admin)}
-                            disabled={busyClusterUserId === admin.user_id}
-                            className="text-[10px] text-stone-400 hover:text-red-600 px-1.5 py-0.5 rounded"
-                          >
-                            Remove
-                          </button>
+                        {!isSelf && (
+                          <>
+                            <button 
+                              onClick={() => void resetUserPassword(admin.user_id)}
+                              disabled={busyClusterUserId === admin.user_id}
+                              className="text-[10px] text-stone-400 hover:text-emerald-600 px-1.5 py-0.5 rounded disabled:opacity-30"
+                              title="Send Password Reset Email"
+                            >
+                              Reset
+                            </button>
+                            <button 
+                              onClick={() => void deleteClusterAccount(admin)}
+                              disabled={busyClusterUserId === admin.user_id || isLastAdmin}
+                              title={isLastAdmin ? "Cannot remove the last remaining cluster admin." : undefined}
+                              className="text-[10px] text-stone-400 hover:text-red-600 px-1.5 py-0.5 rounded disabled:opacity-30"
+                            >
+                              Remove
+                            </button>
+                          </>
                         )}
                       </div>
                     </div>
-                  ))}
+                  )})}
                 </div>
               )}
             </div>
@@ -748,16 +878,17 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
           <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Deterministic Provisioning</h3>
           <div className="bg-white dark:bg-stone-900 border border-emerald-100 dark:border-emerald-900/30 rounded-xl p-4">
             <p className="text-xs text-stone-600 dark:text-stone-400 mb-4">
-              Provision a new organization within your cluster. Deterministic mapping ensures cross-org stability.
+              Provision a new organization within your cluster. Deterministic mapping ensures cross-organization stability.
             </p>
             <div className="flex gap-3">
-              <button 
-                disabled={!clusterId}
-                onClick={() => void provisionOrganization()}
-                className="action-btn-primary text-xs h-9 px-4 disabled:opacity-50"
-              >
-                Add Organization to Cluster
-              </button>
+              {clusterId && (
+                <button 
+                  onClick={() => void provisionOrganization()}
+                  className="action-btn-primary text-xs h-9 px-4"
+                >
+                  Add Organization to Cluster
+                </button>
+              )}
               {!clusterId && (
                 <button 
                   onClick={() => void bootstrapClusterAdmin()}
@@ -776,18 +907,28 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
           <div className="space-y-4">
             <div className="flex flex-wrap gap-2">
               {managedOrgIds.length === 0 && <p className="text-xs text-stone-400 italic">No organizations available to switch.</p>}
-              {managedOrgIds.map(id => (
+              {Object.entries(availableOrgs).map(([id, org]) => (
                 <button
                   key={id}
-                  onClick={() => void updateProfileOrgId(id)}
+                  onClick={() => typeof switchOrg === 'function' && switchOrg(id)}
                   className={cn(
-                    "text-[11px] px-3 py-1.5 rounded-full border transition-all",
+                    "px-4 py-2 rounded-xl border-2 transition-all flex flex-col items-start gap-1 group",
                     activeOrgId === id 
-                      ? "bg-stone-900 text-white border-stone-900 dark:bg-stone-100 dark:text-stone-900 dark:border-stone-100" 
-                      : "bg-white dark:bg-stone-800 text-stone-600 border-stone-200 dark:border-stone-700 hover:border-stone-400"
+                      ? "bg-white dark:bg-stone-900 border-stone-900 dark:border-white shadow-lg scale-[1.02]" 
+                      : "bg-white dark:bg-stone-800 text-stone-600 border-stone-100 dark:border-stone-700 hover:border-stone-300"
                   )}
                 >
-                  {id.slice(0, 8)}...
+                  <div className="flex items-center gap-2">
+                    <Globe size={12} className={activeOrgId === id ? "text-stone-900 dark:text-white" : "text-stone-400"} />
+                    <IdentityBadge 
+                      type="org"
+                      size="sm"
+                      id={id}
+                      name={org.name}
+                      tag={org.tag}
+                      slug={org.slug}
+                    />
+                  </div>
                 </button>
               ))}
             </div>
@@ -810,7 +951,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
             <div className="p-3 rounded-lg bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700">
               <p className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-1">Organizations</p>
               <p className="text-[11px] text-stone-600 dark:text-stone-400 leading-relaxed">
-                Standard work environments. TeamMembership is explicit and scoped per Org.
+                Standard work environments. Team membership is explicit and scoped per Org.
               </p>
             </div>
           </div>
@@ -1081,9 +1222,9 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                   <tr>
                     <th className="px-4 py-2.5 w-[170px] text-[11px] font-semibold uppercase tracking-wide">Requested</th>
                     <th className="px-4 py-2.5 w-[220px] text-[11px] font-semibold uppercase tracking-wide">Login ID</th>
-                    <th className="px-4 py-2.5 w-[120px] text-[11px] font-semibold uppercase tracking-wide">Requested</th>
+                    <th className="px-4 py-2.5 w-[120px] text-[11px] font-semibold uppercase tracking-wide">Requested Role</th>
                     <th className="px-4 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Approve As</th>
-                    <th className="px-4 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">TeamMember ID</th>
+                    <th className="px-4 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Team Member ID</th>
                     <th className="px-4 py-2.5 w-[180px] text-[11px] font-semibold uppercase tracking-wide">Initial Password</th>
                     <th className="px-4 py-2.5 w-[210px] text-[11px] font-semibold uppercase tracking-wide">Actions</th>
                   </tr>

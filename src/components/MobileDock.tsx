@@ -17,7 +17,7 @@ const navItems: NavItem[] = [
   { to: "/entities", icon: <Users size={20} />, label: "Entities", hint: "Entity profiles and status overview" },
   { to: "/channels", icon: <Circle size={20} />, label: "Channels", hint: "Channel tracking and settings overview" },
   { to: "/collaborations", icon: <Handshake size={20} />, label: "Collaborations", hint: "Collaboration network and relationship tracking" },
-  { to: "/team", icon: <UserCog size={20} />, label: "Team", hint: "Team management and activity block operations" },
+  { to: "/team-members", icon: <UserCog size={20} />, label: "Team Members", hint: "Team management and activity block operations" },
   { to: "/settings", icon: <Settings size={20} />, label: "Settings", hint: "System settings and data actions" },
 ];
 
@@ -27,7 +27,7 @@ export default function MobileDock() {
   const normalizedPath = location.pathname;
   const visibleNavItems = canAccessAdminUi
     ? navItems
-    : navItems.filter(item => item.to === '/activity' || item.to === '/team');
+    : navItems.filter(item => item.to === '/activity' || item.to === '/team-members');
 
   return (
     <>

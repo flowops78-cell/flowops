@@ -11,18 +11,23 @@ import { isSupabaseConfigured } from '../lib/supabase';
 import { SECTION_SHORTCUT_EVENT, SectionShortcutDirection } from '../lib/sectionShortcuts';
 import ShortcutHelpModal from './ShortcutHelpModal';
 import GlobalTelemetryPanel from './GlobalTelemetryPanel';
+import IdentityBadge from './IdentityBadge';
 import { preloadRoute } from '../lib/routePreloaders';
+import { ChevronDown, Globe } from 'lucide-react';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { theme, toggleTheme } = useTheme();
-  const { loading, loadingProgress, activities } = useData();
+  const { loading, loadingProgress, activities, availableOrgs, activeOrgId, switchOrg } = useData();
+  const orgsList = Object.values(availableOrgs);
+  const activeOrg = availableOrgs[activeOrgId || ''];
 
-  const { role, canAccessAdminUi, canOperateLog, canManageImpact, canAlign } = useAppRole();
+  const { role, isClusterAdmin, canAccessAdminUi, canOperateLog, canManageImpact, canAlign } = useAppRole();
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
   const [isFocusFullscreen, setIsFocusFullscreen] = useState(false);
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [isTelemetryOpen, setIsTelemetryOpen] = useState(false);
+  const [isOrgSwitcherOpen, setIsOrgSwitcherOpen] = useState(false);
   const [shortcutPrefix, setShortcutPrefix] = useState<'n' | null>(null);
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
   const shortcutPrefixTimeoutRef = useRef<number | null>(null);
@@ -63,7 +68,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const visibleNavGroups = canAccessAdminUi ? adminNavGroups : operatorNavGroups;
 
   const showSyncProgress = loading || loadingProgress > 0;
-  const roleLabel = role === 'admin' ? 'Admin' : role === 'operator' ? 'Operator' : 'Viewer';
+  const roleLabel = isClusterAdmin ? 'Cluster Admin' : role === 'admin' ? 'Org Admin' : role === 'operator' ? 'Operator' : 'Viewer';
   const roleSummary = `Activities: ${canOperateLog ? 'Yes' : 'No'} • Value: ${canManageImpact ? 'Yes' : 'No'} • Align: ${canAlign ? 'Yes' : 'No'}`;
 
   const mobileRoleBadgeClass = role === 'admin'
@@ -277,6 +282,49 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       )}>
         <div className="flex items-center">
           <h1 className="font-bold tracking-tight">FLOW OPS</h1>
+          {orgsList.length > 1 && (
+            <div className="ml-3 relative">
+              <button
+                onClick={() => setIsOrgSwitcherOpen(!isOrgSwitcherOpen)}
+                className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-stone-800 dark:bg-stone-800 text-[10px] font-bold uppercase tracking-wider text-stone-300 border border-stone-700/50"
+              >
+                <Globe size={12} />
+                <span className="max-w-[80px] truncate">{activeOrg?.name || 'Org'}</span>
+                <ChevronDown size={10} className={cn("transition-transform duration-200", isOrgSwitcherOpen && "rotate-180")} />
+              </button>
+              
+              {isOrgSwitcherOpen && (
+                <>
+                  <div className="fixed inset-0 z-[60]" onClick={() => setIsOrgSwitcherOpen(false)} />
+                  <div className="absolute top-full left-0 mt-1.5 py-1 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-lg shadow-xl z-[70] min-w-[160px] animate-in fade-in zoom-in-95 duration-100">
+                    {orgsList.map((org) => (
+                      <button
+                        key={org.id}
+                        onClick={() => {
+                          void switchOrg(org.id);
+                          setIsOrgSwitcherOpen(false);
+                        }}
+                        className={cn(
+                          "w-full px-3 py-2 text-left text-xs flex items-center justify-between gap-2",
+                          org.id === activeOrgId ? "text-emerald-500 font-semibold bg-emerald-500/5" : "text-stone-600 dark:text-stone-300"
+                        )}
+                      >
+                        <IdentityBadge 
+                          type="org"
+                          size="sm"
+                          id={org.id}
+                          name={org.name}
+                          tag={org.tag}
+                          slug={org.slug}
+                        />
+                        {org.id === activeOrgId && <div className="w-1 h-1 rounded-full bg-emerald-500" />}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -336,6 +384,71 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         <div className="h-14 px-4 flex items-center border-b border-stone-200 dark:border-stone-800/60 shrink-0">
           <span className="text-[11px] font-bold tracking-widest uppercase text-stone-900 dark:text-stone-100 select-none">Flow Ops</span>
         </div>
+
+        {/* Org Switcher */}
+        {orgsList.length > 0 && (
+          <div className="px-3 py-4 border-b border-stone-200 dark:border-stone-800/60">
+            <div className="relative">
+              <button
+                onClick={() => setIsOrgSwitcherOpen(!isOrgSwitcherOpen)}
+                className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-stone-100/50 dark:bg-stone-800/40 hover:bg-stone-200/50 dark:hover:bg-stone-800/60 border border-stone-200 dark:border-stone-700/50 transition-all group"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-6 h-6 rounded-lg bg-stone-900 dark:bg-emerald-500/20 flex items-center justify-center shrink-0">
+                    <Globe size={13} className="text-white dark:text-emerald-400" />
+                  </div>
+                  <div className="text-left min-w-0">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400 dark:text-stone-500 leading-none mb-1">Organization</p>
+                    <IdentityBadge 
+                      type="org"
+                      size="sm"
+                      id={activeOrgId || ''}
+                      name={activeOrg?.name}
+                      tag={activeOrg?.tag}
+                      slug={activeOrg?.slug}
+                    />
+                  </div>
+                </div>
+                <ChevronDown size={14} className={cn("text-stone-400 transition-transform duration-200", isOrgSwitcherOpen && "rotate-180")} />
+              </button>
+
+              {isOrgSwitcherOpen && (
+                <>
+                  <div 
+                    className="fixed inset-0 z-40" 
+                    onClick={() => setIsOrgSwitcherOpen(false)} 
+                  />
+                  <div className="absolute top-full left-0 right-0 mt-2 py-1.5 bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded-xl shadow-xl z-50 animate-in fade-in zoom-in-95 duration-100 origin-top">
+                    <div className="max-h-[240px] overflow-y-auto thin-scrollbar">
+                      {orgsList.map((org) => (
+                        <button
+                          key={org.id}
+                          onClick={() => {
+                            void switchOrg(org.id);
+                            setIsOrgSwitcherOpen(false);
+                          }}
+                          className={cn(
+                            "w-full px-3 py-2 text-left text-xs transition-colors hover:bg-stone-50 dark:hover:bg-stone-800/50 flex flex-col gap-1",
+                            org.id === activeOrgId ? "bg-emerald-500/5 font-semibold" : "text-stone-600 dark:text-stone-300"
+                          )}
+                        >
+                          <IdentityBadge 
+                            type="org"
+                            size="sm"
+                            id={org.id}
+                            name={org.name}
+                            tag={org.tag}
+                            slug={org.slug}
+                          />
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Nav groups */}
         <nav className="flex-1 overflow-y-auto py-4 px-3">

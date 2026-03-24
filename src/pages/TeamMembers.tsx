@@ -94,7 +94,8 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
   const lastActivityLabel = useMemo(() => {
     if (activityLogs.length === 0) return 'No activity yet';
     const latest = activityLogs
-      .map(activity => activity.end_time ?? activity.start_time)
+      .map(activity => activity.end_time || activity.start_time)
+      .filter((date): date is string => !!date)
       .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
     return latest ? formatDate(latest) : 'No recent activity';
   }, [activityLogs]);
@@ -203,7 +204,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
     const action = params.get('action');
     if (!action) return;
 
-    if (action === 'add-teamMember' || action === 'add-member') {
+    if (action === 'add-team-member' || action === 'add-member') {
       setIsAddingTeamMember(true);
     } else if (action === 'view-log') {
       teamMemberActivitySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -605,7 +606,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
                   <tr key={log.id} className="hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
                     <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100">{teamMember ? getTeamMemberDisplayName(teamMember.name) : 'Unknown'}</td>
                     <td className="px-4 py-3 text-stone-500 font-mono text-xs">{log.activity_id?.slice(0, 8).toUpperCase() || '-'}</td>
-                    <td className="px-4 py-3 text-stone-600 dark:text-stone-400">{formatDate(log.start_time)}</td>
+                    <td className="px-4 py-3 text-stone-600 dark:text-stone-400">{log.start_time ? formatDate(log.start_time) : '-'}</td>
                     <td className="px-4 py-3 font-mono">{log.duration_hours?.toFixed(2) || '0.00'}h</td>
                     <td className="px-4 py-3 text-right">
                       <span className={cn(

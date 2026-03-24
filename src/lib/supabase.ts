@@ -121,11 +121,18 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
   
   if (typedOrgTeamMemberships.length > 0 || typedClusterTeamMemberships.length > 0) {
     const activeOrgId = profile?.active_org_id ?? typedOrgTeamMemberships.find(m => m.is_default_org)?.org_id ?? typedOrgTeamMemberships[0]?.org_id ?? null;
-    let clusterId = profile?.active_cluster_id;
+    let clusterId = profile?.active_cluster_id || typedClusterTeamMemberships[0]?.cluster_id || null;
 
-    if (!clusterId && activeOrgId) {
-      // Internal optimization: if we have org teamMemberships, we might find the cluster_id from joined data if we select it
-      // But for simplicity here, we rely on the teamMembership tables as source of truth.
+    // If cluster admin, fetch ALL organizations in this cluster regardless of direct membership
+    let allClusterOrgIds: string[] = [];
+    if (isClusterAdmin && clusterId) {
+      const { data: clusterOrgs } = await supabase
+        .from('organizations')
+        .select('id, name, tag, slug')
+        .eq('cluster_id', clusterId);
+      if (clusterOrgs) {
+        allClusterOrgIds = clusterOrgs.map(o => o.id);
+      }
     }
 
     const directTeamMembership = typedOrgTeamMemberships.find(m => m.org_id === activeOrgId);
@@ -144,12 +151,11 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
       source: 'teamMemberships',
       role: resolvedRole || 'viewer',
       activeOrgId,
-      managedOrgIds: dedupeStrings(typedOrgTeamMemberships.map(m => m.org_id)),
-      clusterId: clusterId || typedClusterTeamMemberships[0]?.cluster_id || null,
-      clusterRole: (typedClusterTeamMemberships.find(m => m.cluster_id === (clusterId || typedClusterTeamMemberships[0]?.cluster_id))?.role as any) || null,
+      managedOrgIds: dedupeStrings([...typedOrgTeamMemberships.map(m => m.org_id), ...allClusterOrgIds]),
+      clusterId,
+      clusterRole: (typedClusterTeamMemberships.find(m => m.cluster_id === clusterId)?.role as any) || null,
       isPlatformAdmin: isClusterAdmin,
     };
-
   }
 
   return {
