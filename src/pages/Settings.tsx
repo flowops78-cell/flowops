@@ -131,7 +131,17 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   };
   // NOTE: these are wired to real state below after useState declarations
   // clusterId and managedOrgIds are declared after the useState block
-  const { role, clusterRole, isClusterAdmin, canAccessAdminUi, clusterId: contextClusterId, refreshAuthority, manageableClusters, manageableOrgsByCluster } = useAppRole();
+  const { 
+    role, 
+    clusterRole, 
+    isClusterAdmin, 
+    isPlatformAdmin,
+    canAccessAdminUi, 
+    clusterId: contextClusterId, 
+    refreshAuthority, 
+    manageableClusters, 
+    manageableOrgsByCluster 
+  } = useAppRole();
 
   const { notify } = useNotification();
   const { user, updatePassword: supabaseUpdatePassword } = useAuth();
@@ -654,12 +664,13 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       : 'Not configured';
   
   const roleLabel = React.useMemo(() => {
-    // Priority: explicit cluster admin state overrides org-level role
+    // Priority: Platforms Admin > Cluster Admin > Org Admin
+    if (isPlatformAdmin) return 'Platform Admin';
     if (isClusterAdmin || clusterRole === 'cluster_admin') return 'Cluster Admin';
     if (clusterRole === 'cluster_operator') return 'Cluster Operator';
     if (role === 'admin') return 'Org Admin';
     return role.charAt(0).toUpperCase() + role.slice(1);
-  }, [isClusterAdmin, clusterRole, role]);
+  }, [isPlatformAdmin, isClusterAdmin, clusterRole, role]);
 
 
   const provisionOrganization = async () => {
@@ -719,787 +730,509 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         </div>
       )}
 
-      <div className="space-y-6">
+      <div className="space-y-8">
+        {/* SECTION 1: PERSONAL ACCOUNT */}
         <div className="section">
-          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">System</h3>
-          <div className="space-y-2 text-sm text-stone-700 dark:text-stone-300">
-            <p><span className="font-medium">Auth:</span> {user ? 'Authenticated' : 'Not authenticated'}</p>
-            <p><span className="font-medium">Role:</span> {roleLabel}</p>
-            <p><span className="font-medium">Backend:</span> {backendStatus}</p>
+          <div className="flex items-center gap-2 mb-4">
+            <ShieldCheck size={20} className="text-stone-400" />
+            <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Personal Account</h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl p-5 shadow-sm space-y-3">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Context Identifier</p>
+              <div className="space-y-2 text-sm text-stone-700 dark:text-stone-300">
+                <p className="flex justify-between items-center bg-stone-50 dark:bg-stone-800/50 p-2 rounded-lg">
+                  <span className="font-medium text-stone-500">Auth:</span> 
+                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">{user ? 'Authenticated' : 'None'}</span>
+                </p>
+                <p className="flex justify-between items-center bg-stone-50 dark:bg-stone-800/50 p-2 rounded-lg">
+                  <span className="font-medium text-stone-500">Role:</span> 
+                  <span className="font-bold uppercase tracking-tight text-stone-700 dark:text-stone-200">{roleLabel}</span>
+                </p>
+                <p className="flex justify-between items-center bg-stone-50 dark:bg-stone-800/50 p-2 rounded-lg">
+                  <span className="font-medium text-stone-500">Backend:</span> 
+                  <span className="italic text-stone-400">{backendStatus}</span>
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl p-5 shadow-sm">
+              <div className="flex items-center gap-2 mb-4">
+                <Key size={16} className="text-stone-400" />
+                <span className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Security Credentials</span>
+              </div>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase text-stone-400">New Password</label>
+                  <input 
+                    type="password" 
+                    className="w-full bg-stone-50 dark:bg-stone-800 border-stone-200 dark:border-stone-700 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-emerald-500 outline-none transition-all"
+                    placeholder="Min 8 characters"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase text-stone-400">Confirm Password</label>
+                  <input 
+                    type="password" 
+                    className="w-full bg-stone-50 dark:bg-stone-800 border-stone-200 dark:border-stone-700 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-emerald-500 outline-none transition-all"
+                    placeholder="Repeat password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                  />
+                </div>
+                <button
+                  onClick={() => void handleUpdatePassword()}
+                  disabled={isUpdatingPassword}
+                  className="w-full py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-lg text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-all active:scale-[0.98]"
+                >
+                  {isUpdatingPassword ? 'Updating...' : 'Update Password'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
 
-        {/* Personal Account Section */}
-        <div className="section border-t border-stone-200 dark:border-stone-800 pt-6">
-          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Personal Account</h3>
-          <div className="max-w-md bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl p-4 space-y-4 shadow-sm">
-            <div className="flex items-center gap-2 mb-2">
-              <Key size={16} className="text-stone-400" />
-              <span className="text-xs font-semibold text-stone-500 uppercase tracking-tight">Change Password</span>
+        {/* SECTION 2: ACTIVE SCOPE & CONTEXT */}
+        <div className="section border-t border-stone-200 dark:border-stone-800 pt-8">
+          <div className="flex items-center gap-2 mb-6">
+            <Globe size={20} className="text-stone-400" />
+            <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Hierarchy & Context</h3>
+          </div>
+          
+          <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl p-6 shadow-sm space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              {/* Cluster Column */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-stone-400">1. Cluster Context</p>
+                  {isPlatformAdmin && <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Platform Visibility</span>}
+                </div>
+                
+                {(!isClusterAdmin && !isPlatformAdmin) ? (
+                  <div className="p-4 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700">
+                    <p className="text-xs text-stone-500 italic">Organization member context: Cluster switching restricted.</p>
+                  </div>
+                ) : manageableClusters.length === 1 ? (
+                  <div className="p-4 rounded-xl bg-stone-900 dark:bg-white text-white dark:text-stone-900 flex justify-between items-center shadow-lg transform transition-transform hover:scale-[1.01]">
+                    <IdentityBadge
+                      type="cluster"
+                      size="sm"
+                      id={manageableClusters[0].id}
+                      name={manageableClusters[0].name ?? undefined}
+                      tag={manageableClusters[0].tag ?? undefined}
+                      slug={manageableClusters[0].slug ?? undefined}
+                    />
+                    <span className="text-[9px] font-bold uppercase tracking-widest opacity-60">Fixed Scope</span>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {manageableClusters.map(cluster => (
+                      <button
+                        key={cluster.id}
+                        onClick={() => setScopeClusterId(cluster.id)}
+                        className={cn(
+                          "w-full px-4 py-3 rounded-xl border-2 transition-all text-left flex justify-between items-center group",
+                          scopeClusterId === cluster.id || (manageableClusters.length === 1 && scopeClusterId === null)
+                            ? "bg-stone-900 dark:bg-white border-stone-900 dark:border-white text-white dark:text-stone-900 shadow-xl scale-[1.03] z-10"
+                            : "bg-white dark:bg-stone-800 border-stone-100 dark:border-stone-700 text-stone-600 dark:text-stone-300 hover:border-stone-300"
+                        )}
+                      >
+                        <IdentityBadge
+                          type="cluster"
+                          size="sm"
+                          id={cluster.id}
+                          name={cluster.name ?? undefined}
+                          tag={cluster.tag ?? undefined}
+                          slug={cluster.slug ?? undefined}
+                        />
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Org Column */}
+              <div className="space-y-4">
+                <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-stone-400">2. Organization Context</p>
+                {(() => {
+                  const effectiveScopeClusterId = scopeClusterId
+                    ?? (manageableClusters.length === 1 ? manageableClusters[0]?.id : null)
+                    ?? contextClusterId;
+
+                  const orgsToShow: Array<{ id: string; name?: string | null; tag?: string | null; slug?: string | null }> =
+                    isClusterAdmin && effectiveScopeClusterId
+                      ? (manageableOrgsByCluster[effectiveScopeClusterId] ?? [])
+                      : Object.values(availableOrgs);
+
+                  if (isClusterAdmin && manageableClusters.length > 1 && !scopeClusterId) {
+                    return (
+                      <div className="flex flex-col items-center justify-center p-8 bg-stone-50 dark:bg-stone-800/40 rounded-2xl border-2 border-dashed border-stone-100 dark:border-stone-700">
+                        <Globe size={24} className="text-stone-300 mb-2 opacity-40" />
+                        <p className="text-xs text-stone-400 italic text-center">Select a cluster context to view available organizations.</p>
+                      </div>
+                    );
+                  }
+                  if (orgsToShow.length === 0) {
+                    return (
+                      <div className="flex flex-col items-center justify-center p-8 bg-stone-50 dark:bg-stone-800/40 rounded-2xl border-2 border-dashed border-stone-100 dark:border-stone-700">
+                        <AlertTriangle size={24} className="text-stone-300 mb-2 opacity-40" />
+                        <p className="text-xs text-stone-400 italic text-center">No organizations discovered in this scope.</p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="grid grid-cols-1 gap-2">
+                      {orgsToShow.map(org => (
+                        <button
+                          key={org.id}
+                          onClick={() => typeof switchOrg === 'function' && switchOrg(org.id)}
+                          className={cn(
+                            "group px-4 py-3 rounded-xl border-2 transition-all flex items-center justify-between",
+                            activeOrgId === org.id
+                              ? "bg-white dark:bg-stone-900 border-stone-900 dark:border-white shadow-xl scale-[1.03] z-10"
+                              : "bg-white dark:bg-stone-800 text-stone-600 border-stone-100 dark:border-stone-700 hover:border-stone-300"
+                          )}
+                        >
+                          <div className="flex items-center gap-2">
+                            <IdentityBadge
+                              type="org"
+                              size="sm"
+                              id={org.id}
+                              name={org.name ?? undefined}
+                              tag={org.tag ?? undefined}
+                              slug={org.slug ?? undefined}
+                            />
+                          </div>
+                          <div className={cn(
+                            "w-2 h-2 rounded-full transition-all",
+                            activeOrgId === org.id ? "bg-emerald-500" : "bg-stone-200 dark:bg-stone-700 opacity-0 group-hover:opacity-100"
+                          )} />
+                        </button>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
             </div>
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold uppercase text-stone-400">New Password</label>
-                <input 
-                  type="password" 
-                  className="w-full bg-stone-50 dark:bg-stone-800 border-stone-200 dark:border-stone-700 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-emerald-500 outline-none transition-all"
-                  placeholder="Min 8 characters"
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                />
+
+            <div className="pt-4 border-t border-stone-100 dark:border-stone-800 flex flex-wrap gap-4">
+              <div className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 flex-1 min-w-[200px]">
+                <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1">Architecture Note</p>
+                <p className="text-[11px] text-stone-500 leading-relaxed italic">
+                  Deterministic cluster-level authority grants access to all organizations within the selected scope. Switching updates RLS context instantly.
+                </p>
               </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold uppercase text-stone-400">Confirm New Password</label>
-                <input 
-                  type="password" 
-                  className="w-full bg-stone-50 dark:bg-stone-800 border-stone-200 dark:border-stone-700 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-emerald-500 outline-none transition-all"
-                  placeholder="Repeat new password"
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                />
+              <div className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 flex-1 min-w-[200px]">
+                <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1">Human Identity</p>
+                <p className="text-[11px] text-stone-500 leading-relaxed italic">
+                  Context is resolved using canonical Tags (e.g. BEI-OPS) and Slugs (beirut-ops) for operational clarity.
+                </p>
               </div>
-              <button
-                onClick={() => void handleUpdatePassword()}
-                disabled={isUpdatingPassword}
-                className="w-full py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-lg text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-all active:scale-[0.98]"
+            </div>
+          </div>
+        </div>
+
+        {/* SECTION 3: ADMINISTRATION (Invites & Requests) */}
+        {canViewOperatorLogs && (
+          <div className="section border-t border-stone-200 dark:border-stone-800 pt-8">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-2">
+                <ShieldCheck size={20} className="text-stone-400" />
+                <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Access Administration</h3>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => { void fetchAccessInvites(); void fetchAccessRequests(); }}
+                  disabled={inviteLoading || requestsLoading}
+                  className="px-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-800 text-[11px] font-bold uppercase tracking-wider text-stone-500 hover:bg-stone-50 dark:hover:bg-stone-900 transition-all"
+                >
+                  {(inviteLoading || requestsLoading) ? 'Syncing...' : 'Refresh Queue'}
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Invites Card */}
+              <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm flex flex-col">
+                <div className="p-5 border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30">
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100 mb-1">Invite Issuance</h4>
+                  <p className="text-[11px] text-stone-500">Generate secure, multi-use invite tokens for the current organization.</p>
+                </div>
+                <div className="p-5 space-y-4 flex-1">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-stone-400">Token Label</label>
+                      <input type="text" placeholder="e.g. Q2 Operations" className="control-input py-1.5" value={inviteLabel} onChange={e => setInviteLabel(e.target.value)} />
+                    </div>
+                    <div className="flex gap-3">
+                      <div className="space-y-1 flex-1">
+                        <label className="text-[10px] font-bold uppercase text-stone-400">Expiry (Days)</label>
+                        <input type="number" className="control-input py-1.5" value={inviteExpiryDays} onChange={e => setInviteExpiryDays(e.target.value)} />
+                      </div>
+                      <div className="space-y-1 flex-1">
+                        <label className="text-[10px] font-bold uppercase text-stone-400">Max Uses</label>
+                        <input type="number" className="control-input py-1.5" value={inviteMaxUses} onChange={e => setInviteMaxUses(e.target.value)} />
+                      </div>
+                    </div>
+                  </div>
+                  <button onClick={() => void createAccessInvite()} className="action-btn-primary w-full h-9 text-xs justify-center font-bold">Create Token</button>
+                  
+                  {inviteNotice && (
+                    <div className="mt-4 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/20 space-y-3">
+                      <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">{inviteNotice}</p>
+                      {inviteTokenValue && (
+                        <div className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono text-[10px] bg-white dark:bg-stone-800 px-2 py-1 rounded border border-stone-100 dark:border-stone-700 select-all flex-1 truncate">{inviteTokenValue}</span>
+                            <button onClick={() => { navigator.clipboard.writeText(inviteTokenValue); setInviteTokenCopied(true); setTimeout(() => setInviteTokenCopied(false), 2000); }} className="text-[10px] font-bold text-stone-500 uppercase">{inviteTokenCopied ? 'Copied' : 'Copy'}</button>
+                          </div>
+                          <button onClick={() => { navigator.clipboard.writeText(buildInviteShareMessage(inviteTokenValue)); setInviteMessageCopied(true); setTimeout(() => setInviteMessageCopied(false), 2000); }} className="w-full py-1 text-[10px] font-bold uppercase tracking-tighter text-stone-500 bg-stone-100 dark:bg-stone-800 rounded">
+                            {inviteMessageCopied ? 'Share Message Copied' : 'Copy Full Invite Message'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Requests Card */}
+              <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm flex flex-col">
+                <div className="p-5 border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30">
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100 mb-1">Account Review</h4>
+                  <p className="text-[11px] text-stone-500">Evaluate and approve pending access requests from the portal.</p>
+                </div>
+                <div className="p-5 flex-1 flex flex-col items-center justify-center min-h-[140px]">
+                  {accessRequests.length > 0 ? (
+                    <div className="text-center">
+                      <p className="text-2xl font-light text-stone-900 dark:text-stone-100">{accessRequests.length}</p>
+                      <p className="text-[11px] font-bold uppercase tracking-widest text-stone-400">Pending Review</p>
+                      <p className="text-[10px] text-stone-500 mt-2 italic">Scroll down to the unified queue below for actions.</p>
+                    </div>
+                  ) : (
+                    <div className="text-center opacity-40">
+                      <CheckCircle2 size={32} className="mx-auto text-stone-300 mb-2" />
+                      <p className="text-xs text-stone-500 font-medium">Clear Queue</p>
+                      <p className="text-[10px] text-stone-400 mt-1">No pending account requests.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 4: CLUSTER MANAGEMENT (Cluster Admin Only) */}
+        {(isClusterAdmin || isPlatformAdmin) && (
+          <div className="section border-t border-stone-200 dark:border-stone-800 pt-8">
+            <div className="flex items-center gap-2 mb-6">
+              <ShieldCheck size={20} className="text-stone-400" />
+              <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Cluster Administration</h3>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* Cluster Members Card */}
+              <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm">
+                <div className="p-5 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between bg-stone-50/50 dark:bg-stone-800/30">
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100 mb-1">Administrative Hierarchy</h4>
+                    <p className="text-[11px] text-stone-500">Manage high-privilege cluster accounts and system roles.</p>
+                  </div>
+                </div>
+                <div className="p-5">
+                  <div className="mb-4">
+                    <input type="text" placeholder="Filter admins..." className="w-full text-[11px] bg-stone-50 dark:bg-stone-800 border-none rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500" value={clusterSearch} onChange={e => setClusterSearch(e.target.value)} />
+                  </div>
+                  <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 app-scroll">
+                    {clusterAdminsLoading ? (
+                      <LoadingLine label="Fetching hierarchy..." compact />
+                    ) : filteredClusterAdmins.length === 0 ? (
+                      <p className="text-[11px] text-stone-400 italic text-center py-8">No results in this scope.</p>
+                    ) : filteredClusterAdmins.map(admin => {
+                      const isSelf = admin.user_id === user?.id;
+                      const isLastAdmin = admin.role === 'cluster_admin' && clusterAdmins.filter(a => a.role === 'cluster_admin').length === 1;
+                      return (
+                        <div key={admin.user_id} className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700/50 flex items-center justify-between group">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-bold text-stone-900 dark:text-stone-100 truncate">{admin.email} {isSelf && '(You)'}</p>
+                            <span className="text-[9px] font-black uppercase tracking-tighter text-emerald-600 dark:text-emerald-400">{admin.role.replace('_', ' ')}</span>
+                          </div>
+                          {!isSelf && (
+                            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <select 
+                                className="text-[10px] bg-white dark:bg-stone-900 border-stone-200 rounded px-1 py-0.5 outline-none font-bold text-stone-600"
+                                value={pendingClusterRoles[admin.user_id] || admin.role}
+                                onChange={(e) => setPendingClusterRoles(prev => ({ ...prev, [admin.user_id]: e.target.value as any }))}
+                              >
+                                <option value="cluster_admin">Admin</option>
+                                <option value="cluster_operator">Operator</option>
+                                <option value="viewer">Viewer</option>
+                              </select>
+                              <button onClick={() => updateClusterAccountRole(admin)} className="text-[10px] font-bold text-emerald-600 uppercase">Save</button>
+                            </div>
+                          )}
+                          {isSelf && <span className="text-[9px] font-bold text-stone-400 uppercase tracking-widest">Fixed</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Provisioning Card */}
+              <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm">
+                <div className="p-5 border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30 font-bold">
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100 mb-1">Deterministic Provisioning</h4>
+                  <p className="text-[11px] text-stone-500">Deploy new work environments within this cluster hierarchy.</p>
+                </div>
+                <div className="p-5 space-y-4">
+                  <p className="text-[11px] text-stone-600 dark:text-stone-400 leading-relaxed italic">
+                    All provisioned organizations use deterministic UUID mapping to ensure secondary systems and edge functions recognize the new context without manual configuration.
+                  </p>
+                  <div className="flex flex-col gap-2">
+                    {clusterId ? (
+                      <button onClick={() => void provisionOrganization()} className="action-btn-primary w-full h-10 text-xs justify-center font-bold">
+                        Add Organization to Cluster
+                      </button>
+                    ) : (
+                      <button onClick={() => void bootstrapClusterAdmin()} className="w-full h-10 rounded-xl border-2 border-amber-200 bg-amber-50 text-amber-800 text-[11px] font-bold uppercase tracking-widest hover:bg-amber-100 transition-colors">
+                        Self-Bootstrap Cluster
+                      </button>
+                    )}
+                  </div>
+                  <div className="p-3 rounded-lg bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 space-y-1">
+                    <p className="text-[10px] font-bold text-stone-400 uppercase">Current Auth Cluster</p>
+                    <p className="font-mono text-[11px] text-stone-600 truncate">{contextClusterId || 'No Cluster context'}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 5: OPERATIONS (Bulk Export) */}
+        <div className="section border-t border-stone-200 dark:border-stone-800 pt-8">
+          <div className="flex items-center gap-2 mb-6">
+            <LogOut size={20} className="rotate-180 text-stone-400" />
+            <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Governance & Export</h3>
+          </div>
+
+          <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl shadow-sm max-w-2xl overflow-hidden">
+            <div className="p-5 border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30">
+              <div className="flex items-center justify-between mb-1">
+                <h4 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Governed Bulk Export</h4>
+                {lastExportMeta && <span className="text-[10px] font-bold text-stone-400">LAST: {lastExportMeta.rows} ROWS</span>}
+              </div>
+              <p className="text-[11px] text-stone-500">Atomic snapshots with full audit transparency. Sensitive fields are redacted at the Edge.</p>
+            </div>
+            
+            <div className="p-6 space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Export Scope</label>
+                    <div className="flex gap-1 bg-stone-50 dark:bg-stone-800 p-1 rounded-lg">
+                      {isClusterAdmin && (
+                        <button onClick={() => setExportScope('cluster')} className={cn("flex-1 py-1 text-[10px] font-bold uppercase tracking-tighter rounded transition-all", exportScope === 'cluster' ? "bg-stone-900 dark:bg-white text-white dark:text-stone-900 shadow-sm" : "text-stone-500")}>Cluster</button>
+                      )}
+                      <button onClick={() => setExportScope('org')} className={cn("flex-1 py-1 text-[10px] font-bold uppercase tracking-tighter rounded transition-all", (exportScope === 'org' || !isClusterAdmin) ? "bg-stone-900 dark:bg-white text-white dark:text-stone-900 shadow-sm" : "text-stone-500")}>Org Only</button>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Dataset Selection</label>
+                    <select value={exportDataset} onChange={e => setExportDataset(e.target.value)} className="w-full text-xs font-medium bg-stone-50 dark:bg-stone-800 border-none rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500">
+                      <option value="all">Full Operational State</option>
+                      <option value="entities">Entities & Meta</option>
+                      <option value="activities">Activity Feeds</option>
+                      <option value="audit_events">Audit Trail</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="bg-stone-50 dark:bg-stone-800/50 rounded-xl p-4 border border-stone-100 dark:border-stone-700 flex flex-col justify-center gap-2">
+                  <div className="flex items-center gap-2 text-stone-400">
+                    <Globe size={14} />
+                    <span className="text-[10px] font-bold uppercase tracking-widest">Resolution Preview</span>
+                  </div>
+                  <div className="space-y-1.5 mt-1">
+                    <p className="text-[10px] flex justify-between font-medium"><span>Target:</span> <span className="text-stone-900 dark:text-stone-100">{exportScope === 'cluster' ? 'Entire Cluster' : (availableOrgs[exportOrgId || activeOrgId || '']?.name || 'Selected Org')}</span></p>
+                    <p className="text-[10px] flex justify-between font-medium"><span>Auth:</span> <span className="text-emerald-600 uppercase font-black tracking-tighter">{roleLabel} Verified</span></p>
+                    <p className="text-[10px] flex justify-between font-medium"><span>Redaction:</span> <span className="text-stone-500 italic">Enabled</span></p>
+                  </div>
+                </div>
+              </div>
+
+              <button 
+                onClick={() => {
+                  const runExport = async () => {
+                    if (!window.confirm(`Initiate ${exportScope} export? This action is audit-logged.`)) return;
+                    setIsExporting(true);
+                    try {
+                      const accessToken = await getSupabaseAccessToken();
+                      if (!accessToken) throw new Error('Session expired.');
+                      const { data, error } = await supabase!.functions.invoke('export-data', {
+                        headers: { Authorization: `Bearer ${accessToken}`, apikey: SUPABASE_ANON_KEY },
+                        body: { scope: exportScope, dataset: exportDataset, org_id: exportOrgId || activeOrgId || '', cluster_id: contextClusterId || '' },
+                      });
+                      if (error) throw error;
+                      const result = data as any;
+                      const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `flow-ops-${exportScope}-${exportDataset}-${new Date().toISOString().slice(0, 10)}.json`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                      setLastExportMeta({ rows: result.total_rows ?? 0, ts: result.exported_at ?? new Date().toISOString() });
+                      notify({ type: 'success', message: `Export complete. Audit trail ID: ${result.audit_event_id.slice(0, 8)}` });
+                    } catch (err) {
+                      notify({ type: 'error', message: `Export failed: ${String(err)}` });
+                    } finally { setIsExporting(false); }
+                  };
+                  void runExport();
+                }}
+                disabled={isExporting} 
+                className="w-full py-2.5 bg-stone-900 dark:bg-white text-white dark:text-stone-900 rounded-xl text-xs font-bold uppercase tracking-widest hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-30"
               >
-                {isUpdatingPassword ? 'Updating...' : 'Update Password'}
+                {isExporting ? 'Packaging Data...' : 'Generate Governed Export'}
               </button>
             </div>
           </div>
         </div>
 
-        {/* 1. Cluster Administration */}
-        <div className="section border-t border-stone-200 dark:border-stone-800 pt-6">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-medium text-stone-900 dark:text-stone-100">Cluster Administration</h3>
-            {clusterId && (
-              <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300 border border-stone-200 dark:border-stone-700">
-                Authoritative Cluster
-              </span>
-            )}
+        {/* SECTION 6: DANGER ZONE */}
+        <div className="section border-t-4 border-red-500/10 pt-12">
+          <div className="flex items-center gap-2 mb-6">
+            <AlertTriangle size={20} className="text-red-500" />
+            <h3 className="font-semibold text-base text-red-600 dark:text-red-400">Danger Zone</h3>
           </div>
-          
-          <div className="space-y-4">
-            <div className="bg-stone-50 dark:bg-stone-900/40 rounded-xl p-4 border border-stone-200 dark:border-stone-800">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center gap-2">
-                  <ShieldCheck size={16} className="text-stone-400" />
-                  <span className="text-xs font-semibold text-stone-500 uppercase tracking-tight">Active Cluster ID</span>
-                </div>
-                <span className="font-mono text-[11px] text-stone-500 select-all font-semibold uppercase">{clusterId || 'None'}</span>
+
+          <div className="bg-red-50/30 dark:bg-red-950/10 border-2 border-red-100 dark:border-red-900/20 rounded-2xl p-6 max-w-2xl">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div className="max-w-md">
+                <h4 className="text-xs font-bold uppercase tracking-widest text-red-700 dark:text-red-400 mb-1">Irreversible System Reset</h4>
+                <p className="text-[11px] text-stone-500 dark:text-stone-400 leading-relaxed">
+                  Executing a reset permanently purges all operational data, entities, and activity histories for the current organization. This action cannot be undone.
+                </p>
               </div>
-
-              {clusterAdminsLoading ? (
-                <div className="py-4 text-center text-xs text-stone-400">Loading cluster hierarchy...</div>
-              ) : (
-                <div className="space-y-3">
-                  {clusterAdmins.length === 0 && !isClusterAdmin && (
-                    <p className="text-xs text-stone-400 italic text-center py-4">No cluster admins found.</p>
-                  )}
-                  {/* Safeguard: Ensure current user is shown if they are a cluster admin but missing from list */}
-                  {isClusterAdmin && !clusterAdmins.some(a => a.user_id === user?.id) && (
-                    <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50/50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/20">
-                      <div className="min-w-0 flex-1 mr-4">
-                        <p className="text-xs font-medium text-stone-900 dark:text-stone-100 truncate">{user?.email} (You)</p>
-                        <p className="text-[10px] text-emerald-600 dark:text-emerald-400 uppercase tracking-tighter font-bold">
-                          {clusterRole?.replace('_', ' ') || 'Cluster Admin'}
-                        </p>
-                      </div>
-                      <span className="text-[10px] text-emerald-600 font-bold uppercase px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-900/30">
-                        Implicit Authority
-                      </span>
-                    </div>
-                  )}
-                  {filteredClusterAdmins.map(admin => {
-                    const isSelf = admin.user_id === user?.id;
-                    const isLastAdmin = admin.role === 'cluster_admin' && clusterAdmins.filter(a => a.role === 'cluster_admin').length === 1;
-                    const isPendingDemotion = (pendingClusterRoles[admin.user_id] && pendingClusterRoles[admin.user_id] !== 'cluster_admin');
-                    
-                    return (
-
-                    <div key={admin.user_id} className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-stone-800 border border-stone-100 dark:border-stone-700/50">
-                      <div className="min-w-0 flex-1 mr-4">
-                        <p className="text-xs font-medium text-stone-900 dark:text-stone-100 truncate">{admin.email}</p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300 font-bold uppercase tracking-tighter">
-                            {admin.role.replace('_', ' ')}
-                          </span>
-                          {admin.active_org_id && availableOrgs[admin.active_org_id] && (
-                            <IdentityBadge 
-                              type="org"
-                              size="sm"
-                              id={admin.active_org_id}
-                              name={availableOrgs[admin.active_org_id]?.name}
-                              tag={availableOrgs[admin.active_org_id]?.tag}
-                              slug={availableOrgs[admin.active_org_id]?.slug}
-                            />
-                          )}
-                          {!admin.active_org_id && (
-                            <span className="text-[10px] text-stone-400 italic">No Active Org</span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        {isSelf ? (
-                          <div className="flex items-center gap-2 px-2 py-1 rounded-md bg-stone-100 dark:bg-stone-900 border border-stone-200 dark:border-stone-800" title="You cannot downgrade your own primary administrative access.">
-                            <ShieldCheck size={12} className="text-emerald-500" />
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-stone-500 dark:text-stone-400">Primary Authority</span>
-                          </div>
-                        ) : (
-                          <>
-                            <select
-                              className="text-[10px] bg-stone-50 dark:bg-stone-900 border-stone-200 dark:border-stone-700 rounded px-1.5 py-1 outline-none focus:ring-1 focus:ring-emerald-500 transition-all font-medium"
-                              value={pendingClusterRoles[admin.user_id] || admin.role}
-                              onChange={(e) => setPendingClusterRoles(prev => ({ ...prev, [admin.user_id]: e.target.value as any }))}
-                            >
-                              <option value="cluster_admin">Admin</option>
-                              <option value="cluster_operator">Operator</option>
-                              <option value="viewer">Viewer</option>
-                            </select>
-                            <button 
-                              onClick={() => void updateClusterAccountRole(admin)}
-                              disabled={busyClusterUserId === admin.user_id}
-                              className="text-[10px] text-emerald-600 font-bold uppercase hover:bg-emerald-50 dark:hover:bg-emerald-900/20 px-2 py-1 rounded disabled:opacity-30 transition-colors"
-                            >
-                              {busyClusterUserId === admin.user_id ? '...' : 'Save'}
-                            </button>
-                            <button 
-                              onClick={() => void resetUserPassword(admin.user_id)}
-                              disabled={busyClusterUserId === admin.user_id}
-                              className="text-[10px] text-stone-400 hover:text-emerald-600 px-1.5 py-0.5 rounded disabled:opacity-30 transition-colors"
-                              title="Send Password Reset Email"
-                            >
-                              Reset
-                            </button>
-                            <button 
-                              onClick={() => void deleteClusterAccount(admin)}
-                              disabled={busyClusterUserId === admin.user_id || isLastAdmin}
-                              title={isLastAdmin ? "Cannot remove the last remaining cluster admin." : undefined}
-                              className="text-[10px] text-stone-400 hover:text-red-600 px-1.5 py-0.5 rounded disabled:opacity-30 transition-colors"
-                            >
-                              Remove
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  )})}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* 2. Organization Provisioning */}
-        <div className="section border-t border-stone-200 dark:border-stone-800 pt-6">
-          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Deterministic Provisioning</h3>
-          <div className="bg-white dark:bg-stone-900 border border-emerald-100 dark:border-emerald-900/30 rounded-xl p-4">
-            <p className="text-xs text-stone-600 dark:text-stone-400 mb-4">
-              Provision a new organization within your cluster. Deterministic mapping ensures cross-organization stability.
-            </p>
-            <div className="flex gap-3">
-              {clusterId && (
-                <button 
-                  onClick={() => void provisionOrganization()}
-                  className="action-btn-primary text-xs h-9 px-4"
-                >
-                  Add Organization to Cluster
-                </button>
-              )}
-              {!clusterId && (
-                <button 
-                  onClick={() => void bootstrapClusterAdmin()}
-                  className="action-btn-secondary text-xs h-9 px-4 border-amber-200 text-amber-800 dark:text-amber-400 dark:border-amber-900/50"
-                >
-                  Bootstrap New Cluster
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* 3. Cross-Organization Switching */}
-        <div className="section border-t border-stone-200 dark:border-stone-800 pt-6">
-          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Scoped Context Switcher</h3>
-          <div className="space-y-4">
-
-            {/* Step 1: Cluster selector (global admin with multiple clusters) */}
-            {isClusterAdmin && manageableClusters.length > 1 && (
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400 mb-2">1. Select Cluster</p>
-                <div className="flex flex-wrap gap-2">
-                  {manageableClusters.map(cluster => (
-                    <button
-                      key={cluster.id}
-                      onClick={() => setScopeClusterId(cluster.id)}
-                      className={cn(
-                        "px-3 py-1.5 rounded-lg border-2 transition-all text-left",
-                        scopeClusterId === cluster.id
-                          ? "bg-stone-900 dark:bg-white border-stone-900 dark:border-white text-white dark:text-stone-900 shadow-md"
-                          : "bg-white dark:bg-stone-800 border-stone-200 dark:border-stone-700 text-stone-600 dark:text-stone-300 hover:border-stone-400"
-                      )}
-                    >
-                      <IdentityBadge
-                        type="cluster"
-                        size="sm"
-                        id={cluster.id}
-                        name={cluster.name ?? undefined}
-                        tag={cluster.tag ?? undefined}
-                        slug={cluster.slug ?? undefined}
-                      />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Step 2: Org selector, filtered by selected cluster (or show all if single cluster) */}
-            <div>
-              {isClusterAdmin && manageableClusters.length > 1 && (
-                <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400 mb-2">2. Select Organization</p>
-              )}
-              {(() => {
-                // Resolve which cluster to filter by
-                const effectiveScopeClusterId = scopeClusterId
-                  ?? (manageableClusters.length === 1 ? manageableClusters[0]?.id : null)
-                  ?? contextClusterId;
-
-                // If cluster admin: use manageableOrgsByCluster (server-resolved, no RLS block)
-                // Otherwise: fall back to availableOrgs from DataContext
-                const orgsToShow: Array<{ id: string; name?: string | null; tag?: string | null; slug?: string | null }> =
-                  isClusterAdmin && effectiveScopeClusterId
-                    ? (manageableOrgsByCluster[effectiveScopeClusterId] ?? [])
-                    : Object.values(availableOrgs);
-
-                if (isClusterAdmin && manageableClusters.length > 1 && !scopeClusterId) {
-                  return <p className="text-xs text-stone-400 italic">Select a cluster to view available organizations.</p>;
-                }
-                if (orgsToShow.length === 0) {
-                  return <p className="text-xs text-stone-400 italic">No organizations found in this cluster.</p>;
-                }
-                return (
-                  <div className="flex flex-wrap gap-2">
-                    {orgsToShow.map(org => (
-                      <button
-                        key={org.id}
-                        onClick={() => typeof switchOrg === 'function' && switchOrg(org.id)}
-                        className={cn(
-                          "px-4 py-2 rounded-xl border-2 transition-all flex flex-col items-start gap-1",
-                          activeOrgId === org.id
-                            ? "bg-white dark:bg-stone-900 border-stone-900 dark:border-white shadow-lg scale-[1.02]"
-                            : "bg-white dark:bg-stone-800 text-stone-600 border-stone-100 dark:border-stone-700 hover:border-stone-300"
-                        )}
-                      >
-                        <div className="flex items-center gap-2">
-                          <Globe size={12} className={activeOrgId === org.id ? "text-stone-900 dark:text-white" : "text-stone-400"} />
-                          <IdentityBadge
-                            type="org"
-                            size="sm"
-                            id={org.id}
-                            name={org.name ?? undefined}
-                            tag={org.tag ?? undefined}
-                            slug={org.slug ?? undefined}
-                          />
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                );
-              })()}
-            </div>
-
-            <p className="text-[10px] text-stone-400 italic">
-              Switching organization updates your RLS scope instantly.
-            </p>
-          </div>
-        </div>
-
-        {/* 4. Admin Hierarchy Rules */}
-        <div className="section border-t border-stone-200 dark:border-stone-800 pt-6">
-          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Hierarchy Definitions</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="p-3 rounded-lg bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700">
-              <p className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-1">Clusters</p>
-              <p className="text-[11px] text-stone-600 dark:text-stone-400 leading-relaxed">
-                Top-level administrative containers. Cluster Admins manage all Orgs within.
-              </p>
-            </div>
-            <div className="p-3 rounded-lg bg-stone-50 dark:bg-stone-800/50 border border-stone-200 dark:border-stone-700">
-              <p className="text-xs font-bold text-stone-500 uppercase tracking-widest mb-1">Organizations</p>
-              <p className="text-[11px] text-stone-600 dark:text-stone-400 leading-relaxed">
-                Standard work environments. Team membership is explicit and scoped per Org.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        <div className="section border-t border-stone-200 dark:border-stone-800 pt-6">
-          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Data & Governance</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <AlertTriangle size={16} className="text-amber-500" />
-                <h4 className="text-xs font-semibold uppercase tracking-tight text-stone-900 dark:text-stone-100">System Reset</h4>
-              </div>
-              <p className="text-[11px] text-stone-500 dark:text-stone-400 mb-4 h-8">
-                Permanently clear all operational data. This action is irreversible.
-              </p>
               <button
                 type="button"
                 onClick={() => { void clearGlobalData(); }}
                 disabled={!canManageGlobalData || isClearingGlobalData}
-                className="action-btn-secondary w-full text-xs h-9 justify-center border-stone-200 text-stone-600 dark:border-stone-700 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800"
+                className="h-10 px-6 bg-white dark:bg-stone-900 border-2 border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] hover:bg-red-600 hover:text-white dark:hover:bg-red-900 hover:border-red-600 transition-all disabled:opacity-20 flex-shrink-0"
               >
-                {isClearingGlobalData ? 'Resetting…' : 'Reset System'}
+                {isClearingGlobalData ? 'Purging...' : 'Execute Reset'}
               </button>
             </div>
-
-            {/* Bulk Export — governed, scoped, role-gated */}
-            {(() => {
-              const canExport = isClusterAdmin || isOrgAdmin;
-              if (!canExport) {
-                return (
-                  <div className="bg-stone-50/50 dark:bg-stone-900/20 border border-dashed border-stone-200 dark:border-stone-700/50 rounded-xl p-4 opacity-70">
-                    <h4 className="text-xs font-semibold uppercase tracking-tight text-stone-400 mb-1">Bulk Export</h4>
-                    <p className="text-[11px] text-stone-400 italic">Data export is restricted to workspace admins and above. Operators do not have export access.</p>
-                  </div>
-                );
-              }
-
-              const runExport = async () => {
-                if (!window.confirm(
-                  `Export ${exportDataset} data for ${exportScope === 'cluster' ? 'entire cluster' : 'selected org'}?\n\nThis action will be recorded in the audit log.`
-                )) return;
-                setIsExporting(true);
-                try {
-                  const accessToken = await getSupabaseAccessToken();
-                  if (!accessToken) throw new Error('Session expired.');
-                  const body: Record<string, string> = { scope: exportScope, dataset: exportDataset };
-                  if (exportScope === 'org') body.org_id = exportOrgId || activeOrgId || '';
-                  if (exportScope === 'cluster') body.cluster_id = exportClusterId || clusterId || '';
-
-                  const { data, error } = await supabase!.functions.invoke('export-data', {
-                    headers: { Authorization: `Bearer ${accessToken}`, apikey: SUPABASE_ANON_KEY },
-                    body,
-                  });
-                  if (error) throw error;
-                  const result = data as any;
-                  // Trigger JSON download
-                  const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `flow-ops-export-${exportScope}-${exportDataset}-${new Date().toISOString().slice(0, 10)}.json`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                  setLastExportMeta({ rows: result.total_rows ?? 0, ts: result.exported_at ?? new Date().toISOString() });
-                  notify({ type: 'success', message: `Exported ${result.total_rows ?? 0} rows. Audit trail saved.` });
-                } catch (err) {
-                  notify({ type: 'error', message: `Export failed: ${err instanceof Error ? err.message : String(err)}` });
-                } finally {
-                  setIsExporting(false);
-                }
-              };
-
-              const orgOptions = isClusterAdmin
-                ? Object.entries(availableOrgs)
-                : Object.entries(availableOrgs).filter(([id]) => managedOrgIds.includes(id));
-
-              return (
-                <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl p-4 flex flex-col gap-3 shadow-sm">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-semibold uppercase tracking-tight text-stone-900 dark:text-stone-100">Bulk Export</h4>
-                    {lastExportMeta && (
-                      <span className="text-[10px] text-stone-400 italic">
-                        Last: {lastExportMeta.rows} rows · {new Date(lastExportMeta.ts).toLocaleTimeString()}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[11px] text-stone-500 dark:text-stone-400 leading-relaxed">
-                    Generate a deterministic operational export. All exports are audit-logged with actor, timestamp, scope, and row counts.
-                  </p>
-
-                  {/* Scope selector */}
-                  {isClusterAdmin && (
-                    <div className="flex gap-2">
-                      {(['cluster', 'org'] as const).map(s => (
-                        <button
-                          key={s}
-                          onClick={() => setExportScope(s)}
-                          className={cn(
-                            "px-3 py-1 rounded-lg text-[11px] font-medium border transition-all",
-                            exportScope === s
-                              ? "bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 border-stone-900 dark:border-stone-100"
-                              : "bg-white dark:bg-stone-800 text-stone-500 border-stone-200 dark:border-stone-700 hover:border-stone-400"
-                          )}
-                        >
-                          {s === 'cluster' ? 'Cluster Scope' : 'Org Scope'}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Org selector (org scope only) */}
-                  {(exportScope === 'org' || !isClusterAdmin) && orgOptions.length > 1 && (
-                    <select
-                      value={exportOrgId || activeOrgId || ''}
-                      onChange={e => setExportOrgId(e.target.value)}
-                      className="w-full border border-stone-200 dark:border-stone-700 rounded-lg px-3 py-1.5 text-xs bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-200"
-                    >
-                      {orgOptions.map(([id, org]) => (
-                        <option key={id} value={id}>{org.name || id}</option>
-                      ))}
-                    </select>
-                  )}
-
-                  {/* Dataset selector */}
-                  <select
-                    value={exportDataset}
-                    onChange={e => setExportDataset(e.target.value)}
-                    className="w-full border border-stone-200 dark:border-stone-700 rounded-lg px-3 py-1.5 text-xs bg-white dark:bg-stone-800 text-stone-800 dark:text-stone-200"
-                  >
-                    <option value="all">All Datasets</option>
-                    <option value="entities">Entities</option>
-                    <option value="activities">Activities</option>
-                    <option value="records">Records</option>
-                    <option value="team_members">Team Members</option>
-                    <option value="collaborations">Collaborations</option>
-                    <option value="channels">Channels</option>
-                    <option value="audit_events">Audit Events</option>
-                  </select>
-
-                  <button
-                    onClick={() => void runExport()}
-                    disabled={isExporting}
-                    className="w-full text-xs h-9 rounded-md font-semibold transition-all bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 hover:opacity-90 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {isExporting ? 'Exporting…' : 'Export Operational Data'}
-                  </button>
-                </div>
-              );
-            })()}
-
           </div>
         </div>
 
 
         <LiveOperatorsTracker />
-
-        {canViewOperatorLogs && (
-          <>
-          <div className="section">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-medium text-stone-900 dark:text-stone-100">Invite Tokens</h3>
-              <div className="flex items-center gap-2">
-                <span className="text-xs px-2 py-1 rounded-full bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300">
-                  {accessInvites.length} active/recent
-                </span>
-                <button
-                  type="button"
-                  onClick={() => { void fetchAccessInvites(); }}
-                  disabled={inviteLoading}
-                  className="action-btn-secondary text-xs"
-                >
-                  {inviteLoading ? 'Loading…' : 'Refresh'}
-                </button>
-              </div>
-            </div>
-            <p className="text-sm text-stone-500 dark:text-stone-400 mb-4">
-              Admin-only invite issuance. The token determines the target organization; the raw token is shown once and is not stored.
-            </p>
-
-            <div className="grid grid-cols-1 md:grid-cols-[1.3fr_0.7fr_0.7fr_auto] gap-3 mb-4">
-              <input
-                type="text"
-                placeholder="Invite label (optional)"
-                className="control-input"
-                value={inviteLabel}
-                onChange={(e) => setInviteLabel(e.target.value)}
-              />
-              <input
-                type="number"
-                min="0"
-                className="control-input"
-                placeholder="Expiry days"
-                value={inviteExpiryDays}
-                onChange={(e) => setInviteExpiryDays(e.target.value)}
-              />
-              <input
-                type="number"
-                min="1"
-                className="control-input"
-                placeholder="Max uses"
-                value={inviteMaxUses}
-                onChange={(e) => setInviteMaxUses(e.target.value)}
-              />
-              <button
-                type="button"
-                onClick={() => { void createAccessInvite(); }}
-                className="action-btn-primary text-xs"
-              >
-                Create Invite
-              </button>
-            </div>
-
-            {inviteNotice && (
-              <div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 px-4 py-3 text-xs text-stone-700 dark:text-stone-200 mb-4 space-y-2">
-                <p className="font-semibold text-emerald-700 dark:text-emerald-400">{inviteNotice}</p>
-                {inviteTokenValue && (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-stone-500 dark:text-stone-400 w-20 shrink-0">Token:</span>
-                      <span className="font-mono bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded px-2 py-0.5 text-stone-900 dark:text-stone-100 select-all break-all">{inviteTokenValue}</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void navigator.clipboard.writeText(inviteTokenValue);
-                          setInviteTokenCopied(true);
-                          window.setTimeout(() => setInviteTokenCopied(false), 1400);
-                        }}
-                        className="px-2 py-0.5 rounded-md border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 text-[11px] font-medium hover:bg-stone-100 dark:hover:bg-stone-700 shrink-0"
-                      >
-                        {inviteTokenCopied ? '✓ Copied' : 'Copy'}
-                      </button>
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-stone-500 dark:text-stone-400">Share message:</span>
-                      <div className="rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 p-3 font-mono text-[11px] leading-5 text-stone-800 dark:text-stone-100 whitespace-pre-wrap break-words">
-                        {buildInviteShareMessage(inviteTokenValue)}
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          void navigator.clipboard.writeText(buildInviteShareMessage(inviteTokenValue));
-                          setInviteMessageCopied(true);
-                          window.setTimeout(() => setInviteMessageCopied(false), 1400);
-                        }}
-                        className="px-2 py-1 rounded-md border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 text-[11px] font-medium hover:bg-stone-100 dark:hover:bg-stone-700"
-                      >
-                        {inviteMessageCopied ? '✓ Message Copied' : 'Copy Share Message'}
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-
-            <CollapsibleActivitySection
-              title="Invite Tokens"
-              summary={`${accessInvites.length} active/recent`}
-              defaultExpanded
-              maxExpandedHeightClass="max-h-[420px]"
-              maxCollapsedHeightClass="max-h-[96px]"
-              extraHeaderContent={
-                <input
-                  type="text"
-                  placeholder="Search labels..."
-                  value={inviteSearch}
-                  onChange={e => setInviteSearch(e.target.value)}
-                  className="control-input py-1 px-2 text-xs min-w-[150px]"
-                />
-              }
-            >
-              <table className="desktop-grid w-full activity-auto text-left text-[13px]">
-                <thead className="sticky top-0 z-10 bg-white dark:bg-stone-900 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-800">
-                  <tr>
-                    <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Label</th>
-                    <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Created</th>
-                    <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Expires</th>
-                    <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Usage</th>
-                    <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide">State</th>
-                    <th className="px-4 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                  {filteredInvites.map((invite) => {
-                    const isRevoked = Boolean(invite.revoked_at);
-                    const isExpired = Boolean(invite.expires_at && new Date(invite.expires_at).getTime() < Date.now());
-                    const isExhausted = invite.use_count >= invite.max_uses;
-                    const state = isRevoked ? 'revoked' : isExpired ? 'expired' : isExhausted ? 'used' : 'active';
-                    return (
-                      <tr key={invite.id} className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 text-stone-700 dark:text-stone-300">
-                        <td className="px-4 py-2.5 truncate" title={invite.label ?? '-'}>{invite.label ?? '-'}</td>
-                        <td className="px-4 py-2.5 text-xs text-stone-500 dark:text-stone-400">{new Date(invite.created_at).toLocaleString()}</td>
-                        <td className="px-4 py-2.5 text-xs text-stone-500 dark:text-stone-400">{invite.expires_at ? new Date(invite.expires_at).toLocaleString() : 'Never'}</td>
-                        <td className="px-4 py-2.5 text-xs">{invite.use_count} / {invite.max_uses}</td>
-                        <td className="px-4 py-2.5 capitalize">{state}</td>
-                        <td className="px-4 py-2.5">
-                          <button
-                            type="button"
-                            onClick={() => { void revokeAccessInvite(invite.id); }}
-                            disabled={busyInviteId === invite.id || isRevoked}
-                            className="px-2 py-1 rounded-md text-xs bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
-                          >
-                            {isRevoked ? 'Revoked' : busyInviteId === invite.id ? 'Revoking…' : 'Revoke'}
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {!inviteLoading && accessInvites.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-stone-400">No invite tokens yet.</td>
-                    </tr>
-                  )}
-                  {inviteLoading && (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8">
-                        <div className="mx-auto max-w-sm">
-                          <LoadingLine label="Loading invite tokens…" compact />
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </CollapsibleActivitySection>
-          </div>
-
-          <div className="section">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="font-medium text-stone-900 dark:text-stone-100">Account Requests</h3>
-              <div className="flex items-center gap-2">
-                <span className="text-xs px-2 py-1 rounded-full bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300">
-                  {accessRequests.length} pending
-                </span>
-                <button
-                  type="button"
-                  onClick={() => { void fetchAccessRequests(); }}
-                  disabled={requestsLoading}
-                  className="action-btn-secondary text-xs"
-                >
-                  {requestsLoading ? 'Loading…' : 'Refresh'}
-                </button>
-              </div>
-            </div>
-            <p className="text-sm text-stone-500 dark:text-stone-400 mb-4">
-              Admin-only review queue for new account requests. Approval applies the login ID, the final role you choose here, and the initial password you set here.
-            </p>
-
-            {requestsNotice && (
-              <div className="rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 px-4 py-3 text-xs text-stone-700 dark:text-stone-200 mb-4 space-y-2">
-                <p className="font-semibold text-emerald-700 dark:text-emerald-400">{requestsNotice}</p>
-                {requestsNoticeLoginValue && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-stone-500 dark:text-stone-400 w-20 shrink-0">Login ID:</span>
-                    <span className="font-mono bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded px-2 py-0.5 text-stone-900 dark:text-stone-100 select-all">{requestsNoticeLoginValue}</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void navigator.clipboard.writeText(requestsNoticeLoginValue);
-                        setRequestsNoticeCopied('login');
-                        window.setTimeout(() => setRequestsNoticeCopied(null), 1400);
-                      }}
-                      className="px-2 py-0.5 rounded-md border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-800 text-[11px] font-medium hover:bg-stone-100 dark:hover:bg-stone-700 shrink-0"
-                    >
-                      {requestsNoticeCopied === 'login' ? '✓ Copied' : 'Copy'}
-                    </button>
-                  </div>
-                )}
-                <p className="text-[11px] text-stone-400 dark:text-stone-500 pt-1">Initial passwords are entered during approval and are not shown again after submission.</p>
-              </div>
-            )}
-
-            <CollapsibleActivitySection
-              title="Account Requests"
-              summary={`${accessRequests.length} pending`}
-              defaultExpanded
-              maxExpandedHeightClass="max-h-[520px]"
-              maxCollapsedHeightClass="max-h-[96px]"
-            >
-              <table className="desktop-grid w-full activity-auto text-left text-[13px]">
-                <thead className="sticky top-0 z-10 bg-white dark:bg-stone-900 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-800">
-                  <tr>
-                    <th className="px-4 py-2.5 w-[170px] text-[11px] font-semibold uppercase tracking-wide">Requested</th>
-                    <th className="px-4 py-2.5 w-[220px] text-[11px] font-semibold uppercase tracking-wide">Login ID</th>
-                    <th className="px-4 py-2.5 w-[120px] text-[11px] font-semibold uppercase tracking-wide">Requested Role</th>
-                    <th className="px-4 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Approve As</th>
-                    <th className="px-4 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Team Member ID</th>
-                    <th className="px-4 py-2.5 w-[180px] text-[11px] font-semibold uppercase tracking-wide">Initial Password</th>
-                    <th className="px-4 py-2.5 w-[210px] text-[11px] font-semibold uppercase tracking-wide">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                  {accessRequests.map(request => {
-                    return (
-                      <tr key={request.id} className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 text-stone-700 dark:text-stone-300">
-                        <td className="px-4 py-2.5 text-xs text-stone-500 dark:text-stone-400">{new Date(request.created_at).toLocaleString()}</td>
-                        <td className="px-4 py-2.5 truncate" title={request.login_id}>{request.login_id}</td>
-                        <td className="px-4 py-2.5 capitalize">{dbRoleToAppRole(request.requested_role)}</td>
-                        <td className="px-4 py-2.5">
-                          <select
-                            className="w-full px-2 py-1 text-xs border border-stone-200 dark:border-stone-700 rounded bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100"
-                            value={pendingApprovedRoles[request.id] || request.requested_role}
-                            onChange={(e) => setPendingApprovedRoles(prev => ({ ...prev, [request.id]: e.target.value as DbRole }))}
-                          >
-                            <option value="viewer">Viewer</option>
-                            <option value="operator">Operator</option>
-                            <option value="admin">Admin</option>
-                          </select>
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <input
-                            type="text"
-                            placeholder="e.g. OP-001"
-                            className="w-full px-2 py-1 text-xs border border-stone-200 dark:border-stone-700 rounded bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100"
-                            value={pendingTeamMemberIds[request.id] || ''}
-                            onChange={(e) => setPendingTeamMemberIds(prev => ({ ...prev, [request.id]: e.target.value }))}
-                          />
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <input
-                            type="password"
-                            placeholder="Min 8 characters"
-                            className="w-full px-2 py-1 text-xs border border-stone-200 dark:border-stone-700 rounded bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100"
-                            value={pendingPasswords[request.id] || ''}
-                            onChange={(e) => setPendingPasswords(prev => ({ ...prev, [request.id]: e.target.value }))}
-                            autoComplete="new-password"
-                          />
-                        </td>
-                        <td className="px-4 py-2.5">
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={() => { void reviewAccessRequest(request, 'approved'); }}
-                              disabled={busyRequestId === request.id}
-                              className="px-2 py-1 rounded-md text-xs bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
-                            >
-                              Approve
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => { void reviewAccessRequest(request, 'rejected'); }}
-                              disabled={busyRequestId === request.id}
-                              className="px-2 py-1 rounded-md text-xs bg-red-600 text-white hover:bg-red-700 disabled:opacity-60"
-                            >
-                              Reject
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {!requestsLoading && accessRequests.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-8 text-center text-stone-400">No pending account requests.</td>
-                    </tr>
-                  )}
-                  {requestsLoading && (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-8">
-                        <div className="mx-auto max-w-sm">
-                          <LoadingLine label="Loading requests…" compact />
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </CollapsibleActivitySection>
-          </div>
-          </>
-        )}
       </div>
     </div>
   );

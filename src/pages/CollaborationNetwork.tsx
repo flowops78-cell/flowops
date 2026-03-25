@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Plus, Trash2, Calendar, Filter, Archive, RotateCcw, Activity, Handshake, Search, UserPlus, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
+import { Plus, Trash2, Calendar, Filter, Archive, RotateCcw, Activity as ActivityIcon, Handshake, Search, UserPlus, ArrowUpRight, ArrowDownLeft } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAppRole } from '../context/AppRoleContext';
 import { useNotification } from '../context/NotificationContext';
@@ -430,17 +430,17 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
         activityUnits: 0,
         systemContribution: activity.operational_weight || 0,
       };
-      current.activityUnits += record.activity_units || 0;
+      current.activityUnits += record.unit_amount || 0;
       alignmentAccumulator.set(activity.id, current);
     });
 
     const perActivityAlignments = Array.from(alignmentAccumulator.values())
       .map((item: { activityId: string; date: string; channel: string; activityUnits: number; systemContribution: number }) => {
-        const collaborationAdjustment = (selectedCollaboration.role === 'collaboration' || selectedCollaboration.role === 'hybrid')
-          ? item.activityUnits * (selectedCollaboration.allocation_factor || 0)
+        const collaborationAdjustment = (selectedCollaboration.collaboration_type === 'collaboration' || selectedCollaboration.collaboration_type === 'hybrid')
+          ? item.activityUnits * (selectedCollaboration.participation_factor || 0)
           : 0;
-        const overheadAdjustment = (selectedCollaboration.role === 'channel' || selectedCollaboration.role === 'hybrid')
-          ? item.systemContribution * ((selectedCollaboration.overhead_weight || 0) / 100)
+        const overheadAdjustment = (selectedCollaboration.collaboration_type === 'channel' || selectedCollaboration.collaboration_type === 'hybrid')
+          ? item.systemContribution * ((selectedCollaboration.overhead_weight_pct || 0) / 100)
           : 0;
         return {
           ...item,
@@ -485,7 +485,7 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
       
       records.forEach((record: ActivityRecord) => {
         if (!entityIds.has(record.entity_id)) return;
-        activityUnits += record.activity_units || 0;
+        activityUnits += record.unit_amount || 0;
         const activity = activities.find((w: Activity) => w.id === record.activity_id);
         if (activity?.operational_weight) {
           contributionSum += activity.operational_weight;
@@ -750,7 +750,7 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
                   <h3 className="font-medium text-stone-900 dark:text-stone-100">{getCollaborationDisplayName(collaboration.name)}</h3>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400 capitalize">
-                      {getCollaborationRoleLabel(collaboration.role)}
+                      {getCollaborationRoleLabel(collaboration.collaboration_type || (collaboration as any).role)}
                     </span>
                   </div>
                   <div className="text-xs text-stone-400 mt-1">
@@ -824,7 +824,7 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
                       <div className="flex justify-between items-start gap-3">
                         <div>
                           <h3 className="font-medium text-stone-900 dark:text-stone-100">{getCollaborationDisplayName(collaboration.name)}</h3>
-                          <p className="text-xs text-stone-500 dark:text-stone-400">{getCollaborationRoleLabel(collaboration.role)} • hidden</p>
+                          <p className="text-xs text-stone-500 dark:text-stone-400">{getCollaborationRoleLabel(collaboration.collaboration_type || (collaboration as any).role)} • hidden</p>
                         </div>
                         <div className="text-right">
                           <p className="text-[10px] text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-0.5">Summary</p>
@@ -869,7 +869,7 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
               <div className="p-6 border-b border-stone-200 dark:border-stone-800 flex justify-between items-center">
                 <div>
                   <h2 className="text-xl font-light text-stone-900 dark:text-stone-100">{getCollaborationDisplayName(selectedCollaboration.name)}</h2>
-                  <p className="text-sm text-stone-500 dark:text-stone-400">{getCollaborationRoleLabel(selectedCollaboration.role)} • {selectedCollaboration.status}</p>
+                  <p className="text-sm text-stone-500 dark:text-stone-400">{getCollaborationRoleLabel(selectedCollaboration.collaboration_type || (selectedCollaboration as any).role)} • {selectedCollaboration.status}</p>
                 </div>
                 <div className="text-right">
                   <p className="text-sm text-stone-500 dark:text-stone-400">Current Total Balance</p>

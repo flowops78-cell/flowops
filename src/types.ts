@@ -44,6 +44,7 @@ export interface Entity {
   referred_by_entity_id?: string;
   referring_collaboration_id?: string;
   total_units: number;
+  total?: number; // Aliased for legacy UI compatibility
   tags?: string[];
   created_at?: string;
   updated_at?: string;
@@ -103,11 +104,25 @@ export interface Collaboration {
   org_id: string;
   name: string;
   collaboration_type: 'channel' | 'collaboration' | 'hybrid';
+  role?: 'channel' | 'collaboration' | 'hybrid'; // Legacy alias
   participation_factor: number;
+  allocation_factor?: number; // Legacy alias
   overhead_weight_pct: number;
+  overhead_weight?: number; // Legacy alias
+  total_number: number;
+  status: 'active' | 'inactive' | 'archived';
   rules: any;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface CollaborationAllocation {
+  id: string;
+  collaboration_id: string;
+  type: 'input' | 'output' | 'alignment' | 'adjustment';
+  amount: number;
+  date: string;
+  created_at?: string;
 }
 
 export interface Channel {

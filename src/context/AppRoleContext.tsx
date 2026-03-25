@@ -16,6 +16,7 @@ type AppRoleContextType = {
   canAlign: boolean;
   clusterRole: 'cluster_admin' | 'cluster_operator' | 'viewer' | null;
   isClusterAdmin: boolean;
+  isPlatformAdmin: boolean;
   clusterId: string | null;
   managedOrgIds: string[];
   refreshAuthority: () => Promise<void>;
@@ -34,6 +35,7 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [profileRole, setProfileRole] = useState<AppRole | null>(null);
   const [clusterRoleState, setClusterRoleState] = useState<'cluster_admin' | 'cluster_operator' | 'viewer' | null>(null);
   const [isClusterAdminState, setIsClusterAdminState] = useState(false);
+  const [isPlatformAdminState, setIsPlatformAdminState] = useState(false);
   const [clusterIdState, setClusterIdState] = useState<string | null>(null);
   const [managedOrgIdsState, setManagedOrgIdsState] = useState<string[]>([]);
   const [manageableClustersState, setManageableClustersState] = useState<ClusterMeta[]>([]);
@@ -75,7 +77,8 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
       const roleFromProfile = normalizeAppRole(authority.role);
       setProfileRole(roleFromProfile);
       setClusterRoleState(authority.clusterRole);
-      setIsClusterAdminState(authority.isPlatformAdmin);
+      setIsPlatformAdminState(authority.isPlatformAdmin);
+      setIsClusterAdminState(authority.isPlatformAdmin || authority.clusterRole === 'cluster_admin');
       setClusterIdState(authority.clusterId);
       setManagedOrgIdsState(authority.managedOrgIds);
       setManageableClustersState(authority.manageableClusters);
@@ -95,7 +98,8 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const authority = await getUserAuthorityContext(user.id);
     if (authority.source === 'none') return;
     setClusterRoleState(authority.clusterRole);
-    setIsClusterAdminState(authority.isPlatformAdmin);
+    setIsPlatformAdminState(authority.isPlatformAdmin);
+    setIsClusterAdminState(authority.isPlatformAdmin || authority.clusterRole === 'cluster_admin');
     setClusterIdState(authority.clusterId);
     setManagedOrgIdsState(authority.managedOrgIds);
     setManageableClustersState(authority.manageableClusters);
@@ -133,6 +137,7 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
       canAlign,
        clusterRole: clusterRoleState,
        isClusterAdmin: isClusterAdminState,
+       isPlatformAdmin: isPlatformAdminState,
        clusterId: clusterIdState,
        managedOrgIds: managedOrgIdsState,
        refreshAuthority,
