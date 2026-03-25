@@ -2,7 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { getCorsHeaders } from '../_shared/cors.ts';
 
 const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SB_SERVICE_ROLE_KEY')!;
+const SB_SERVICE_ROLE_KEY = Deno.env.get('SB_SERVICE_ROLE_KEY')!;
 
 type ExportScope = 'cluster' | 'org';
 type ExportDataset = 'entities' | 'activities' | 'records' | 'team_members' | 'collaborations' | 'channels' | 'audit_events' | 'all';
@@ -98,9 +98,9 @@ Deno.serve(async (req: Request) => {
     }
 
     const callerToken = authHeader.slice(7);
-    console.log("DEBUG [export-data]: KEY_PRESENT:", !!SUPABASE_SERVICE_ROLE_KEY);
+    console.log("DEBUG [export-data]: KEY_PRESENT:", !!SB_SERVICE_ROLE_KEY);
     console.log("DEBUG [export-data]: TOKEN_PRESENT:", !!callerToken);
-    const callerClient = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    const callerClient = createClient(SUPABASE_URL, SB_SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
