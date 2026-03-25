@@ -19,10 +19,9 @@ const getTeamMemberDisplayName = (name?: string | null) => {
 
 const getTeamMemberRoleLabel = (role?: string | null) => {
   const normalized = (role ?? '').toLowerCase();
-  if (normalized === 'viewer') return 'Viewer';
   if (normalized === 'operator') return 'Operator';
   if (normalized === 'admin') return 'Admin';
-  return normalized ? `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}` : 'Viewer';
+  return normalized ? `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}` : 'Operator';
 };
 
 export default function Team({ embedded = false }: { embedded?: boolean }) {
@@ -34,7 +33,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
     loading,
     loadingProgress
   } = useData();
-  const teamMembers = rawTeamMembers ?? [];
+  const teamMembers = (rawTeamMembers ?? []).filter(m => (m.role ?? '').toLowerCase() !== 'viewer');
   const activityLogs = rawActivityLogs ?? [];
   // CRUD stubs — to be wired when DataContext exposes these actions
   const addTeamMember = async (_data: any) => {};
@@ -73,7 +72,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
 
   const [name, setName] = useState('');
   const [teamMemberLoginId, setTeamMemberLoginId] = useState('');
-  const [role, setRole] = useState('viewer');
+  const [role, setRole] = useState('operator');
 
   const selectedTeamMember = teamMembers.find(s => s.id === selectedTeamMemberId);
 
@@ -439,7 +438,6 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
                 onChange={e => setRole(e.target.value)}
               >
                 <option value="operator">Operator</option>
-                <option value="viewer">Viewer</option>
                 <option value="admin">Admin</option>
               </select>
             </div>
