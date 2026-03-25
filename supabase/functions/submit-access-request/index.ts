@@ -72,6 +72,9 @@ Deno.serve(async (request: Request) => {
     return json(500, { error: 'Missing Supabase function environment variables.' }, origin);
   }
 
+  // DEBUG LOGS (Requested)
+  console.log("DEBUG [submit-access-request]: KEY_PRESENT:", !!serviceRoleKey);
+
   const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
   let payload: RequestPayload;

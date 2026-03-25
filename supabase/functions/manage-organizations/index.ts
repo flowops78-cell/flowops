@@ -178,6 +178,11 @@ Deno.serve(async (request: Request) => {
   const headerBearerToken = parseBearerToken(request.headers.get('Authorization'));
   const payloadBearerToken = (payload.access_token ?? '').trim() || null;
   const bearerToken = headerBearerToken || payloadBearerToken;
+
+  // DEBUG LOGS (Requested)
+  console.log("DEBUG [manage-organizations]: KEY_PRESENT:", !!serviceRoleKey);
+  console.log("DEBUG [manage-organizations]: TOKEN_PRESENT:", !!bearerToken);
+
   if (!bearerToken) {
     return json(401, { error: 'Missing authentication token. Please sign in.' }, origin);
   }
