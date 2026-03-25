@@ -865,6 +865,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                       id={contextClusterId}
                       name={manageableClusters.find(c => c.id === contextClusterId)?.name || undefined}
                       tag={manageableClusters.find(c => c.id === contextClusterId)?.tag || undefined}
+                      showShortId={false}
                     />
                   ) : null}
                   
@@ -878,6 +879,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                       name={availableOrgs[activeOrgId]?.name}
                       slug={availableOrgs[activeOrgId]?.slug}
                       tag={availableOrgs[activeOrgId]?.tag}
+                      showShortId={false}
                     />
                   ) : (!contextClusterId && !activeOrgId) ? (
                     <span className="text-xs font-bold text-stone-400 italic">No Active Context Resolved</span>
@@ -1033,7 +1035,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Identity Slug</label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 font-mono">ID Slug</label>
                   <input
                     type="text"
                     className="control-input font-mono text-xs"
@@ -1041,6 +1043,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                     onChange={(e) => setEditOrgSlug(e.target.value.toLowerCase().replace(/\s+/g, '-'))}
                     placeholder="e.g. acme-ops"
                   />
+                  <p className="text-[9px] text-stone-400 mt-1 italic font-medium leading-tight">Used for URL paths and deterministic routing.</p>
                 </div>
               </div>
 
@@ -1230,10 +1233,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                       </button>
                     )}
                   </div>
-                  <div className="p-3 rounded-lg bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 space-y-1">
-                    <p className="text-[10px] font-bold text-stone-400 uppercase">Current Auth Cluster</p>
-                    <p className="font-mono text-[11px] text-stone-600 truncate">{contextClusterId || 'No Cluster context'}</p>
-                  </div>
                 </div>
               </div>
             </div>
@@ -1262,9 +1261,29 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Export Scope</label>
                     {(isClusterAdmin || isPlatformAdmin) ? (
-                      <div className="flex gap-1 bg-stone-50 dark:bg-stone-800 p-1 rounded-lg">
-                        <button onClick={() => setExportScope('cluster')} className={cn("flex-1 py-1.5 text-[10px] font-bold uppercase tracking-tighter rounded transition-all", exportScope === 'cluster' ? "bg-stone-900 dark:bg-white text-white dark:text-stone-900 shadow-sm" : "text-stone-500")}>Entire Cluster</button>
-                        <button onClick={() => setExportScope('org')} className={cn("flex-1 py-1.5 text-[10px] font-bold uppercase tracking-tighter rounded transition-all", (exportScope === 'org' || (!isClusterAdmin && !isPlatformAdmin)) ? "bg-stone-900 dark:bg-white text-white dark:text-stone-900 shadow-sm" : "text-stone-500")}>Organization</button>
+                      <div className="flex gap-1 bg-stone-100 dark:bg-stone-800 p-1 rounded-xl border border-stone-200 dark:border-stone-700">
+                        <button 
+                          onClick={() => setExportScope('cluster')} 
+                          className={cn(
+                            "flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all", 
+                            exportScope === 'cluster' 
+                              ? "bg-stone-900 dark:bg-white text-white dark:text-stone-900 shadow-sm" 
+                              : "text-stone-400 hover:text-stone-600 dark:hover:text-stone-300"
+                          )}
+                        >
+                          Entire Cluster
+                        </button>
+                        <button 
+                          onClick={() => setExportScope('org')} 
+                          className={cn(
+                            "flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all", 
+                            (exportScope === 'org' || (!isClusterAdmin && !isPlatformAdmin)) 
+                              ? "bg-stone-900 dark:bg-white text-white dark:text-stone-900 shadow-sm" 
+                              : "text-stone-400 hover:text-stone-600 dark:hover:text-stone-300"
+                          )}
+                        >
+                          Organization
+                        </button>
                       </div>
                     ) : (
                       <div className="py-2.5 px-4 bg-stone-50 dark:bg-stone-800 rounded-lg border border-stone-100 dark:border-stone-700">

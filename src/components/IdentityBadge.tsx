@@ -11,6 +11,7 @@ interface IdentityBadgeProps {
   type: 'cluster' | 'org';
   size?: 'sm' | 'md' | 'lg';
   showUuid?: boolean;
+  showShortId?: boolean;
   className?: string;
 }
 
@@ -22,11 +23,12 @@ const IdentityBadge: React.FC<IdentityBadgeProps> = ({
   type,
   size = 'md',
   showUuid = false,
+  showShortId = true,
   className
 }) => {
   const { notify } = useNotification();
   
-  const shortId = id ? `${type === 'cluster' ? 'clu' : 'org'}_${id.slice(0, 6)}` : '';
+  const shortId = id ? `${type === 'cluster' ? 'clu' : 'org'}_${id.slice(0, 4)}` : '';
   const displayName = name || tag || slug || (id ? (type === 'cluster' ? 'Unnamed Cluster' : 'Unnamed Organization') : '');
   
   if (!id && !name && !tag && !slug) return null;
@@ -64,7 +66,7 @@ const IdentityBadge: React.FC<IdentityBadgeProps> = ({
       </div>
       
       <div className="flex items-center gap-1.5 group flex-wrap">
-        {shortId && (
+        {shortId && showShortId && (
           <span 
             className={cn(
               "font-mono cursor-help select-all",
