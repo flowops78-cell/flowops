@@ -744,7 +744,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl p-5 shadow-sm space-y-3">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Context Identifier</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Authority Resolution</p>
               <div className="space-y-2 text-sm text-stone-700 dark:text-stone-300">
                 <p className="flex justify-between items-center bg-stone-50 dark:bg-stone-800/50 p-2 rounded-lg">
                   <span className="font-medium text-stone-500">Auth:</span> 
@@ -766,6 +766,9 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                 <Key size={16} className="text-stone-400" />
                 <span className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Security Credentials</span>
               </div>
+              <p className="text-[11px] text-stone-500 mb-3 px-1 leading-relaxed">
+                Update the security credentials for your current logged-in identity (<span className="text-stone-900 dark:text-stone-100 font-medium">{user?.email}</span>).
+              </p>
               <div className="space-y-3">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold uppercase text-stone-400">New Password</label>
@@ -810,27 +813,41 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
             {/* Header / Active Identity */}
             <div className="p-5 border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30 flex items-center justify-between">
               <div>
-                <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-400 mb-1">Active Administrative Context</h4>
+                <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-400 mb-2">Administrative Context</h4>
                 <div className="flex items-center gap-3">
-                  <IdentityBadge
-                    type="cluster"
-                    size="sm"
-                    id={contextClusterId || ''}
-                    name={manageableClusters.find(c => c.id === contextClusterId)?.name || 'Unknown Cluster'}
-                    tag={manageableClusters.find(c => c.id === contextClusterId)?.tag || 'N/A'}
-                  />
-                  <span className="text-stone-300 dark:text-stone-700">/</span>
-                  <IdentityBadge
-                    type="org"
-                    size="sm"
-                    id={activeOrgId || ''}
-                    name={Object.values(availableOrgs).find(o => o.id === activeOrgId)?.name || 'No Org Selected'}
-                    slug={Object.values(availableOrgs).find(o => o.id === activeOrgId)?.slug || undefined}
-                  />
+                  {contextClusterId ? (
+                    <IdentityBadge
+                      type="cluster"
+                      size="sm"
+                      id={contextClusterId}
+                      name={manageableClusters.find(c => c.id === contextClusterId)?.name || undefined}
+                      tag={manageableClusters.find(c => c.id === contextClusterId)?.tag || undefined}
+                    />
+                  ) : null}
+                  
+                  {contextClusterId && activeOrgId && <span className="text-stone-300 dark:text-stone-700">/</span>}
+                  
+                  {activeOrgId ? (
+                    <IdentityBadge
+                      type="org"
+                      size="sm"
+                      id={activeOrgId}
+                      name={availableOrgs[activeOrgId]?.name}
+                      slug={availableOrgs[activeOrgId]?.slug}
+                      tag={availableOrgs[activeOrgId]?.tag}
+                    />
+                  ) : (!contextClusterId && !activeOrgId) ? (
+                    <span className="text-xs font-bold text-stone-400 italic">No Active Context Resolved</span>
+                  ) : null}
                 </div>
               </div>
               <div className="text-right">
-                <span className="px-2 py-0.5 rounded-full bg-stone-200 dark:bg-stone-800 text-[9px] font-bold uppercase tracking-widest text-stone-500">
+                <span className={cn(
+                  "px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border",
+                  isPlatformAdmin 
+                    ? "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800" 
+                    : "bg-stone-100 text-stone-600 border-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:border-stone-700"
+                )}>
                   {isPlatformAdmin ? 'Platform Scope' : isClusterAdmin ? 'Cluster Scope' : 'Org Scope'}
                 </span>
               </div>
@@ -874,15 +891,33 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                 <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 block">2. Operational Organization</label>
                 {(() => {
                   const effectiveClusterId = scopeClusterId || contextClusterId;
-                  const orgsInCluster = effectiveClusterId ? (manageableOrgsByCluster[effectiveClusterId] || []) : [];
-                  
-                  if (orgsInCluster.length === 0 && (isPlatformAdmin || isClusterAdmin)) {
+                  const orgsInCluster = (effectiveClusterId && manageableOrgsByCluster[effectiveClusterId]) 
+                    ? manageableOrgsByCluster[effectiveClusterId] 
+                    : Object.values(availableOrgs);
+
+                  if (orgsInCluster.length === 0) {
                     return (
-                      <div className="p-3 rounded-xl border-2 border-dashed border-stone-100 dark:border-stone-800 flex items-center gap-3">
-                        <AlertTriangle size={16} className="text-amber-500" />
+                      <div className="p-3 rounded-xl border border-stone-100 dark:border-stone-800 bg-stone-50/30 dark:bg-stone-800/20 flex items-center gap-3">
+                        <AlertTriangle size={14} className="text-stone-400" />
                         <span className="text-[11px] text-stone-500 italic">
-                          {!effectiveClusterId ? "Select a cluster to browse organizations." : "No organizations found in this cluster."}
+                          {isPlatformAdmin ? "Select a cluster to browse organizations." : "No organizations assigned to this account."}
                         </span>
+                      </div>
+                    );
+                  }
+
+                  if (orgsInCluster.length === 1 && !isPlatformAdmin) {
+                    const fixedOrg = orgsInCluster[0];
+                    return (
+                      <div className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 flex items-center justify-between">
+                        <IdentityBadge
+                          type="org"
+                          size="sm"
+                          id={fixedOrg.id}
+                          name={fixedOrg.name || undefined}
+                          tag={fixedOrg.tag || undefined}
+                        />
+                        <span className="text-[9px] font-black uppercase tracking-widest text-stone-400 px-2 py-0.5 bg-white dark:bg-stone-900 rounded-lg shadow-sm">Fixed Context</span>
                       </div>
                     );
                   }
@@ -893,9 +928,9 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                       value={activeOrgId || ''}
                       onChange={(e) => typeof switchOrg === 'function' && switchOrg(e.target.value)}
                     >
-                      <option value="" disabled>Select organization...</option>
+                      <option value="" disabled>{activeOrgId ? 'Change organization...' : 'Select organization...'}</option>
                       {orgsInCluster.map(org => (
-                        <option key={org.id} value={org.id}>{org.name} ({org.tag})</option>
+                        <option key={org.id} value={org.id}>{org.name} ({org.tag || org.slug || org.id.slice(0, 4)})</option>
                       ))}
                     </select>
                   );
@@ -1120,12 +1155,16 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                 <div className="space-y-4">
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Export Scope</label>
-                    <div className="flex gap-1 bg-stone-50 dark:bg-stone-800 p-1 rounded-lg">
-                      {(isClusterAdmin || isPlatformAdmin) && (
+                    {(isClusterAdmin || isPlatformAdmin) ? (
+                      <div className="flex gap-1 bg-stone-50 dark:bg-stone-800 p-1 rounded-lg">
                         <button onClick={() => setExportScope('cluster')} className={cn("flex-1 py-1.5 text-[10px] font-bold uppercase tracking-tighter rounded transition-all", exportScope === 'cluster' ? "bg-stone-900 dark:bg-white text-white dark:text-stone-900 shadow-sm" : "text-stone-500")}>Entire Cluster</button>
-                      )}
-                      <button onClick={() => setExportScope('org')} className={cn("flex-1 py-1.5 text-[10px] font-bold uppercase tracking-tighter rounded transition-all", (exportScope === 'org' || (!isClusterAdmin && !isPlatformAdmin)) ? "bg-stone-900 dark:bg-white text-white dark:text-stone-900 shadow-sm" : "text-stone-500")}>Organization</button>
-                    </div>
+                        <button onClick={() => setExportScope('org')} className={cn("flex-1 py-1.5 text-[10px] font-bold uppercase tracking-tighter rounded transition-all", (exportScope === 'org' || (!isClusterAdmin && !isPlatformAdmin)) ? "bg-stone-900 dark:bg-white text-white dark:text-stone-900 shadow-sm" : "text-stone-500")}>Organization</button>
+                      </div>
+                    ) : (
+                      <div className="py-2.5 px-4 bg-stone-50 dark:bg-stone-800 rounded-lg border border-stone-100 dark:border-stone-700">
+                        <span className="text-[10px] font-black uppercase tracking-widest text-stone-400">Fixed: Organization</span>
+                      </div>
+                    )}
                   </div>
                   
                   {isPlatformAdmin && exportScope === 'cluster' && (

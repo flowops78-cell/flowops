@@ -26,8 +26,10 @@ const IdentityBadge: React.FC<IdentityBadgeProps> = ({
 }) => {
   const { notify } = useNotification();
   
-  const shortId = `${type === 'cluster' ? 'clu' : 'org'}_${id.slice(0, 6)}`;
-  const displayName = name || tag || slug || 'Unknown';
+  const shortId = id ? `${type === 'cluster' ? 'clu' : 'org'}_${id.slice(0, 6)}` : '';
+  const displayName = name || tag || slug || (id ? (type === 'cluster' ? 'Unnamed Cluster' : 'Unnamed Org') : '');
+  
+  if (!id && !name && !tag && !slug) return null;
   
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -61,35 +63,40 @@ const IdentityBadge: React.FC<IdentityBadgeProps> = ({
         )}
       </div>
       
-      <div className="flex items-center gap-1.5 group">
-        <span 
-          className={cn(
-            "font-mono cursor-help select-all",
-            size === 'sm' ? "text-[9px]" : "text-[10px]",
-            "text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-400 transition-colors"
-          )}
-          title={`Full UUID: ${id}`}
-        >
-          {shortId}
-        </span>
+      <div className="flex items-center gap-1.5 group flex-wrap">
+        {shortId && (
+          <span 
+            className={cn(
+              "font-mono cursor-help select-all",
+              size === 'sm' ? "text-[8px]" : "text-[9px]",
+              "text-stone-400 dark:text-stone-500 hover:text-stone-600 dark:hover:text-stone-400 transition-colors"
+            )}
+            title={`Full UUID: ${id}`}
+          >
+            {shortId}
+          </span>
+        )}
         
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            copyToClipboard(id, 'UUID');
-          }}
-          className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-stone-50 dark:hover:bg-stone-800 rounded text-stone-400 hover:text-stone-600"
-          title="Copy UUID"
-        >
-          <Copy size={size === 'sm' ? 8 : 10} />
-        </button>
+        {shortId && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              copyToClipboard(id, 'UUID');
+            }}
+            className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 hover:bg-stone-50 dark:hover:bg-stone-800 rounded text-stone-400 hover:text-stone-600"
+            title="Copy UUID"
+          >
+            <Copy size={size === 'sm' ? 7 : 8} />
+          </button>
+        )}
 
         {slug && (
           <span className={cn(
-            "italic opacity-50",
-            size === 'sm' ? "text-[8px]" : "text-[9px]"
+            "italic opacity-40 font-medium",
+            size === 'sm' ? "text-[8px]" : "text-[9px]",
+            "text-stone-500 dark:text-stone-400"
           )}>
-            /{slug}
+            · {slug}
           </span>
         )}
       </div>
