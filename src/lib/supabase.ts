@@ -111,8 +111,13 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
   }
 
 
-  // 1. Fetch teamMemberships and profile context
-  const [{ data: orgTeamMemberships, error: orgError }, { data: clusterTeamMemberships, error: clusterError }, { data: profile, error: profileError }] = await Promise.all([
+  // 1. Fetch memberships, platform role, and profile context
+  const [
+    { data: orgMemberships, error: orgError },
+    { data: clusterMemberships, error: clusterError },
+    { data: platformRoles, error: platError },
+    { data: profile, error: profileError }
+  ] = await Promise.all([
     supabase
       .from('organization_memberships')
       .select('org_id, role, status, is_default_org')
@@ -123,22 +128,27 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
       .select('cluster_id, role')
       .eq('user_id', userId),
     supabase
+      .from('platform_roles')
+      .select('role')
+      .eq('user_id', userId),
+    supabase
       .from('profiles')
       .select('active_org_id, active_cluster_id')
       .eq('id', userId)
       .maybeSingle(),
   ]);
 
-  if (orgError) console.error('Error fetching org teamMemberships:', orgError);
-  if (clusterError) console.error('Error fetching cluster teamMemberships:', clusterError);
+  if (orgError) console.error('Error fetching org memberships:', orgError);
+  if (clusterError) console.error('Error fetching cluster memberships:', clusterError);
+  if (platError) console.error('Error fetching platform roles:', platError);
   if (profileError) console.error('Error fetching profile:', profileError);
 
-  const typedOrgTeamMemberships = (orgTeamMemberships ?? []) as TeamMembershipAuthorityRow[];
-  const typedClusterTeamMemberships = (clusterTeamMemberships ?? []) as Array<{ cluster_id: string; role: string }>;
-
-  const isClusterAdmin = typedClusterTeamMemberships.some(m => m.role === 'cluster_admin');
+  const typedOrgTeamMemberships = (orgMemberships ?? []) as TeamMembershipAuthorityRow[];
+  const typedClusterTeamMemberships = (clusterMemberships ?? []) as Array<{ cluster_id: string; role: string }>;
+  const isPlatformAdmin = (platformRoles ?? []).some(r => r.role === 'platform_admin');
+  const isClusterAdmin = isPlatformAdmin || typedClusterTeamMemberships.some(m => m.role === 'cluster_admin');
   
-  if (typedOrgTeamMemberships.length > 0 || typedClusterTeamMemberships.length > 0) {
+  if (typedOrgTeamMemberships.length > 0 || typedClusterTeamMemberships.length > 0 || isPlatformAdmin) {
     const activeOrgId = profile?.active_org_id ?? typedOrgTeamMemberships.find(m => m.is_default_org)?.org_id ?? typedOrgTeamMemberships[0]?.org_id ?? null;
     let clusterId = profile?.active_cluster_id || typedClusterTeamMemberships[0]?.cluster_id || null;
 
@@ -147,30 +157,46 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
     let manageableClusters: ClusterMeta[] = [];
     let manageableOrgsByCluster: Record<string, OrgMeta[]> = {};
     if (isClusterAdmin) {
-      const adminClusterIds = typedClusterTeamMemberships
-        .filter(m => m.role === 'cluster_admin')
-        .map(m => m.cluster_id);
-      if (adminClusterIds.length > 0) {
-        // Fetch cluster metadata
-        const { data: clusterRows } = await supabase
-          .from('clusters')
-          .select('id, name, tag, slug')
-          .in('id', adminClusterIds);
-        if (clusterRows) {
-          manageableClusters = clusterRows as ClusterMeta[];
-        }
-        // Fetch all orgs across those clusters
-        const { data: clusterOrgs } = await supabase
-          .from('organizations')
-          .select('id, name, tag, slug, cluster_id')
-          .in('cluster_id', adminClusterIds);
+      if (isPlatformAdmin) {
+        // Platform admins see EVERYTHING
+        const { data: clusterRows } = await supabase.from('clusters').select('id, name, tag, slug');
+        const { data: clusterOrgs } = await supabase.from('organizations').select('id, name, tag, slug, cluster_id');
+        
+        if (clusterRows) manageableClusters = clusterRows as ClusterMeta[];
         if (clusterOrgs) {
           allClusterOrgIds = (clusterOrgs as OrgMeta[]).map(o => o.id);
-          // Group by cluster
           for (const org of clusterOrgs as OrgMeta[]) {
             const key = org.cluster_id ?? 'unknown';
             if (!manageableOrgsByCluster[key]) manageableOrgsByCluster[key] = [];
             manageableOrgsByCluster[key].push(org);
+          }
+        }
+      } else {
+        const adminClusterIds = typedClusterTeamMemberships
+          .filter(m => m.role === 'cluster_admin')
+          .map(m => m.cluster_id);
+        if (adminClusterIds.length > 0) {
+          // Fetch cluster metadata
+          const { data: clusterRows } = await supabase
+            .from('clusters')
+            .select('id, name, tag, slug')
+            .in('id', adminClusterIds);
+          if (clusterRows) {
+            manageableClusters = clusterRows as ClusterMeta[];
+          }
+          // Fetch all orgs across those clusters
+          const { data: clusterOrgs } = await supabase
+            .from('organizations')
+            .select('id, name, tag, slug, cluster_id')
+            .in('cluster_id', adminClusterIds);
+          if (clusterOrgs) {
+            allClusterOrgIds = (clusterOrgs as OrgMeta[]).map(o => o.id);
+            // Group by cluster
+            for (const org of clusterOrgs as OrgMeta[]) {
+              const key = org.cluster_id ?? 'unknown';
+              if (!manageableOrgsByCluster[key]) manageableOrgsByCluster[key] = [];
+              manageableOrgsByCluster[key].push(org);
+            }
           }
         }
       }
