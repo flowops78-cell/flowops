@@ -86,7 +86,6 @@ export default defineConfig({
           }
 
           if (id.includes('/lucide-react/')) return 'icons';
-          if (id.includes('/motion/')) return 'motion';
           if (id.includes('/@supabase/')) return 'db';
           
           if (
