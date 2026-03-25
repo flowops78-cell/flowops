@@ -1,0 +1,44 @@
+
+> flow-ops@0.0.0 build
+> vite build
+
+vite v6.4.1 building for production...
+transforming...
+[plugin vite:esbuild] src/lib/labels.ts: Duplicate key "activity_created" in object literal
+37 |  	activity_created: 'Activity created',
+38 |  	activity_deleted: 'Activity deleted',
+39 |  	activity_created: 'Activity created',
+   |   ^
+40 |  	activity_deleted: 'Activity deleted',
+41 |  	operator_session_started: 'Operator session started',
+
+[plugin vite:esbuild] src/lib/labels.ts: Duplicate key "activity_deleted" in object literal
+38 |  	activity_deleted: 'Activity deleted',
+39 |  	activity_created: 'Activity created',
+40 |  	activity_deleted: 'Activity deleted',
+   |   ^
+41 |  	operator_session_started: 'Operator session started',
+42 |  	log_started: 'Log opened',
+
+✓ 2804 modules transformed.
+✗ Build failed in 2.32s
+error during build:
+src/components/TelemetrySidebar.tsx (4:33): "Activity" is not exported by "src/types.ts", imported by "src/components/TelemetrySidebar.tsx".
+file: /Users/becharamaccise/Desktop/flow-ops/src/components/TelemetrySidebar.tsx:4:33
+
+2: import { Circle, Users, Activity, TrendingUp, TrendingDown, Bell, BellOff, AlertCircle } from 'lucide-react';
+3: import { formatValue } from '../lib/utils';
+4: import { ActivityRecord, Entity, Activity } from '../types';
+                                    ^
+5: import ContextPanel from './ContextPanel';
+
+    at getRollupError (file:///Users/becharamaccise/Desktop/flow-ops/node_modules/rollup/dist/es/shared/parseAst.js:402:41)
+    at error (file:///Users/becharamaccise/Desktop/flow-ops/node_modules/rollup/dist/es/shared/parseAst.js:398:42)
+    at Module.error (file:///Users/becharamaccise/Desktop/flow-ops/node_modules/rollup/dist/es/shared/node-entry.js:17040:16)
+    at Module.traceVariable (file:///Users/becharamaccise/Desktop/flow-ops/node_modules/rollup/dist/es/shared/node-entry.js:17452:29)
+    at ModuleScope.findVariable (file:///Users/becharamaccise/Desktop/flow-ops/node_modules/rollup/dist/es/shared/node-entry.js:15070:39)
+    at FunctionScope.findVariable (file:///Users/becharamaccise/Desktop/flow-ops/node_modules/rollup/dist/es/shared/node-entry.js:5673:38)
+    at FunctionBodyScope.findVariable (file:///Users/becharamaccise/Desktop/flow-ops/node_modules/rollup/dist/es/shared/node-entry.js:5673:38)
+    at Identifier.bind (file:///Users/becharamaccise/Desktop/flow-ops/node_modules/rollup/dist/es/shared/node-entry.js:5447:40)
+    at CallExpression.bind (file:///Users/becharamaccise/Desktop/flow-ops/node_modules/rollup/dist/es/shared/node-entry.js:2825:28)
+    at CallExpression.bind (file:///Users/becharamaccise/Desktop/flow-ops/node_modules/rollup/dist/es/shared/node-entry.js:12179:15)
