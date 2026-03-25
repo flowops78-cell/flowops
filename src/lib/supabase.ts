@@ -2,16 +2,16 @@ import { createClient } from '@supabase/supabase-js';
 import { normalizeAppRole, type AppRole } from './roles';
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-export const SUPABASE_ANON_KEY = supabaseAnonKey;
+const supabasePublishableKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+export const SUPABASE_ANON_KEY = supabasePublishableKey;
 
 export const AUTH_PERSIST_ACTIVITY_KEY = 'flow_ops_auth_persist_activity';
 
 export const isSupabaseConfigured = 
   supabaseUrl && 
-  supabaseAnonKey && 
+  supabasePublishableKey && 
   supabaseUrl !== "https://your-project.supabase.co" && 
-  supabaseAnonKey !== "your-anon-key";
+  supabasePublishableKey !== "your-anon-key";
 
 const authStorage = {
   getItem: (key: string) => {
@@ -31,7 +31,7 @@ const authStorage = {
 };
 
 export const supabase = isSupabaseConfigured
-  ? createClient(supabaseUrl, supabaseAnonKey, {
+  ? createClient(supabaseUrl, supabasePublishableKey, {
       auth: {
         storage: authStorage,
         persistSession: true,

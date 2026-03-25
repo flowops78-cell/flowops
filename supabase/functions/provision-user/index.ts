@@ -100,7 +100,7 @@ Deno.serve(async (request: Request) => {
   if (!rl.allowed) return rateLimitResponse(rl.retryAfterMs ?? 1000, origin, getCorsHeaders(origin));
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
+  const serviceRoleKey = Deno.env.get('SB_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) return json(500, { error: 'Missing environment variables.' }, origin);
 

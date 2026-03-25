@@ -167,57 +167,24 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
   const invokeSafe = React.useCallback(async <T = any>(
     functionName: string,
-    body: any,
-    options: { retry?: boolean } = { retry: true }
+    body: any
   ): Promise<{ data: T | null; error: any }> => {
-    const execute = async (isRetry: boolean): Promise<{ data: T | null; error: any }> => {
-      const token = await getSupabaseAccessToken();
-      if (!token) {
-        throw new Error("No active session. Please sign in again.");
-      }
-
-      const { data, error } = await supabase!.functions.invoke<T>(functionName, {
-        headers: { 
-          'Authorization': `Bearer ${token}`,
-          'apikey': SUPABASE_ANON_KEY || '',
-          'Content-Type': 'application/json',
-          'X-Client-Info': 'flow-ops-admin'
-        },
-        body,
-      });
-
-      if (error && (error as any).status === 401 && !isRetry && options.retry) {
-        console.warn(`[invokeSafe] 401 for ${functionName}, attempting singleton refresh...`);
-        
-        if (!refreshPromiseRef.current) {
-          refreshPromiseRef.current = supabase!.auth.refreshSession().finally(() => {
-            refreshPromiseRef.current = null;
-          });
-        }
-        
-        const { error: refreshError } = await refreshPromiseRef.current;
-        if (refreshError) throw refreshError;
-        
-        return execute(true);
-      }
-
-      if (error && (error as any).status === 401) {
-        notify({ type: 'error', message: 'Session expired. Please sign in again.' });
-        await supabase!.auth.signOut();
-        window.location.href = '/auth';
-        return { data: null, error: new Error('Session expired') };
-      }
-
-      return { data, error };
-    };
-
-    try {
-      return await execute(false);
-    } catch (err: any) {
-      console.error(`[invokeSafe] Fatal error calling ${functionName}:`, err);
-      return { data: null, error: err };
+    // 1. Safe Session Guard
+    const { data: { session } } = await supabase!.auth.getSession();
+    if (!session) {
+      console.warn(`[invokeSafe] No active session found for ${functionName}. Skipping to prevent 401 spam.`);
+      return { data: null, error: new Error("Authentication required") };
     }
-  }, [notify]);
+
+    // 2. Standardized Invoke (auto-injects JWT)
+    return await supabase!.functions.invoke<T>(functionName, {
+      body,
+      headers: {
+        'X-Client-Info': 'flow-ops-admin'
+      }
+    });
+  }, []);
+
   
   // Password Management State
   const [newPassword, setNewPassword] = React.useState('');

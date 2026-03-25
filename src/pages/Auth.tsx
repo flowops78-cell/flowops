@@ -68,9 +68,6 @@ export default function Auth() {
         }
 
         const { data, error: requestError } = await supabase.functions.invoke<SubmitAccessRequestResult>('submit-access-request', {
-          headers: {
-            'apikey': SUPABASE_ANON_KEY || ''
-          },
           body: {
             invite_token: inviteToken,
             username,
