@@ -13,6 +13,7 @@
     "test:watch": "vitest",
     "lint": "npm run typecheck",
     "check": "npm run typecheck && npm run build",
+    "deploy": "npm run build && wrangler deploy",
     "deploy:check": "npm run clean && npm run check"
   },
   "dependencies": {
@@ -46,6 +47,7 @@
     "tsx": "^4.21.0",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "wrangler": "^4.77.0"
   }
 }
