@@ -174,6 +174,22 @@ export default function Auth() {
                 className="space-y-5"
               >
                 {/* Global Status messages */}
+                {!isSupabaseConfigured && (
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="rounded-xl border border-amber-200 bg-amber-50/50 text-amber-700 dark:border-amber-800/50 dark:bg-amber-900/20 dark:text-amber-400 px-4 py-3 text-xs flex flex-col gap-2">
+                    <div className="flex gap-3">
+                      <Info size={16} className="shrink-0" />
+                      <span className="font-bold uppercase tracking-tight">Configuration Required</span>
+                    </div>
+                    <p className="pl-7 leading-relaxed opacity-90">
+                      The application cannot detect your Supabase URL or Keys. This usually happens after an environment variable rename.
+                    </p>
+                    <div className="pl-7 mt-1">
+                      <span className="inline-block px-2 py-1 rounded bg-amber-100 dark:bg-amber-900/40 font-mono text-[10px] border border-amber-200 dark:border-amber-800">
+                        Please restart your dev server (Ctrl+C & npm run dev)
+                      </span>
+                    </div>
+                  </motion.div>
+                )}
                 {error && (
                   <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="rounded-xl border border-red-200 bg-red-50/50 text-red-700 dark:border-red-800/50 dark:bg-red-900/20 dark:text-red-400 px-4 py-3 text-xs flex gap-3">
                     <Info size={16} className="shrink-0" />
