@@ -112,27 +112,28 @@ Deno.serve(async (req: Request) => {
 
     const serviceClient = callerClient;
 
-    // 2. Resolve caller authority
-    const { data: clusterMemberships } = await serviceClient
-      .from('cluster_memberships')
-      .select('cluster_id, role')
-      .eq('user_id', caller.id);
+    // 2. Resolve caller authority (memberships + platform roles)
+    const [
+      { data: clusterMemberships },
+      { data: orgMemberships },
+      { data: platformRoles }
+    ] = await Promise.all([
+      serviceClient.from('cluster_memberships').select('cluster_id, role').eq('user_id', caller.id),
+      serviceClient.from('organization_memberships').select('org_id, role, status').eq('user_id', caller.id).in('status', ['active']),
+      serviceClient.from('platform_roles').select('role').eq('user_id', caller.id),
+    ]);
 
-    const { data: orgMemberships } = await serviceClient
-      .from('organization_memberships')
-      .select('org_id, role, status')
-      .eq('user_id', caller.id)
-      .in('status', ['active']);
-
-    const isClusterAdmin = (clusterMemberships ?? []).some((m: { role: string }) => m.role === 'cluster_admin');
+    const isPlatformAdmin = (platformRoles ?? []).some((r: { role: string }) => r.role === 'platform_admin');
+    const isClusterAdmin = isPlatformAdmin || (clusterMemberships ?? []).some((m: { role: string }) => m.role === 'cluster_admin');
     const isOrgAdmin = !isClusterAdmin && (orgMemberships ?? []).some((m: { role: string }) => m.role === 'admin');
+    
     const callerOrgIds = (orgMemberships ?? []).map((m: { org_id: string }) => m.org_id);
     const callerClusterIds = (clusterMemberships ?? [])
       .filter((m: { role: string; cluster_id: string }) => m.role === 'cluster_admin')
       .map((m: { role: string; cluster_id: string }) => m.cluster_id);
 
     if (!isClusterAdmin && !isOrgAdmin) {
-      return new Response(JSON.stringify({ error: 'Export access denied. Operator and viewer accounts cannot export data.' }), {
+      return new Response(JSON.stringify({ error: 'Export access denied. Global, Cluster, or Org Admin role required.' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -149,6 +150,7 @@ Deno.serve(async (req: Request) => {
 
     // 4. Permission check: scope enforcement
     let resolvedOrgId: string | null = org_id ?? null;
+    let targetClusterId: string | null = null;
     let resolvedClusterScope = false;
     let clusterOrgIds: string[] = [];
 
@@ -158,8 +160,8 @@ Deno.serve(async (req: Request) => {
           status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      const targetClusterId = cluster_id ?? callerClusterIds[0];
-      if (!targetClusterId || !callerClusterIds.includes(targetClusterId)) {
+      targetClusterId = cluster_id ?? callerClusterIds[0];
+      if (!targetClusterId || (!isPlatformAdmin && !callerClusterIds.includes(targetClusterId))) {
         return new Response(JSON.stringify({ error: 'Cluster not in your administrative scope.' }), {
           status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -178,8 +180,8 @@ Deno.serve(async (req: Request) => {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      // Cluster admin can export any org. Org admin only their own.
-      if (!isClusterAdmin && !callerOrgIds.includes(resolvedOrgId)) {
+      // Cluster/Platform admin can export any org. Org admin only their own.
+      if (!isClusterAdmin && !isPlatformAdmin && !callerOrgIds.includes(resolvedOrgId)) {
         return new Response(JSON.stringify({ error: 'You do not have access to export this organization.' }), {
           status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
@@ -196,10 +198,10 @@ Deno.serve(async (req: Request) => {
     await serviceClient.from('audit_events').insert({
       actor_user_id: caller.id,
       actor_label: caller.email ?? caller.id,
-      actor_role: isClusterAdmin ? 'cluster_admin' : 'admin',
+      actor_role: isPlatformAdmin ? 'platform_admin' : (isClusterAdmin ? 'cluster_admin' : 'admin'),
       action: 'bulk_export',
       entity: scope === 'cluster' ? 'cluster' : 'organization',
-      entity_id: scope === 'cluster' ? (cluster_id ?? callerClusterIds[0] ?? null) : resolvedOrgId,
+      entity_id: scope === 'cluster' ? (cluster_id ?? targetClusterId ?? null) : resolvedOrgId,
       amount: totalRows,
       details: {
         scope,

@@ -307,7 +307,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     
     const { data: { user } } = await supabase!.auth.getUser();
     if (user) {
-      await supabase!.from('profiles').update({ active_org_id: orgId }).eq('id', user.id);
+      const selectedOrg = availableOrgs[orgId];
+      const updates: any = { active_org_id: orgId };
+      if (selectedOrg?.cluster_id) {
+        updates.active_cluster_id = selectedOrg.cluster_id;
+      }
+      await supabase!.from('profiles').update(updates).eq('id', user.id);
     }
     
     // fetchData will be triggered by useEffect dependency on activeOrgId
