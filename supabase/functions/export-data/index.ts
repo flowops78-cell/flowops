@@ -114,12 +114,12 @@ Deno.serve(async (req: Request) => {
 
     // 2. Resolve caller authority
     const { data: clusterMemberships } = await serviceClient
-      .from('cluster_teamMemberships')
+      .from('cluster_memberships')
       .select('cluster_id, role')
       .eq('user_id', caller.id);
 
     const { data: orgMemberships } = await serviceClient
-      .from('organization_teamMemberships')
+      .from('organization_memberships')
       .select('org_id, role, status')
       .eq('user_id', caller.id)
       .in('status', ['active']);

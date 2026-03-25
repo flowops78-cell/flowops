@@ -114,12 +114,12 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
   // 1. Fetch teamMemberships and profile context
   const [{ data: orgTeamMemberships, error: orgError }, { data: clusterTeamMemberships, error: clusterError }, { data: profile, error: profileError }] = await Promise.all([
     supabase
-      .from('organization_teamMemberships')
+      .from('organization_memberships')
       .select('org_id, role, status, is_default_org')
       .eq('user_id', userId)
       .in('status', ['active', 'invited']),
     supabase
-      .from('cluster_teamMemberships')
+      .from('cluster_memberships')
       .select('cluster_id, role')
       .eq('user_id', userId),
     supabase
