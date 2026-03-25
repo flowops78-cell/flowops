@@ -32,20 +32,22 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
     recordsByActivityId,
     records: rawRecords,
     activities: rawActivities,
+    addCollaboration,
+    deleteCollaboration,
+    updateCollaboration,
+    addRecord,
   } = useData();
   const collaborations = rawCollaborations ?? [];
   const entities = rawEntities ?? [];
   const records = rawRecords ?? [];
   const activities = rawActivities ?? [];
 
-  // Removed APIs — stubbed until CollaborationNetwork is fully migrated
+  // collaborationParticipations, addCollaborationParticipation, deleteCollaborationParticipation are still stubbed
   const collaborationParticipations: any[] = [];
-  const addCollaboration = async (_data: any) => '';
-  const deleteCollaboration = async (_id: string) => {};
-  const updateCollaboration = async (_data: any) => {};
   const addCollaborationParticipation = async (_data: any) => {};
   const deleteCollaborationParticipation = async (_id: string) => {};
-  const recordSystemEvent = async (_data: any) => {};
+  
+  // recordSystemEvent helper removed
 
   const [selectedCollaborationId, setSelectedCollaborationId] = useState<string | null>(null);
   const [isAdding, setIsAdding] = useState(false);
@@ -90,11 +92,10 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
     try {
       await addCollaboration({
         name,
-        role: role as any,
-        allocation_factor: parseNonNegativeNumber(newParticipationFactor),
-        overhead_weight: parseNonNegativeNumber(newCollaborationOverheadWeight),
-        total_number: 0,
-        status: 'active'
+        collaboration_type: role as any,
+        participation_factor: parseNonNegativeNumber(newParticipationFactor),
+        overhead_weight_pct: parseNonNegativeNumber(newCollaborationOverheadWeight),
+        rules: {}
       });
       setIsAdding(false);
       setName('');
@@ -154,12 +155,7 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
       if (selectedCollaborationId === collaborationId) {
         setSelectedCollaborationId(null);
       }
-      void (recordSystemEvent as any)({ 
-        action: 'collaboration_archived',
-        entity: 'collaboration',
-        entity_id: collaborationId,
-        details: `Collaboration ${getCollaborationDisplayName(collaboration.name)} moved to hidden`,
-      });
+      // recordSystemEvent removed
       notify({ type: 'success', message: 'Collaboration hidden.' });
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to hide collaboration.' });
@@ -173,12 +169,7 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
 
     try {
       await updateCollaboration({ ...collaboration, status: 'active' });
-      void (recordSystemEvent as any)({ 
-        action: 'collaboration_unarchived',
-        entity: 'collaboration',
-        entity_id: collaborationId,
-        details: `Collaboration ${getCollaborationDisplayName(collaboration.name)} restored`,
-      });
+      // recordSystemEvent removed
       notify({ type: 'success', message: 'Collaboration restored.' });
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to restore collaboration.' });
@@ -203,23 +194,13 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
 
   const handleArchiveParticipation = (participationId: string) => {
     setArchivedCollaborationParticipationIds((current: string[]) => (current.includes(participationId) ? current : [...current, participationId]));
-    void (recordSystemEvent as any)({ 
-      action: 'collaboration_participation_archived',
-      entity: 'collaboration_participation',
-      entity_id: participationId,
-      details: 'Participation moved to hidden repository',
-    });
+    // recordSystemEvent removed
     notify({ type: 'success', message: 'Participation hidden.' });
   };
 
   const handleUnarchiveParticipation = (participationId: string) => {
     setArchivedCollaborationParticipationIds((current: string[]) => current.filter((item: string) => item !== participationId));
-    void (recordSystemEvent as any)({ 
-      action: 'collaboration_participation_unarchived',
-      entity: 'collaboration_participation',
-      entity_id: participationId,
-      details: 'Participation restored to active set',
-    });
+    // recordSystemEvent removed
     notify({ type: 'success', message: 'Participation restored.' });
   };
 
@@ -331,15 +312,10 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
       const next = new Set(current);
       oldCollaborationParticipationIds.forEach((id: string) => next.add(id));
       if (next.size === current.length) return current;
-      void (recordSystemEvent as any)({ 
-        action: 'collaboration_participations_auto_archived',
-        entity: 'collaboration_participation',
-        amount: oldCollaborationParticipationIds.length,
-        details: `Auto-hidden participations older than ${retentionDaysNumber} days`,
-      });
+      // recordSystemEvent removed
       return Array.from(next);
     });
-  }, [autoArchiveEnabled, oldCollaborationParticipationIds, recordSystemEvent, retentionDaysNumber]);
+  }, [autoArchiveEnabled, oldCollaborationParticipationIds, retentionDaysNumber]);
 
   useEffect(() => {
     if (!selectedCollaboration) {
@@ -516,8 +492,8 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
     try {
       await updateCollaboration({
         ...selectedCollaboration,
-        allocation_factor: parseNonNegativeNumber(editParticipationFactor),
-        overhead_weight: parseNonNegativeNumber(editCollaborationOverheadWeight),
+        participation_factor: parseNonNegativeNumber(editParticipationFactor),
+        overhead_weight_pct: parseNonNegativeNumber(editCollaborationOverheadWeight),
       });
       notify({ type: 'success', message: 'Collaboration configuration updated.' });
     } catch (error: any) {
@@ -572,12 +548,7 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
     }
 
     setArchivedCollaborationParticipationIds((current: string[]) => Array.from(new Set([...current, ...targetedIds])));
-    void (recordSystemEvent as any)({ 
-      action: 'collaboration_participations_archived_range',
-      entity: 'collaboration_participation',
-      entity_id: selectedCollaborationId,
-      details: `Filtered hidden participations from ${recordDateStart} to ${recordDateEnd} (${targetedIds.length} records)`,
-    });
+    // recordSystemEvent removed
     notify({ type: 'success', message: `Moved ${targetedIds.length} participations to hidden repository.` });
   };
 
@@ -589,12 +560,7 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
       return;
     }
     setArchivedCollaborationParticipationIds((current: string[]) => Array.from(new Set([...current, ...legacyIds])));
-    void (recordSystemEvent as any)({ 
-      action: 'collaboration_participations_archived_legacy',
-      entity: 'collaboration_participation',
-      amount: legacyIds.length,
-      details: `Moved legacy participations (> ${retentionDaysNumber} days) to hidden repository`,
-    });
+    // recordSystemEvent removed
     notify({ type: 'success', message: `Archived ${legacyIds.length} legacy participations.` });
   };
 
@@ -607,12 +573,7 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
     }
 
     setArchivedCollaborationParticipationIds((current: string[]) => current.filter((id: string) => !targets.includes(id)));
-    void (recordSystemEvent as any)({ 
-      action: 'collaboration_participations_restored_bulk',
-      entity: 'collaboration_participation',
-      entity_id: selectedCollaborationId,
-      details: `Restored ${targets.length} hidden participations`,
-    });
+    // recordSystemEvent removed
     notify({ type: 'success', message: `Restored ${targets.length} hidden participations.` });
   };
 

@@ -25,6 +25,13 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     channels: rawChannels,
     activities: rawActivities,
     addChannelRecord,
+    addTransferAccount,
+    updateTransferAccount,
+    deleteTransferAccount,
+    deleteRecord, // Added deleteRecord
+    updateRecord, // Added updateRecord
+    addRecord, // Added addRecord
+    refreshData, // Added refreshData
     loading,
     loadingProgress,
   } = useData();
@@ -57,18 +64,59 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   );
 
   // Removed APIs — stubbed as safe no-ops until the Channels page is fully migrated
-  const adjustments: any[] = [];
-  const adjustmentRequests: any[] = [];
-  const transferAccounts: any[] = [];
-  const deleteChannelActivityRecord = async (_id: string) => {};
-  const addAdjustment = async (_data: any) => {};
-  const deleteAdjustment = async (_id: string) => {};
-  const resolveAdjustmentRequest = async (_id: string, _status: string) => {};
+  const adjustments = useMemo(() => 
+    records.filter(r => r.status === 'deferred' || r.status === 'pending').map(r => ({
+      ...r,
+      type: r.direction === 'increase' ? 'input' : 'output',
+      amount: r.unit_amount || 0,
+      date: r.created_at || ''
+    })),
+    [records]
+  );
+  
+  const adjustmentRequests = useMemo(() => 
+    records.filter(r => r.status === 'pending').map(r => ({
+      ...r,
+      requested_at: r.created_at || '',
+      amount: r.unit_amount || 0,
+      type: r.direction === 'increase' ? 'input' : 'output'
+    })),
+    [records]
+  );
+
+  const transferAccounts = useMemo(() => 
+    channels.map(c => ({
+      ...c,
+      category: c.notes || 'other',
+      is_active: c.status === 'active'
+    })),
+    [channels]
+  );
+
+  const deleteChannelActivityRecord = async (id: string) => {
+    await deleteRecord(id);
+  };
+  const addAdjustment = async (data: any) => {
+    await addRecord({
+      ...data,
+      direction: data.type === 'input' ? 'increase' : 'decrease',
+      unit_amount: data.amount,
+      status: 'deferred'
+    });
+  };
+  const deleteAdjustment = async (id: string) => {
+    await deleteRecord(id);
+  };
+  const resolveAdjustmentRequest = async (id: string, status: string) => {
+    const record = records.find(r => r.id === id);
+    if (!record) return;
+    await updateRecord({
+       ...record,
+       status: status === 'approved' ? 'deferred' : 'voided'
+    });
+  };
   const transferChannelValues = async (_data: any) => {};
   const recordSystemEvent = async (_data: any) => {};
-  const addTransferAccount = async (_data: any) => {};
-  const updateTransferAccount = async (_data: any) => {};
-  const deleteTransferAccount = async (_id: string) => {};
   const location = useLocation();
   const navigate = useNavigate();
   const { canAccessAdminUi } = useAppRole();

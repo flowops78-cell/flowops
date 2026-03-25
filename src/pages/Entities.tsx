@@ -23,7 +23,21 @@ const getEntityDisplayName = (name?: string | null) => {
 export default function Entities({ embedded = false }: { embedded?: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { entities, addUnit, requestAdjustment, updateUnit, deleteUnit, transferUnits, records, activities, collaborations } = useData();
+  const { 
+    entities, 
+    loading, 
+    addEntity, 
+    requestAdjustment, 
+    updateEntity, 
+    deleteEntity, 
+    transferUnits, 
+    records, 
+    activities, 
+    collaborations,
+    channels,
+    addRecord,
+    updateRecord
+  } = useData();
   const { canAccessAdminUi, canOperateLog, canManageImpact } = useAppRole();
   const { getActionText, tx } = useLabels();
   const canActivityRecordDeferred = canOperateLog;
@@ -220,12 +234,13 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
     try {
       const parsedTotal = profileTotal.trim() === '' ? undefined : Number(profileTotal);
 
-      await addUnit({ 
+      await addEntity({ 
         name: displayName,
         tags,
         total: Number.isFinite(parsedTotal as number) ? parsedTotal : undefined,
         collaboration_id: attributedCollaborationId || undefined
       });
+      // recordSystemEvent removed
       setIsAdding(false);
       resetForm();
     } catch (error: any) {
@@ -304,10 +319,12 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
         return;
       }
 
-      await requestAdjustment({ 
-        entity_id: outputRequestEntityId, 
-        amount: parsedAmount,
-        type: 'output'
+      await addRecord({
+        entity_id: outputRequestEntityId,
+        direction: 'decrease',
+        unit_amount: parsedAmount,
+        status: 'pending',
+        notes: 'Alignment request (outflow)',
       });
       setImportStatus({ type: 'success', message: 'Outflow request submitted and marked pending for admin approval.' });
       setIsActivityRecordingOutputRequest(false);
@@ -365,7 +382,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
 
     try {
       setDeletingEntityId(entity.id);
-      await deleteUnit(entity.id);
+      await deleteEntity(entity.id);
       setImportStatus({ type: 'success', message: 'Entity profile deleted.' });
       setQuickViewEntity(current => (current?.id === entity.id ? null : current));
     } catch (error: any) {
@@ -375,12 +392,12 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  const handleUpdateEntityTags = async (entityId: string, tags: string[]) => {
-    const existing = entities.find(entity => entity.id === entityId);
-    if (!existing) return;
+  const handleUpdateEntityTags = async (entityId: string, nextTags: string[]) => {
+    const entity = entities.find(entity => entity.id === entityId);
+    if (!entity) return;
 
     try {
-      await updateUnit({ ...existing, tags });
+      await updateEntity({ ...entity, tags: nextTags });
       setImportStatus({ type: 'success', message: 'Entity tags updated.' });
     } catch (error: any) {
       setImportStatus({ type: 'error', message: error?.message || 'Unable to update entity tags.' });
@@ -944,7 +961,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                     key={entity.id} 
                     entity={entity} 
                     stats={stats} 
-                    updateUnit={updateUnit}
+                    updateEntity={updateEntity}
                     onOpenProfile={() => openEntityProfile(entity.id)}
                     onOpenSnapshot={() => setQuickViewEntity(entity)}
                     collaborations={collaborations}
@@ -1180,7 +1197,7 @@ function EntityGridCard({
   );
 }
 
-function EntityRow({ entity, stats, updateUnit, onOpenProfile, onOpenSnapshot, collaborations, canManageImpact, canActivityRecordDeferred, onTransferFromEntity, onActivityRecordDeferred, onDelete }: { entity: Entity, stats: any, updateUnit: (p: Entity) => Promise<void>, onOpenProfile: () => void, onOpenSnapshot: () => void, collaborations: Collaboration[], canManageImpact: boolean, canActivityRecordDeferred: boolean, onTransferFromEntity: () => void, onActivityRecordDeferred: () => void, onDelete: () => void }) {
+function EntityRow({ entity, stats, updateEntity, onOpenProfile, onOpenSnapshot, collaborations, canManageImpact, canActivityRecordDeferred, onTransferFromEntity, onActivityRecordDeferred, onDelete }: { entity: Entity, stats: any, updateEntity: (p: Entity) => Promise<void>, onOpenProfile: () => void, onOpenSnapshot: () => void, collaborations: Collaboration[], canManageImpact: boolean, canActivityRecordDeferred: boolean, onTransferFromEntity: () => void, onActivityRecordDeferred: () => void, onDelete: () => void }) {
   const [isEditing, setIsEditing] = useState(false);
   const [data, setData] = useState(entity);
 
@@ -1193,7 +1210,7 @@ function EntityRow({ entity, stats, updateUnit, onOpenProfile, onOpenSnapshot, c
   };
 
   const handleSave = async () => {
-    await updateUnit(data);
+    await updateEntity(data);
     setIsEditing(false);
   };
 

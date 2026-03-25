@@ -168,7 +168,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
       const { data, error } = await supabase!.functions.invoke<T>(functionName, {
         headers: { 
-          Authorization: `Bearer ${session.access_token}`,
           'X-Client-Info': 'flow-ops-admin'
         },
         body,
@@ -1378,7 +1377,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                               >
                                 <option value="cluster_admin">Admin</option>
                                 <option value="cluster_operator">Operator</option>
-                                <option value="viewer">Viewer</option>
                               </select>
                               <button onClick={() => updateClusterAccountRole(admin)} className="text-[10px] font-bold text-emerald-600 uppercase">Save</button>
                             </div>

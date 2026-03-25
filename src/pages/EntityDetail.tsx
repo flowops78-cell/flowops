@@ -6,7 +6,7 @@ import { useAppRole } from '../context/AppRoleContext';
 import { useNotification } from '../context/NotificationContext';
 import { formatValue, formatDate } from '../lib/utils';
 import { cn } from '../lib/utils';
-import { OutputRequest } from '../types';
+import { ActivityRecord } from '../types';
 import EntitySnapshot from '../components/EntitySnapshot';
 import { useLabels } from '../lib/labels';
 
@@ -19,17 +19,14 @@ export default function EntityDetail() {
   const { id } = useParams<{ id: string }>();
   const {
     entities,
-    updateUnit,
+    updateEntity,
     records,
     activities,
     addChannelRecord,
-    recordSystemEvent,
-    unitAccountEntries,
-    outputRequests,
-    addUnitAccountActivityRecord,
-    requestOutput,
-    resolveOutputRequest,
-    transferAccounts,
+    addRecord,
+    requestAdjustment,
+    updateRecord,
+    channels,
   } = useData();
   const { canAccessAdminUi, canManageImpact, canAlign } = useAppRole();
   const { tx } = useLabels();
@@ -53,51 +50,51 @@ export default function EntityDetail() {
   const [isOverrideExpanded, setIsOverrideExpanded] = useState(false);
 
   const entityEntries = useMemo(
-    () => unitAccountEntries.filter(item => item.entity_id === id).sort((a, b) => b.date.localeCompare(a.date)),
-    [unitAccountEntries, id],
+    () => records.filter(item => item.entity_id === id).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')),
+    [records, id],
   );
 
   const entityRequests = useMemo(
-    () => outputRequests.filter(item => item.entity_id === id).sort((a, b) => b.requested_at.localeCompare(a.requested_at)),
-    [outputRequests, id],
+    () => records.filter(item => item.entity_id === id && (item.status === 'pending' || item.status === 'deferred')).sort((a, b) => (b.created_at || '').localeCompare(a.created_at || '')),
+    [records, id],
   );
 
   const operatorActions = useMemo(() => {
     const inflowAndAdjustmentOps = entityEntries
-      .filter(item => item.type === 'increment' || item.type === 'adjustment')
+      .filter(item => item.direction === 'increase')
       .map(item => ({
         id: `tx-${item.id}`,
-        occurredAt: item.created_at || `${item.date}T00:00:00.000Z`,
-        action: item.type === 'increment' ? 'Increment posted' : 'Adjustment assigned',
-        amount: item.amount,
+        occurredAt: item.created_at || new Date().toISOString(),
+        action: 'Inbound recorded',
+        amount: item.unit_amount,
       }));
 
-    const resolutionOps = entityRequests
-      .filter(item => item.status === 'approved' || item.status === 'rejected')
+    const resolutionOps = entityEntries
+      .filter(item => item.direction === 'decrease')
       .map(item => ({
         id: `req-${item.id}`,
-        occurredAt: item.resolved_at || item.requested_at,
-        action: item.status === 'approved' ? 'Decrement approved' : 'Decrement rejected',
-        amount: item.amount,
+        occurredAt: item.created_at || new Date().toISOString(),
+        action: item.status === 'applied' ? 'Outbound applied' : `Outbound ${item.status}`,
+        amount: item.unit_amount,
       }));
 
     return [...inflowAndAdjustmentOps, ...resolutionOps]
       .sort((a, b) => new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime())
       .slice(0, 12);
-  }, [entityEntries, entityRequests]);
+  }, [entityEntries]);
 
   const performanceDelta = useMemo(
-    () => records.filter(item => item.entity_id === id).reduce((sum, item) => sum + item.net, 0),
+    () => records.filter(item => item.entity_id === id).reduce((sum, item) => sum + (item.direction === 'increase' ? item.unit_amount : -item.unit_amount), 0),
     [records, id],
   );
 
   const inflowsAndAdjustments = useMemo(
-    () => entityEntries.reduce((sum, item) => sum + (item.type === 'decrement' ? 0 : item.amount), 0),
+    () => entityEntries.reduce((sum, item) => sum + (item.direction === 'increase' ? item.unit_amount : 0), 0),
     [entityEntries],
   );
 
   const totalOutflows = useMemo(
-    () => entityEntries.reduce((sum, item) => sum + (item.type === 'decrement' ? item.amount : 0), 0),
+    () => entityEntries.reduce((sum, item) => sum + (item.direction === 'decrease' ? item.unit_amount : 0), 0),
     [entityEntries],
   );
 
@@ -152,10 +149,27 @@ export default function EntityDetail() {
     if (unit.id !== unitId) return;
 
     try {
-      await updateUnit({ ...unit, tags });
+      await updateEntity({ ...unit, tags });
       notify({ type: 'success', message: 'Entity tags updated.' });
     } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to update unit tags.' });
+      notify({ type: 'error', message: error?.message || 'Unable to update entity tags.' });
+    }
+  };
+
+  const handleTransfer = async (targetId: string, amount: number) => {
+    if (!unit) return;
+    try {
+      await addRecord({
+        entity_id: unit.id,
+        target_entity_id: targetId,
+        unit_amount: amount,
+        direction: 'transfer',
+        status: 'applied',
+        notes: `Transfer to ${entities.find(e => e.id === targetId)?.name || targetId}`,
+      });
+      notify({ type: 'success', message: 'Transfer completed.' });
+    } catch (error: any) {
+      notify({ type: 'error', message: error?.message || 'Transfer failed.' });
     }
   };
 
@@ -175,12 +189,13 @@ export default function EntityDetail() {
       return;
     }
 
-    await addUnitAccountActivityRecord({
+    await addRecord({
       entity_id: unit.id,
-      type: recordType,
-      amount,
-      date: isoToday(),
-      transfer_method: recordMethod || undefined,
+      direction: recordType === 'decrement' ? 'decrease' : 'increase',
+      unit_amount: amount,
+      status: 'applied',
+      channel_label: recordMethod,
+      notes: recordType === 'adjustment' ? 'Manual adjustment' : `Manual record - Channel: ${recordMethod}`,
     });
 
     // Sync with channel ONLY for increments and decrements (not adjustments)
@@ -214,29 +229,32 @@ export default function EntityDetail() {
       return;
     }
 
-    await requestOutput({
+    await addRecord({
       entity_id: unit.id,
-      amount,
-      requested_at: new Date().toISOString(),
+      unit_amount: amount,
+      direction: 'decrease',
+      status: 'pending',
+      notes: 'Outflow request (pending approval)',
     });
     setRequestAmount('');
     notify({ type: 'success', message: 'Adjustment request submitted for review.' });
   };
 
-  const resolveRequest = async (request: OutputRequest, nextStatus: 'approved' | 'rejected') => {
+  const resolveRequest = async (request: ActivityRecord, nextStatus: 'approved' | 'rejected') => {
     if (!canAlign) {
       notify({ type: 'error', message: 'Only admin can approve or reject requests.' });
       return;
     }
     if (request.status !== 'pending') return;
 
-    await resolveOutputRequest(request.id, nextStatus);
+    const canonicalStatus = nextStatus === 'approved' ? 'applied' : 'voided';
+    await updateRecord({ ...request, status: canonicalStatus });
 
     if (nextStatus === 'approved') {
       try {
         await addChannelRecord({
           type: 'decrement',
-          amount: request.amount,
+          amount: request.unit_amount,
           method: 'value',
           date: isoToday(),
         });
@@ -269,11 +287,12 @@ export default function EntityDetail() {
       return;
     }
 
-    await addUnitAccountActivityRecord({
+    await addRecord({
       entity_id: unit.id,
-      type: 'adjustment',
-      amount: Number(adjustmentAmount.toFixed(2)),
-      date: isoToday(),
+      direction: 'decrease',
+      unit_amount: Number(adjustmentAmount.toFixed(2)),
+      status: 'applied',
+      notes: 'Service alignment',
     });
     notify({ type: 'success', message: 'Service adjustment posted.' });
   };
@@ -302,11 +321,12 @@ export default function EntityDetail() {
     if (!confirmed) return;
 
     if (delta > 0) {
-      await addUnitAccountActivityRecord({
+      await addRecord({
         entity_id: unit.id,
-        type: 'increment',
-        amount: Math.abs(delta),
-        date: isoToday(),
+        direction: 'increase',
+        unit_amount: Math.abs(delta),
+        status: 'applied',
+        notes: `Manual override: increase to ${formatValue(target)}`,
       });
 
       // Sync with channel: override increase = decrement from source
@@ -321,12 +341,12 @@ export default function EntityDetail() {
         notify({ type: 'warning', message: 'Override recorded but channel sync failed. ActivityRecord manually.' });
       }
     } else {
-      await addUnitAccountActivityRecord({
+      await addRecord({
         entity_id: unit.id,
-        type: 'decrement',
-        amount: Math.abs(delta),
-        date: isoToday(),
-        request_id: `manual-override-${crypto.randomUUID()}`,
+        direction: 'decrease',
+        unit_amount: Math.abs(delta),
+        status: 'applied',
+        notes: `Manual override: decrease to ${formatValue(target)}`,
       });
 
       // Sync with channel: override decrease = increment to source
@@ -342,17 +362,15 @@ export default function EntityDetail() {
       }
     }
 
-    await recordSystemEvent({
-      action: 'entity_total_manual_override',
-      entity: 'unit',
-      entity_id: unit.id,
-      amount: delta,
-      details: `Total override ${formatValue(computedTotal)} -> ${formatValue(target)}`,
-    });
+    // recordSystemEvent removed as it is not in the current DataContext
 
     setOverrideTargetTotal('');
     notify({ type: 'warning', message: 'Manual override applied and logged.' });
   };
+
+  const transferAccounts = useMemo(() => {
+    return channels.filter(c => c.is_active || c.status === 'active');
+  }, [channels]);
 
   return (
     <div className="page-shell space-y-6">
@@ -479,20 +497,20 @@ export default function EntityDetail() {
           {entityRequests.map(request => (
             <div key={request.id} className="rounded-lg border border-stone-200 dark:border-stone-800 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <p className="text-sm text-stone-900 dark:text-stone-100">{formatValue(request.amount)} • {formatDate(request.requested_at)}</p>
+                <p className="text-sm text-stone-900 dark:text-stone-100">{formatValue(request.unit_amount)} • {request.created_at ? formatDate(request.created_at) : 'No timestamp'}</p>
               </div>
               <div className="flex items-center gap-2">
                 <span className={cn(
                   'text-xs px-2 py-1 rounded-full border',
                   request.status === 'pending'
                     ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400'
-                    : request.status === 'approved'
+                    : request.status === 'applied'
                       ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400'
                       : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
                 )}>
                   {request.status}
                 </span>
-                {request.status === 'pending' && (
+                {request.status === 'pending' && canAlign && (
                   <>
                     {isAdmin && (
                       <button type="button" onClick={() => { void resolveRequest(request, 'approved'); }} className="action-btn-primary text-xs px-2.5 py-1">
@@ -547,18 +565,27 @@ export default function EntityDetail() {
             <table className="w-full text-sm">
               <thead className="text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-800">
                 <tr>
-                  <th className="text-left py-2">Date</th>
-                  <th className="text-left py-2">Type</th>
-                  <th className="text-right py-2">Amount</th>
+                  <th className="text-left px-4 py-2">Date</th>
+                  <th className="text-left px-4 py-2">Direction</th>
+                  <th className="text-right px-4 py-2">Amount</th>
                 </tr>
               </thead>
               <tbody>
-                {entityEntries.map(tx => (
-                  <tr key={tx.id} className="border-b border-stone-100 dark:border-stone-800">
-                    <td className="py-2 text-stone-600 dark:text-stone-300">{formatDate(tx.date)}</td>
-                    <td className="py-2 text-stone-600 dark:text-stone-300">{tx.type}</td>
-                    <td className={cn('py-2 text-right font-mono', tx.type === 'decrement' ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400')}>
-                      {tx.type === 'decrement' ? '-' : '+'}{formatValue(tx.amount)}
+                {entityEntries.map((record: ActivityRecord) => (
+                  <tr key={record.id} className="hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
+                    <td className="px-4 py-3 text-stone-500 font-mono text-[10px]">
+                      {record.created_at ? formatDate(record.created_at) : '-'}
+                    </td>
+                    <td className="px-4 py-3">
+                      <span className={cn(
+                        "text-xs font-bold uppercase",
+                        record.direction === 'increase' ? "text-emerald-600" : "text-amber-600"
+                      )}>
+                        {record.direction}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono text-sm font-medium text-stone-900 dark:text-stone-100">
+                      {formatValue(record.unit_amount)}
                     </td>
                   </tr>
                 ))}

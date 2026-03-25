@@ -31,14 +31,14 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
     teamMembers: rawTeamMembers,
     activityLogs: rawActivityLogs,
     loading,
-    loadingProgress
+    loadingProgress,
+    addTeamMember,
+    updateTeamMember,
+    deleteTeamMember
   } = useData();
-  const teamMembers = (rawTeamMembers ?? []).filter(m => (m.role ?? '').toLowerCase() !== 'viewer');
-  const activityLogs = rawActivityLogs ?? [];
-  // CRUD stubs — to be wired when DataContext exposes these actions
-  const addTeamMember = async (_data: any) => {};
-  const updateTeamMember = async (_data: any) => {};
-  const deleteTeamMember = async (_id: string) => {};
+
+  const teamMembers = useMemo(() => (rawTeamMembers ?? []).filter(m => (m.role ?? '').toLowerCase() !== 'viewer'), [rawTeamMembers]);
+  const activityLogs = useMemo(() => rawActivityLogs ?? [], [rawActivityLogs]);
   const { canAccessAdminUi } = useAppRole();
   const { tx } = useLabels();
   const [isAddingTeamMember, setIsAddingTeamMember] = useState(false);
@@ -175,7 +175,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
     try {
       await addTeamMember({
         name: normalizedName,
-        teamMember_id: teamMemberLoginId.trim() || undefined,
+        user_id: teamMemberLoginId.trim() || undefined,
         role: role as any,
         status: 'active'
       });
@@ -603,14 +603,24 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-              {visibleTeamMemberActivities.map(log => {
+              {visibleTeamMemberActivities.map((log) => {
                 const teamMember = teamMembers.find(m => m.user_id === log.teamMember_id);
+                const displayName = teamMember ? getTeamMemberDisplayName(teamMember.name) : (log.actor_label || 'Unknown Operator');
+                
                 return (
                   <tr key={log.id} className="hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
-                    <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100">{teamMember ? getTeamMemberDisplayName(teamMember.name) : 'Unknown'}</td>
-                    <td className="px-4 py-3 text-stone-500 font-mono text-xs">{log.activity_id?.slice(0, 8).toUpperCase() || '-'}</td>
-                    <td className="px-4 py-3 text-stone-600 dark:text-stone-400">{log.start_time ? formatDate(log.start_time) : '-'}</td>
-                    <td className="px-4 py-3 font-mono">{log.duration_hours?.toFixed(2) || '0.00'}h</td>
+                    <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100">
+                      {displayName}
+                    </td>
+                    <td className="px-4 py-3 text-stone-500 font-mono text-xs">
+                      {log.activity_id?.slice(0, 8).toUpperCase() || '-'}
+                    </td>
+                    <td className="px-4 py-3 text-stone-600 dark:text-stone-400">
+                      {log.start_time ? formatDate(log.start_time) : '-'}
+                    </td>
+                    <td className="px-4 py-3 font-mono">
+                      {log.duration_hours?.toFixed(2) || '0.00'}h
+                    </td>
                     <td className="px-4 py-3 text-right">
                       <span className={cn(
                         "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase",

@@ -77,6 +77,7 @@ export interface ActivityRecord {
   status: 'pending' | 'applied' | 'deferred' | 'voided';
   unit_amount: number;
   target_entity_id?: string;
+  channel_label?: string;
   position_id?: number;
   sort_order?: number;
   left_at?: string;

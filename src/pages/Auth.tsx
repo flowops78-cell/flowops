@@ -16,10 +16,9 @@ type SubmitAccessRequestResult = {
   requested_role?: string;
 };
 
-const ROLE_DOMAIN_MAP: Record<RequestedRole, string> = {
+const ROLE_DOMAIN_MAP: Record<Exclude<RequestedRole, 'viewer'>, string> = {
   admin: 'admin.os',
   operator: 'operator.os',
-  viewer: 'viewer.os',
 };
 
 export default function Auth() {
@@ -30,7 +29,7 @@ export default function Auth() {
   const [password, setPassword] = useState('');
   const [requestInviteToken, setRequestInviteToken] = useState('');
   const [requestUsername, setRequestUsername] = useState('');
-  const [requestRole, setRequestRole] = useState<RequestedRole>('viewer');
+  const [requestRole, setRequestRole] = useState<Exclude<RequestedRole, 'viewer'>>('operator');
   const [requestSuccess, setRequestSuccess] = useState<string | null>(null);
   const [keepSignedIn, setKeepSignedIn] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
@@ -247,11 +246,10 @@ export default function Auth() {
                         <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400 dark:text-stone-500 ml-1">{tx('Role')}</label>
                         <select
                           value={requestRole}
-                          onChange={e => setRequestRole(e.target.value as RequestedRole)}
+                          onChange={e => setRequestRole(e.target.value as Exclude<RequestedRole, 'viewer'>)}
                           className="w-full px-3 py-2.5 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 text-sm focus:ring-2 focus:ring-stone-900 dark:focus:ring-stone-100 outline-none transition-all appearance-none cursor-pointer"
                         >
                           <option value="operator">{tx('Operator')}</option>
-                          <option value="viewer">{tx('Viewer')}</option>
                         </select>
                       </div>
 
@@ -266,8 +264,8 @@ export default function Auth() {
                             className="flex-1 px-4 py-2.5 bg-transparent border-none focus:ring-0 outline-none text-sm w-full"
                             placeholder="alex"
                           />
-                          <span className="inline-flex items-center px-4 bg-stone-50 dark:bg-stone-800/50 text-stone-500 dark:text-stone-400 text-xs font-mono border-l border-stone-200 dark:border-stone-800">
-                            @{ROLE_DOMAIN_MAP[requestRole]}
+                           <span className="inline-flex items-center px-4 bg-stone-50 dark:bg-stone-800/50 text-stone-500 dark:text-stone-400 text-xs font-mono border-l border-stone-200 dark:border-stone-800">
+                            @{ROLE_DOMAIN_MAP[requestRole as keyof typeof ROLE_DOMAIN_MAP]}
                           </span>
                         </div>
                       </div>

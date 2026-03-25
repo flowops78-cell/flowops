@@ -26,9 +26,9 @@ interface DataContextType {
   isDemoMode: boolean;
   availableOrgs: Record<string, Organization>;
   switchOrg: (orgId: string) => Promise<void>;
-  addUnit: (entity: any) => Promise<string>;
-  updateUnit: (entity: Entity) => Promise<void>;
-  deleteUnit: (id: string) => Promise<void>;
+  addEntity: (entity: any) => Promise<string>;
+  updateEntity: (entity: Entity) => Promise<void>;
+  deleteEntity: (id: string) => Promise<void>;
 
   // Activity Actions
   addActivity: (activity: any) => Promise<string>;
@@ -48,6 +48,18 @@ interface DataContextType {
   requestAdjustment: (data: any) => Promise<void>;
   addChannelRecord: (data: any) => Promise<void>;
   transferUnits: (data: any) => Promise<void>;
+
+  addTeamMember: (data: any) => Promise<void>;
+  updateTeamMember: (member: any) => Promise<void>;
+  deleteTeamMember: (id: string) => Promise<void>;
+
+  addCollaboration: (data: any) => Promise<string>;
+  updateCollaboration: (collab: any) => Promise<void>;
+  deleteCollaboration: (id: string) => Promise<void>;
+
+  addTransferAccount: (data: any) => Promise<void>;
+  updateTransferAccount: (data: any) => Promise<void>;
+  deleteTransferAccount: (id: string) => Promise<void>;
 
   refreshData: () => Promise<void>;
 }
@@ -84,14 +96,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     try {
       const [eRes, aRes, rRes, tRes, cRes, chRes, sRes, lRes] = await Promise.all([
-        supabase.from('entities').select('*').order('name'),
-        supabase.from('activities').select('*').order('date', { ascending: false }),
-        supabase.from('records').select('*').order('created_at', { ascending: false }),
-        supabase.from('team_members').select('*').order('name'),
-        supabase.from('collaborations').select('*').order('name'),
-        supabase.from('channels').select('*').order('name'),
-        supabase.from('audit_events').select('*').order('created_at', { ascending: false }).limit(100),
-        supabase.from('operator_activities').select('*').order('started_at', { ascending: false }),
+        supabase.from('entities').select('*').eq('org_id', activeOrgId).order('name'),
+        supabase.from('activities').select('*').eq('org_id', activeOrgId).order('date', { ascending: false }),
+        supabase.from('records').select('*').eq('org_id', activeOrgId).order('created_at', { ascending: false }),
+        supabase.from('team_members').select('*').eq('org_id', activeOrgId).order('name'),
+        supabase.from('collaborations').select('*').eq('org_id', activeOrgId).order('name'),
+        supabase.from('channels').select('*').eq('org_id', activeOrgId).order('name'),
+        supabase.from('audit_events').select('*').eq('org_id', activeOrgId).order('created_at', { ascending: false }).limit(100),
+        supabase.from('operator_activities').select('*').eq('org_id', activeOrgId).order('started_at', { ascending: false }),
       ]);
 
       if (eRes.data) setEntities(eRes.data);
@@ -99,7 +111,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (rRes.data) setRecords(rRes.data);
       if (tRes.data) setTeamMembers(tRes.data.map((m: any) => ({ ...m, role: m.staff_role })));
       if (cRes.data) setCollaborations(cRes.data);
-      if (chRes.data) setChannels(chRes.data.map((c: any) => ({ ...c, is_active: c.status === 'active', category: 'General' })));
+      if (chRes.data) setChannels(chRes.data.map((c: any) => ({ ...c, is_active: c.status === 'active' })));
       if (lRes.data) {
         setActivityLogs(lRes.data.map((item: any) => ({
           ...item,
@@ -168,11 +180,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Actions
-  const addUnit = async (data: any) => {
+  const addEntity = async (data: any) => {
     const orgId = requireOrgScope();
     const { data: newEntity, error } = await supabase!
       .from('entities')
-      .insert([{ ...data, org_id: orgId, total_units: 0 }])
+      .insert([{ 
+        org_id: orgId,
+        name: data.name,
+        collaboration_id: data.collaboration_id,
+        referred_by_entity_id: data.referred_by_entity_id,
+        referring_collaboration_id: data.referring_collaboration_id,
+        total_units: 0 
+      }])
       .select('id')
       .single();
     if (error) throw error;
@@ -180,13 +199,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return newEntity.id;
   };
 
-  const updateUnit = async (entity: any) => {
-    const { error } = await supabase!.from('entities').update(entity).eq('id', entity.id);
+  const updateEntity = async (entity: any) => {
+    const { error } = await supabase!.from('entities').update({
+      name: entity.name,
+      collaboration_id: entity.collaboration_id,
+      referred_by_entity_id: entity.referred_by_entity_id,
+      referring_collaboration_id: entity.referring_collaboration_id,
+      total_units: entity.total_units || 0
+    }).eq('id', entity.id);
     if (error) throw error;
     await fetchData();
   };
 
-  const deleteUnit = async (id: string) => {
+  const deleteEntity = async (id: string) => {
     const { error } = await supabase!.from('entities').delete().eq('id', id);
     if (error) throw error;
     await fetchData();
@@ -196,7 +221,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const orgId = requireOrgScope();
     const { data: newActivity, error } = await supabase!
       .from('activities')
-      .insert([{ ...data, org_id: orgId }])
+      .insert([{ 
+        org_id: orgId,
+        label: data.label || data.name, // Support both label and name
+        date: data.date,
+        status: data.status || 'active',
+        channel_label: data.channel_label || data.channel,
+        assigned_user_id: data.assigned_user_id
+      }])
       .select('id')
       .single();
     if (error) throw error;
@@ -205,7 +237,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateActivity = async (activity: any) => {
-    const { error } = await supabase!.from('activities').update(activity).eq('id', activity.id);
+    const { error } = await supabase!.from('activities').update({
+      label: activity.label || activity.name,
+      date: activity.date,
+      status: activity.status || 'active',
+      channel_label: activity.channel_label || activity.channel,
+      assigned_user_id: activity.assigned_user_id
+    }).eq('id', activity.id);
     if (error) throw error;
     await fetchData();
   };
@@ -220,13 +258,31 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const orgId = requireOrgScope();
     const { error } = await supabase!
       .from('records')
-      .insert([{ ...data, org_id: orgId }]);
+      .insert([{ 
+        org_id: orgId,
+        activity_id: data.activity_id,
+        entity_id: data.entity_id,
+        direction: data.direction,
+        status: data.status || 'pending',
+        unit_amount: data.unit_amount,
+        transfer_group_id: data.transfer_group_id,
+        channel_label: data.channel_label,
+        notes: data.notes
+      }]);
     if (error) throw error;
     await fetchData();
   };
 
   const updateRecord = async (record: any) => {
-    const { error } = await supabase!.from('records').update(record).eq('id', record.id);
+    const { error } = await supabase!.from('records').update({
+      activity_id: record.activity_id,
+      entity_id: record.entity_id,
+      direction: record.direction,
+      status: record.status,
+      unit_amount: record.unit_amount,
+      transfer_group_id: record.transfer_group_id,
+      notes: record.notes
+    }).eq('id', record.id);
     if (error) throw error;
     await fetchData();
   };
@@ -245,21 +301,26 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { error } = await supabase!
       .from('operator_activities')
       .insert([{ 
-        ...data, 
-        org_id: orgId, 
-        is_active: true,
+        org_id: orgId,
         actor_user_id: user.id,
+        actor_role: data.actor_role || 'operator',
+        actor_label: data.actor_label || user.email,
         started_at: new Date().toISOString(),
-        last_active_at: new Date().toISOString()
+        last_active_at: new Date().toISOString(),
+        is_active: true
       }]);
     if (error) throw error;
     await fetchData();
   };
 
-  const endActivityLog = async (id: string, endedAt: string, duration: number, pay?: number) => {
+  const endActivityLog = async (id: string, endedAt: string, duration: number, _pay?: number) => {
     const { error } = await supabase!
       .from('operator_activities')
-      .update({ ended_at: endedAt, duration_seconds: Math.floor(duration * 3600), is_active: false })
+      .update({ 
+        ended_at: endedAt, 
+        duration_seconds: Math.floor(duration * 3600), 
+        is_active: false 
+      })
       .eq('id', id);
     if (error) throw error;
     await fetchData();
@@ -275,6 +336,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         unit_amount: data.amount,
         direction: data.type === 'input' ? 'increase' : 'decrease',
         status: 'deferred',
+        channel_label: data.channel_label,
         notes: data.notes || 'Adjustment request'
       }]);
     if (error) throw error;
@@ -299,6 +361,120 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         status: 'applied',
         notes: `Transfer to ${data.to_entity_name}`
       }]);
+    if (error) throw error;
+    await fetchData();
+  };
+
+  const addTeamMember = async (data: any) => {
+    const orgId = requireOrgScope();
+    const { error } = await supabase!
+      .from('team_members')
+      .insert([{ 
+        org_id: orgId,
+        name: data.name,
+        staff_role: data.role,
+        user_id: data.user_id || null // only include if it's a valid user_id
+      }]);
+    if (error) throw error;
+    await fetchData();
+  };
+
+  const updateTeamMember = async (member: any) => {
+    const { error } = await supabase!
+      .from('team_members')
+      .update({ 
+        name: member.name,
+        staff_role: member.role || member.staff_role,
+        user_id: member.user_id
+      })
+      .eq('id', member.id);
+    if (error) throw error;
+    await fetchData();
+  };
+
+  const deleteTeamMember = async (id: string) => {
+    const { error } = await supabase!
+      .from('team_members')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+    await fetchData();
+  };
+
+  const addCollaboration = async (data: any) => {
+    const orgId = requireOrgScope();
+    const { data: newCollab, error } = await supabase!
+      .from('collaborations')
+      .insert([{ 
+        org_id: orgId,
+        name: data.name,
+        collaboration_type: data.collaboration_type || 'channel',
+        participation_factor: data.participation_factor ?? 0,
+        overhead_weight_pct: data.overhead_weight_pct ?? 0,
+        rules: data.rules || {}
+      }])
+      .select('id')
+      .single();
+    if (error) throw error;
+    await fetchData();
+    return newCollab.id;
+  };
+
+  const updateCollaboration = async (collab: any) => {
+    const { error } = await supabase!
+      .from('collaborations')
+      .update({ 
+        name: collab.name,
+        collaboration_type: collab.collaboration_type,
+        participation_factor: collab.participation_factor,
+        overhead_weight_pct: collab.overhead_weight_pct,
+        rules: collab.rules
+      })
+      .eq('id', collab.id);
+    if (error) throw error;
+    await fetchData();
+  };
+
+  const deleteCollaboration = async (id: string) => {
+    const { error } = await supabase!
+      .from('collaborations')
+      .delete()
+      .eq('id', id);
+    if (error) throw error;
+    await fetchData();
+  };
+
+  const addTransferAccount = async (data: any) => {
+    const orgId = requireOrgScope();
+    const { error } = await supabase!
+      .from('channels')
+      .insert([{ 
+        org_id: orgId,
+        name: data.name,
+        notes: data.category, // Store category in notes
+        status: 'active'
+      }]);
+    if (error) throw error;
+    await fetchData();
+  };
+
+  const updateTransferAccount = async (data: any) => {
+    const { error } = await supabase!
+      .from('channels')
+      .update({ 
+        name: data.name,
+        notes: data.category
+      })
+      .eq('id', data.id);
+    if (error) throw error;
+    await fetchData();
+  };
+
+  const deleteTransferAccount = async (id: string) => {
+    const { error } = await supabase!
+      .from('channels')
+      .delete()
+      .eq('id', id);
     if (error) throw error;
     await fetchData();
   };
@@ -370,9 +546,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     isDemoMode,
     recordsByActivityId,
     recordsByEntityId,
-    addUnit,
-    updateUnit,
-    deleteUnit,
+    addEntity,
+    updateEntity,
+    deleteEntity,
     addActivity,
     updateActivity,
     deleteActivity,
@@ -384,6 +560,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     requestAdjustment,
     addChannelRecord,
     transferUnits,
+    addTeamMember,
+    updateTeamMember,
+    deleteTeamMember,
+    addCollaboration,
+    updateCollaboration,
+    deleteCollaboration,
+    addTransferAccount,
+    updateTransferAccount,
+    deleteTransferAccount,
     refreshData: fetchData,
   };
 

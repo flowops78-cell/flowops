@@ -21,7 +21,7 @@ export default function ActivityDetail() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { activities, records, entities, teamMembers, activityLogs, channels, loading, loadingProgress, addUnit, requestAdjustment, addRecord, addActivityLog, endActivityLog, updateRecord, deleteRecord, updateActivity, updateUnit, addChannelRecord, transferUnits } = useData();
+  const { activities, records, entities, teamMembers, activityLogs, channels, loading, loadingProgress, addEntity, requestAdjustment, addRecord, addActivityLog, endActivityLog, updateRecord, deleteRecord, updateActivity, updateEntity, addChannelRecord, transferUnits } = useData();
   const { role, canOperateLog, canManageImpact, canAlign } = useAppRole();
   const { notify } = useNotification();
   const { getActionText, tx } = useLabels();
@@ -385,29 +385,24 @@ export default function ActivityDetail() {
 
     try {
       setIsAddingEntity(true);
-      let unitId = selectedUnitId;
-      if (!unitId && quickUnitName.trim()) {
-        unitId = await addUnit({ name: quickUnitName.trim() });
+      let entityId = selectedUnitId;
+      if (!entityId && quickUnitName.trim()) {
+       entityId = await addEntity({ name: quickUnitName.trim() });
       }
 
-      if (!unitId) {
-        notify({ type: 'error', message: 'Select an entity or enter a new entity name.' });
-        return;
-      }
-
-      if (recordValueingType === 'value' && !recordTransferMethod) {
-        notify({ type: 'error', message: 'Select a transfer source from Channels.' });
+      if (!entityId) {
+        notify({ type: 'error', message: 'Unable to create new entity.' });
         return;
       }
 
       await addRecord({
         activity_id: activity.id,
-        entity_id: unitId,
+        entity_id: entityId,
         unit_amount: parsedrecordValue,
         direction: 'increase',
         status: 'applied',
-        position_id: undefined,
-        notes: recordValueingType === 'value' ? `Channel: ${recordTransferMethod}` : 'Deferred record',
+        channel_label: recordValueingType === 'value' ? recordTransferMethod : undefined,
+        notes: recordValueingType === 'value' ? `Channel source: ${recordTransferMethod}` : 'Deferred inbound record',
       });
 
       // Direct channel movement only applies to immediate value valueing.
@@ -426,9 +421,10 @@ export default function ActivityDetail() {
 
       if (recordValueingType === 'deferred' && parsedrecordValue > 0) {
         await requestAdjustment({
-          entity_id: unitId,
+          entity_id: entityId,
           amount: parsedrecordValue,
           type: 'input',
+          channel_label: recordTransferMethod || activity.channel_label,
           requested_at: new Date().toISOString(),
         });
       }
@@ -614,13 +610,23 @@ export default function ActivityDetail() {
       notify({ type: 'error', message: 'Entries changes are restricted to admin/operator before alignment.' });
       return;
     }
-    await deleteRecord(recordId);
+    try {
+      await deleteRecord(recordId);
+      notify({ type: 'success', message: 'Activity record deleted.' });
+    } catch (error: any) {
+      notify({ type: 'error', message: error?.message || 'Unable to delete activity record.' });
+    }
   };
 
   const handleUpdateEntityTags = async (id: string, tags: string[]) => {
     const entity = entities.find(p => p.id === id);
-    if (entity && updateUnit) {
-      await updateUnit({ ...entity, tags });
+    if (entity) {
+      try {
+        await updateEntity({ ...entity, tags });
+        notify({ type: 'success', message: 'Entity tags updated.' });
+      } catch (error: any) {
+        notify({ type: 'error', message: error?.message || 'Unable to update entity tags.' });
+      }
     }
   };
 
@@ -1250,11 +1256,11 @@ export default function ActivityDetail() {
 
                 <button
                   type="submit"
-                  className="action-btn-primary justify-center min-h-[42px] w-full lg:w-auto"
+                  className="action-btn-primary justify-center min-h-[42px] px-6 shadow-glow transition-all hover:scale-[1.02] active:scale-[0.98]"
                   disabled={isAddingEntity || (!selectedUnitId && !quickUnitName.trim()) || !canAddUnits || !recordValue.trim()}
-                  title="ActivityRecord ActivityRecord (E)"
+                  title="Record Activity (E)"
                 >
-                  {isAddingEntity ? 'ActivityRecording…' : didAddEntity ? 'ActivityRecorded ✓' : 'ActivityRecord ActivityRecord'}
+                  {isAddingEntity ? 'Recording…' : didAddEntity ? 'Recorded ✓' : 'Record Input'}
                 </button>
               </div>
 
@@ -1343,12 +1349,13 @@ export default function ActivityDetail() {
                 <p className="text-sm text-stone-500 dark:text-stone-400">No activity activityLogs yet.</p>
               )}
               {activityWorkActivitys.map(activity => {
-                const teamMember = teamMembers.find(item => item.id === activity.teamMember_id);
+                const teamMember = teamMembers.find(item => item.user_id === activity.teamMember_id);
+                const operatorName = teamMember ? (teamMember.name || 'Unnamed Operator') : (activity.actor_label || 'Unknown Operator');
                 const windowLabel = `${(activity.start_time ? new Date(activity.start_time) : new Date()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${activity.end_time ? new Date(activity.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}`;
                 return (
                   <div key={activity.id} className="rounded-lg border border-stone-200 dark:border-stone-800 px-3 py-2 flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-[10px] font-semibold text-stone-400 dark:text-stone-500 uppercase tracking-wider mb-1">Assigned Operator</p>
+                      <p className="text-[10px] font-semibold text-stone-400 dark:text-stone-500 uppercase tracking-wider mb-1">{operatorName}</p>
                       <p className="text-xs text-stone-500 dark:text-stone-400">{windowLabel} · {activity.duration_hours ? `${activity.duration_hours.toFixed(2)}h` : tx('in progress')}</p>
                     </div>
                     <div className="flex items-center gap-2">
