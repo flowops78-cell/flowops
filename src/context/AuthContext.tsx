@@ -7,7 +7,7 @@ type AuthContextType = {
   activity: Session | null;
   loading: boolean;
   signInWithPassword: (email: string, password: string, options?: { keepSignedIn?: boolean }) => Promise<void>;
-  signOut: () => Promise<void>;
+  signOut: (options?: { scope?: 'local' | 'global' }) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
 };
 
@@ -153,9 +153,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActivity(data.session);
   };
 
-  const signOut = async () => {
+  const signOut = async (options?: { scope?: 'local' | 'global' }) => {
     if (!supabase) return;
-    const { error } = await supabase.auth.signOut({ scope: 'local' });
+    const scope = options?.scope || 'local';
+    const { error } = await supabase.auth.signOut({ scope });
     if (!error) {
       setActivity(null);
       return;

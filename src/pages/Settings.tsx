@@ -151,8 +151,19 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   } = useAppRole();
 
   const { notify } = useNotification();
-  const { user, updatePassword: supabaseUpdatePassword } = useAuth();
+  const { user, signOut: supabaseSignOut, updatePassword: supabaseUpdatePassword } = useAuth();
   const refreshPromiseRef = React.useRef<Promise<any> | null>(null);
+
+  const handleSignOutAll = async () => {
+    try {
+      if (window.confirm("This will sign out all sessions on all your devices. Continue?")) {
+        await supabaseSignOut({ scope: 'global' });
+        notify({ type: 'success', message: 'Signed out of all devices.' });
+      }
+    } catch (err: any) {
+      notify({ type: 'error', message: err.message || 'Failed to sign out globally.' });
+    }
+  };
 
   const invokeSafe = React.useCallback(async <T = any>(
     functionName: string,
@@ -169,6 +180,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         headers: { 
           'Authorization': `Bearer ${token}`,
           'apikey': SUPABASE_ANON_KEY || '',
+          'Content-Type': 'application/json',
           'X-Client-Info': 'flow-ops-admin'
         },
         body,
@@ -1430,6 +1442,30 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                         Self-Bootstrap Cluster
                       </button>
                     )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Security & Sessions Card */}
+              <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm">
+                <div className="p-5 border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30 font-bold">
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100 mb-1">Security & Sessions</h4>
+                  <p className="text-[11px] text-stone-500">Manage your active sessions and account security.</p>
+                </div>
+                <div className="p-5 space-y-4">
+                  <div className="flex flex-col gap-4">
+                    <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50">
+                      <p className="text-[11px] text-amber-800 dark:text-amber-400 leading-relaxed font-medium">
+                        If you have recently rotated keys or are experiencing persistent 401 errors, use the button below to sign out of all devices and clear stale session data.
+                      </p>
+                    </div>
+                    <button 
+                      onClick={() => void handleSignOutAll()} 
+                      className="w-full h-11 rounded-xl bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-[11px] font-bold uppercase tracking-widest hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+                    >
+                      <LogOut size={16} />
+                      Sign Out of All Devices
+                    </button>
                   </div>
                 </div>
               </div>
