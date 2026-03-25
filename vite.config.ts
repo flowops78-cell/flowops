@@ -3,6 +3,8 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+import { cloudflare } from "@cloudflare/vite-plugin";
+
 const chunkRenameRules: Array<[prefix: string, replacement: string]> = [
   ['briefflowoverview', 'summary-panel'],
   ['collapsibletablesection', 'table-section'],
@@ -43,7 +45,7 @@ const renameChunk = (name: string): string => {
 };
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), cloudflare()],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, '.'),
