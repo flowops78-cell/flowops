@@ -168,6 +168,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       const { data, error } = await supabase!.functions.invoke<T>(functionName, {
         headers: { 
           'Authorization': `Bearer ${token}`,
+          'apikey': SUPABASE_ANON_KEY || '',
           'X-Client-Info': 'flow-ops-admin'
         },
         body,

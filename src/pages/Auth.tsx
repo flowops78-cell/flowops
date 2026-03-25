@@ -3,7 +3,7 @@ import { LogIn, UserPlus, Eye, EyeOff, ShieldCheck, Mail, Info, CheckCircle2 } f
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { AppRole } from '../lib/roles';
-import { AUTH_PERSIST_ACTIVITY_KEY, isSupabaseConfigured, supabase } from '../lib/supabase';
+import { AUTH_PERSIST_ACTIVITY_KEY, isSupabaseConfigured, supabase, SUPABASE_ANON_KEY } from '../lib/supabase';
 import { useNotification } from '../context/NotificationContext';
 import { tx } from '../lib/labels';
 import { cn } from '../lib/utils';
@@ -68,6 +68,9 @@ export default function Auth() {
         }
 
         const { data, error: requestError } = await supabase.functions.invoke<SubmitAccessRequestResult>('submit-access-request', {
+          headers: {
+            'apikey': SUPABASE_ANON_KEY || ''
+          },
           body: {
             invite_token: inviteToken,
             username,
