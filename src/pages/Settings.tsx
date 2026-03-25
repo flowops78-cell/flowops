@@ -151,7 +151,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   } = useAppRole();
 
   const { notify } = useNotification();
-  const { user, signOut: supabaseSignOut, updatePassword: supabaseUpdatePassword } = useAuth();
+  const { user, loading: authLoading, signOut: supabaseSignOut, updatePassword: supabaseUpdatePassword } = useAuth();
   const refreshPromiseRef = React.useRef<Promise<any> | null>(null);
 
   const handleSignOutAll = async () => {
@@ -479,11 +479,13 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   }, [isPlatformAdmin, notify]);
 
   React.useEffect(() => {
+    if (authLoading) return; // Prevent premature calls before session is ready
+    
     void fetchAccessRequests();
     void fetchAccessInvites();
     void fetchClusterAdmins();
     if (isPlatformAdmin) void fetchPlatformDirectory();
-  }, [fetchAccessInvites, fetchAccessRequests, fetchClusterAdmins, isPlatformAdmin, fetchPlatformDirectory]);
+  }, [authLoading, fetchAccessInvites, fetchAccessRequests, fetchClusterAdmins, isPlatformAdmin, fetchPlatformDirectory]);
 
   const reviewAccessRequest = async (request: AccessRequestRow, status: 'approved' | 'rejected') => {
     if (!supabase || !user) return;
