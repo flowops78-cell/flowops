@@ -216,12 +216,12 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
 
     return {
       source: 'teamMemberships',
-      role: resolvedRole || 'viewer',
+      role: isPlatformAdmin ? 'admin' : (resolvedRole || 'viewer'),
       activeOrgId,
       managedOrgIds: dedupeStrings([...typedOrgTeamMemberships.map(m => m.org_id), ...allClusterOrgIds]),
       clusterId,
       clusterRole: (typedClusterTeamMemberships.find(m => m.cluster_id === clusterId)?.role as any) || null,
-      isPlatformAdmin: isClusterAdmin,
+      isPlatformAdmin,
       manageableClusters,
       manageableOrgsByCluster,
     };
