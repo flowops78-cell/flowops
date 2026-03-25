@@ -8,3 +8,4 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 );
+// trigger redeploy Wed Mar 25 08:41:47 EET 2026
