@@ -1,13 +1,16 @@
 -- -------------------------------------------------------------
--- 20260327000000_baseline_schema.sql
--- Flow Ops canonical baseline schema for hard-reset environments
+-- 00000000000000_init_canonical_schema.sql
+-- Consolidated Initial Baseline for Flow Ops
+-- Combines 14 incremental migrations into a single source of truth.
 -- -------------------------------------------------------------
 
 BEGIN;
 
+-- 1. EXTENSIONS
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
+-- 2. CUSTOM TYPES
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'app_role') THEN
@@ -26,6 +29,8 @@ BEGIN
     CREATE TYPE collaboration_type AS ENUM ('channel', 'collaboration', 'hybrid');
   END IF;
 END $$;
+
+-- 3. TABLES (Canonical Flow Ops Schema)
 
 CREATE TABLE IF NOT EXISTS public.clusters (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -112,6 +117,9 @@ CREATE TABLE IF NOT EXISTS public.activities (
   status            text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'archived')),
   channel_label     text,
   assigned_user_id  uuid REFERENCES auth.users(id) ON DELETE SET NULL,
+  operational_weight numeric(12, 2) DEFAULT 0,
+  channel_weight     numeric(12, 2) DEFAULT 0,
+  activity_mode      text DEFAULT 'value' CHECK (activity_mode IN ('value', 'high_intensity')),
   created_at        timestamptz NOT NULL DEFAULT now(),
   updated_at        timestamptz NOT NULL DEFAULT now()
 );
@@ -126,6 +134,11 @@ CREATE TABLE IF NOT EXISTS public.records (
   unit_amount        numeric(12, 2) NOT NULL DEFAULT 0,
   transfer_group_id  uuid,
   notes              text,
+  channel_label      text,
+  target_entity_id   uuid REFERENCES public.entities(id) ON DELETE SET NULL,
+  position_id        integer,
+  sort_order         integer,
+  left_at            timestamptz,
   created_at         timestamptz NOT NULL DEFAULT now(),
   updated_at         timestamptz NOT NULL DEFAULT now()
 );
@@ -170,6 +183,7 @@ CREATE TABLE IF NOT EXISTS public.operator_activities (
   ended_at          timestamptz,
   duration_seconds  integer,
   is_active         boolean NOT NULL DEFAULT true,
+  activity_id       uuid REFERENCES public.activities(id) ON DELETE CASCADE,
   created_at        timestamptz NOT NULL DEFAULT now()
 );
 
@@ -214,6 +228,7 @@ CREATE TABLE IF NOT EXISTS public.access_invites (
   max_uses     integer NOT NULL DEFAULT 1 CHECK (max_uses > 0)
 );
 
+-- 4. TRIGGER FUNCTIONS
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
 RETURNS trigger AS $$
 BEGIN
@@ -222,6 +237,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- 5. APPLY TRIGGERS
 DO $$
 DECLARE
   table_name text;
@@ -241,12 +257,25 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+-- 6. UTILITY FUNCTIONS
 CREATE OR REPLACE FUNCTION public.get_my_platform_role()
 RETURNS text
 LANGUAGE sql STABLE SECURITY DEFINER
 SET search_path = public
 AS $$
   SELECT role FROM public.platform_roles WHERE user_id = auth.uid() LIMIT 1;
+$$;
+
+CREATE OR REPLACE FUNCTION public.is_platform_admin()
+RETURNS boolean
+LANGUAGE sql STABLE SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.platform_roles 
+    WHERE user_id = auth.uid() 
+      AND role = 'platform_admin'
+  );
 $$;
 
 CREATE OR REPLACE FUNCTION public.get_my_org_id()
@@ -277,6 +306,11 @@ DECLARE
   membership_role app_role;
   inherited_role text;
 BEGIN
+  -- Platform admins are effective admins everywhere
+  IF public.is_platform_admin() THEN
+    RETURN 'admin'::app_role;
+  END IF;
+
   current_org_id := public.get_my_org_id();
   IF current_org_id IS NULL THEN
     RETURN 'viewer'::app_role;
@@ -321,7 +355,7 @@ AS $$
     WHERE user_id = auth.uid()
       AND org_id = target_org
       AND status = 'active'
-  );
+  ) OR public.is_platform_admin();
 $$;
 
 CREATE OR REPLACE FUNCTION public.user_has_cluster_access(target_cluster uuid)
@@ -334,7 +368,7 @@ AS $$
     FROM public.cluster_memberships
     WHERE user_id = auth.uid()
       AND cluster_id = target_cluster
-  );
+  ) OR public.is_platform_admin();
 $$;
 
 CREATE OR REPLACE FUNCTION public.is_org_in_my_cluster(target_org uuid)
@@ -349,7 +383,7 @@ AS $$
     WHERE o.id = target_org
       AND cm.user_id = auth.uid()
       AND cm.role IN ('cluster_admin', 'cluster_operator')
-  );
+  ) OR public.is_platform_admin();
 $$;
 
 CREATE OR REPLACE FUNCTION public.log_audit_event(
@@ -411,6 +445,7 @@ BEGIN
 END;
 $$;
 
+-- 7. INDEXES
 CREATE INDEX IF NOT EXISTS idx_organizations_cluster_id ON public.organizations(cluster_id);
 CREATE INDEX IF NOT EXISTS idx_cluster_memberships_user_id ON public.cluster_memberships(user_id);
 CREATE INDEX IF NOT EXISTS idx_cluster_memberships_cluster_id ON public.cluster_memberships(cluster_id);
@@ -429,6 +464,8 @@ CREATE INDEX IF NOT EXISTS idx_records_org_id ON public.records(org_id);
 CREATE INDEX IF NOT EXISTS idx_records_activity_id ON public.records(activity_id);
 CREATE INDEX IF NOT EXISTS idx_records_entity_id ON public.records(entity_id);
 CREATE INDEX IF NOT EXISTS idx_records_transfer_group_id ON public.records(transfer_group_id);
+CREATE INDEX IF NOT EXISTS idx_records_activity_position ON public.records(activity_id, position_id);
+CREATE INDEX IF NOT EXISTS idx_records_entity_left_at ON public.records(entity_id, left_at);
 CREATE INDEX IF NOT EXISTS idx_team_members_org_id ON public.team_members(org_id);
 CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON public.team_members(user_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_team_members_org_user_id ON public.team_members(org_id, user_id) WHERE user_id IS NOT NULL;
@@ -444,35 +481,23 @@ CREATE INDEX IF NOT EXISTS idx_audit_events_entity_id ON public.audit_events(ent
 CREATE INDEX IF NOT EXISTS idx_access_requests_org_id ON public.access_requests(org_id);
 CREATE INDEX IF NOT EXISTS idx_access_invites_org_id ON public.access_invites(org_id);
 
-DO $$
-DECLARE
-  policy_record record;
-BEGIN
-  FOR policy_record IN
-    SELECT tablename, policyname
-    FROM pg_policies
-    WHERE schemaname = 'public'
-  LOOP
-    EXECUTE format('DROP POLICY IF EXISTS %I ON public.%I', policy_record.policyname, policy_record.tablename);
-  END LOOP;
-END;
-$$;
-
+-- 8. SECURITY (RLS)
 DO $$
 DECLARE
   table_name text;
 BEGIN
   FOR table_name IN
-    SELECT table_name
-    FROM information_schema.tables
-    WHERE table_schema = 'public'
-      AND table_type = 'BASE TABLE'
+    SELECT t.table_name
+    FROM information_schema.tables t
+    WHERE t.table_schema = 'public'
+      AND t.table_type = 'BASE TABLE'
   LOOP
     EXECUTE format('ALTER TABLE public.%I ENABLE ROW LEVEL SECURITY', table_name);
   END LOOP;
 END;
-$$;
+$$ LANGUAGE plpgsql;
 
+-- Read Access (Profiles/Clusters/Orgs)
 CREATE POLICY clusters_read ON public.clusters
   FOR SELECT USING (public.user_has_cluster_access(id));
 
@@ -492,6 +517,10 @@ CREATE POLICY profiles_update ON public.profiles
   FOR UPDATE USING (id = auth.uid())
   WITH CHECK (id = auth.uid());
 
+CREATE POLICY platform_roles_read ON public.platform_roles
+  FOR SELECT USING (user_id = auth.uid() OR public.is_platform_admin());
+
+-- Dynamic Read/Write for Org-Bound Tables
 DO $$
 DECLARE
   table_name text;
@@ -527,8 +556,9 @@ BEGIN
     );
   END LOOP;
 END;
-$$;
+$$ LANGUAGE plpgsql;
 
+-- 9. BOOTSTRAP
 INSERT INTO public.profiles (id)
 SELECT id FROM auth.users
 ON CONFLICT (id) DO NOTHING;
