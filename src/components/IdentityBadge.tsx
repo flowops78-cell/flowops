@@ -27,7 +27,7 @@ const IdentityBadge: React.FC<IdentityBadgeProps> = ({
   const { notify } = useNotification();
   
   const shortId = id ? `${type === 'cluster' ? 'clu' : 'org'}_${id.slice(0, 6)}` : '';
-  const displayName = name || tag || slug || (id ? (type === 'cluster' ? 'Unnamed Cluster' : 'Unnamed Org') : '');
+  const displayName = name || tag || slug || (id ? (type === 'cluster' ? 'Unnamed Cluster' : 'Unnamed Organization') : '');
   
   if (!id && !name && !tag && !slug) return null;
   

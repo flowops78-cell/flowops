@@ -895,29 +895,33 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                     ? manageableOrgsByCluster[effectiveClusterId] 
                     : Object.values(availableOrgs);
 
-                  if (orgsInCluster.length === 0) {
+                  if (orgsInCluster.length === 0 && !activeOrgId) {
                     return (
                       <div className="p-3 rounded-xl border border-stone-100 dark:border-stone-800 bg-stone-50/30 dark:bg-stone-800/20 flex items-center gap-3">
                         <AlertTriangle size={14} className="text-stone-400" />
                         <span className="text-[11px] text-stone-500 italic">
-                          {isPlatformAdmin ? "Select a cluster to browse organizations." : "No organizations assigned to this account."}
+                          {isPlatformAdmin ? "Select a cluster to browse organizations." : "Account has no associated organizations."}
                         </span>
                       </div>
                     );
                   }
 
-                  if (orgsInCluster.length === 1 && !isPlatformAdmin) {
-                    const fixedOrg = orgsInCluster[0];
+                  if ((orgsInCluster.length === 1 && !isPlatformAdmin) || (activeOrgId && orgsInCluster.length === 0)) {
+                    const fixedOrgId = activeOrgId || orgsInCluster[0]?.id;
+                    const fixedOrg = availableOrgs[fixedOrgId || ''] || orgsInCluster[0];
                     return (
                       <div className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 flex items-center justify-between">
                         <IdentityBadge
                           type="org"
                           size="sm"
-                          id={fixedOrg.id}
-                          name={fixedOrg.name || undefined}
-                          tag={fixedOrg.tag || undefined}
+                          id={fixedOrgId || ''}
+                          name={fixedOrg?.name || undefined}
+                          tag={fixedOrg?.tag || undefined}
+                          slug={fixedOrg?.slug || undefined}
                         />
-                        <span className="text-[9px] font-black uppercase tracking-widest text-stone-400 px-2 py-0.5 bg-white dark:bg-stone-900 rounded-lg shadow-sm">Fixed Context</span>
+                        <span className="text-[9px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-100 dark:border-emerald-800 shadow-sm">
+                          Fixed Context
+                        </span>
                       </div>
                     );
                   }
@@ -940,15 +944,15 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
             <div className="pt-4 border-t border-stone-100 dark:border-stone-800 flex flex-wrap gap-4">
               <div className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 flex-1 min-w-[200px]">
-                <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1">Architecture Note</p>
+                <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1">Governance Note</p>
                 <p className="text-[11px] text-stone-500 leading-relaxed italic">
-                  Deterministic cluster-level authority grants access to all organizations within the selected scope. Switching updates RLS context instantly.
+                  Administrative authority is hierarchically resolved. Access granted at the Cluster level extends to all associated Organizations within that scope.
                 </p>
               </div>
               <div className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 flex-1 min-w-[200px]">
-                <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1">Human Identity</p>
+                <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1">Identity Resolution</p>
                 <p className="text-[11px] text-stone-500 leading-relaxed italic">
-                  Context is resolved using canonical Tags (e.g. BEI-OPS) and Slugs (beirut-ops) for operational clarity.
+                  We prioritize human-readable Tags and Slugs for operational clarity. Raw identifiers are kept as secondary reference markers.
                 </p>
               </div>
             </div>
