@@ -20,7 +20,7 @@ export const ACTION_LABELS = {
 	manageActivities: 'Open activity',
 	startActivity: 'New record',
 	addEntity: 'Add entity',
-	recordDeferredActivityRecord: 'Add Pending ActivityRecord',
+	recordDeferredActivityRecord: 'Add Pending Record',
 	viewAll: 'View all',
 	recordInput: 'ActivityRecord input',
 	recordOutput: 'ActivityRecord outflow',

@@ -15,6 +15,10 @@ interface DataContextType {
   systemEvents: SystemEvent[];
   activityLogs: OperatorActivity[];
 
+  // Indexed Lookups (Calculated)
+  recordsByActivityId: Record<string, ActivityRecord[]>;
+  recordsByEntityId: Record<string, ActivityRecord[]>;
+
   activeOrgId: string | null;
   setActiveOrgId: (id: string | null) => void;
   loading: boolean;
@@ -327,6 +331,27 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // fetchData will be triggered by useEffect dependency on activeOrgId
   };
 
+  // Performance-optimized lookups
+  const recordsByActivityId = React.useMemo(() => {
+    const map: Record<string, ActivityRecord[]> = {};
+    records.forEach(r => {
+      if (r.activity_id) {
+        if (!map[r.activity_id]) map[r.activity_id] = [];
+        map[r.activity_id].push(r);
+      }
+    });
+    return map;
+  }, [records]);
+
+  const recordsByEntityId = React.useMemo(() => {
+    const map: Record<string, ActivityRecord[]> = {};
+    records.forEach(r => {
+      if (!map[r.entity_id]) map[r.entity_id] = [];
+      map[r.entity_id].push(r);
+    });
+    return map;
+  }, [records]);
+
   const value: DataContextType = {
     entities,
     activities,
@@ -343,6 +368,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     loading,
     loadingProgress,
     isDemoMode,
+    recordsByActivityId,
+    recordsByEntityId,
     addUnit,
     updateUnit,
     deleteUnit,

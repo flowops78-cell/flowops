@@ -626,8 +626,8 @@ export default function ActivityDetail() {
 
   const generateReport = () => {
     const lines = [
-      `*Activity Report - ${formatDate(activity.date)}*`,
-      `Channel: ${activity.channel_label || 'N/A'} • Activity: ${activity.label || 'N/A'}`,
+      `*Activity Report - ${activity.name || formatDate(activity.date)}*`,
+      `Channel: ${activity.channel_label || 'N/A'} • Activity: ${activity.label || 'N/A'}${activity.name ? ` • Date: ${formatDate(activity.date)}` : ''}`,
       `------------------`,
       `*Entities:*`
     ];
@@ -1148,7 +1148,14 @@ export default function ActivityDetail() {
 
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl sm:text-2xl font-light text-stone-900 dark:text-stone-100">{formatDate(activity.date)}</h2>
+            <h2 className="text-xl sm:text-2xl font-light text-stone-900 dark:text-stone-100">
+              {activity.name || formatDate(activity.date)}
+            </h2>
+            {activity.name && (
+              <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">
+                {formatDate(activity.date)}
+              </p>
+            )}
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-sm text-stone-500 dark:text-stone-400">
               <span className="flex items-center gap-1">
                 <span className="font-medium text-stone-700 dark:text-stone-300">Platform:</span> {activity.channel_label || 'Unknown'}

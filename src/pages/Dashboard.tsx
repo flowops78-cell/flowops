@@ -1,18 +1,23 @@
 import React, { lazy, Suspense, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { cn, formatCompactNumber, formatCompactValue, formatValue } from '../lib/utils';
-import { Users, Circle, Award, Activity, Clock, TrendingUp, TrendingDown, AlertCircle, Calendar } from 'lucide-react';
+import { Users, Circle, Award, Activity, Clock, TrendingUp, TrendingDown, AlertCircle, Calendar, LayoutDashboard } from 'lucide-react';
 import { useTheme } from '../context/ThemeContext';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import LoadingLine from '../components/LoadingLine';
 import DeferredRender from '../components/DeferredRender';
 import { useLabels } from '../lib/labels';
 import { useAppRole } from '../context/AppRoleContext';
+import ShortcutIconButton from '../components/ShortcutIconButton';
+import RecordIcon from '../components/icons/RecordIcon';
+import EntitiesIcon from '../components/icons/EntitiesIcon';
+import PendingRecordIcon from '../components/icons/PendingRecordIcon';
+import ChannelIcon from '../components/icons/ChannelIcon';
 
 const DashboardCharts = lazy(() => import('../components/dashboard/DashboardCharts'));
 
 export default function Dashboard({ embedded = false }: { embedded?: boolean }) {
-  const { entities, activities, records } = useData();
+  const { entities, activities, recordsByEntityId, recordsByActivityId, records } = useData();
   const { canAccessAdminUi } = useAppRole();
   const { theme } = useTheme();
   const navigate = useNavigate();
@@ -48,36 +53,24 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
     [safeRecords]);
   const activeActivitysCount = useMemo(() => activities.filter(g => !g.end_time).length, [activities]);
 
-  // Optimize O(N^2) operations with indexed lookups
-  const entriesByEntity = useMemo(() => {
-    const map: Record<string, typeof records> = {};
-    records.forEach(record => {
-      if (!map[record.entity_id]) map[record.entity_id] = [];
-      map[record.entity_id].push(record);
-    });
-    return map;
-  }, [records]);
-
-  const entriesByActivity = useMemo(() => {
-    const map: Record<string, typeof records> = {};
-    records.forEach(record => {
-      if (record.activity_id) {
-        if (!map[record.activity_id]) map[record.activity_id] = [];
-        map[record.activity_id].push(record);
-      }
-    });
-    return map;
-  }, [records]);
-
-  // Calculate entity.net value_change - Optimized to O(N)
+  // Calculate entity.net value_change - Optimized to O(1) per entity
   const entityStats = useMemo(() => entities.map(unit => {
-    const entityEntries = entriesByEntity[unit.id] || [];
+    const entityEntries = recordsByEntityId[unit.id] || [];
     const net = entityEntries.reduce((sum, record) => sum + (record.direction === 'increase' ? record.unit_amount : -record.unit_amount), 0);
     const activitysPlayed = entityEntries.length;
     return { ...unit, net, activitysPlayed };
-  }), [entities, entriesByEntity]);
+  }), [entities, recordsByEntityId]);
 
-  const topOutcomes = useMemo(() => [...entityStats].sort((a, b) => b.net - a.net).slice(0, 5), [entityStats]);
+  const topOutcomes = useMemo(() => {
+    return [...entityStats]
+      .sort((a, b) => Math.abs(b.net) - Math.abs(a.net))
+      .slice(0, 5)
+      .map(stat => ({
+        name: stat.name,
+        net: stat.net,
+        isPositive: stat.net >= 0
+      }));
+  }, [entityStats]);
   
   // Recent activity (last 5 activities)
   const recentActivitys = useMemo(() => [...activities]
@@ -87,22 +80,28 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
   // Hourly Heatmap Data
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const activeHeatmapData = useMemo(() => {
-    const heatmapData: { day: number; hour: number; value: number }[] = [];
-    for (let day = 0; day < 7; day++) {
-      for (let hour = 0; hour < 24; hour++) {
-        heatmapData.push({ day, hour, value: 0 });
-      }
-    }
+    const heatmapData = new Map<string, { day: number; hour: number; value: number }>();
 
     activities.forEach(activity => {
-      const date = new Date(activity.start_time || activity.date);
+      const dateStr = activity.start_time || activity.date;
+      if (!dateStr) return;
+      
+      const date = new Date(dateStr);
+      if (isNaN(date.getTime())) return;
+
       const day = date.getDay();
       const hour = date.getHours();
-      const bucket = heatmapData.find(item => item.day === day && item.hour === hour);
-      if (bucket) bucket.value += 1;
+      const key = `${day}-${hour}`;
+      
+      const existing = heatmapData.get(key);
+      if (existing) {
+        existing.value += 1;
+      } else {
+        heatmapData.set(key, { day, hour, value: 1 });
+      }
     });
 
-    return heatmapData.filter(item => item.value > 0);
+    return Array.from(heatmapData.values());
   }, [activities]);
 
   // Weekly Flow Trend (Last 7 Days)
@@ -116,19 +115,24 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
     return last7Days.map(dateStr => {
       const dailyActivitys = activities.filter(g => (g.date || '').startsWith(dateStr));
       const dailyFlow = dailyActivitys.reduce((sum, activity) => {
-        const activityEntries = entriesByActivity[activity.id] || [];
+        const activityEntries = recordsByActivityId[activity.id] || [];
         return sum + activityEntries.reduce((entriesSum, record) => entriesSum + record.unit_amount, 0);
       }, 0);
       return { date: new Date(dateStr).toLocaleDateString(undefined, { weekday: 'short' }), value: dailyFlow };
     });
-  }, [activities, entriesByActivity]);
+  }, [activities, recordsByActivityId]);
 
   return (
     <div className="page-shell animate-in fade-in">
       {!embedded && (
         <div className="section-card p-5 lg:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-          <div>
-            <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100 mb-1">Overview</h2>
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-stone-100 dark:bg-stone-800 flex items-center justify-center shrink-0 shadow-sm border border-stone-200 dark:border-stone-700">
+              <LayoutDashboard size={24} className="text-stone-900 dark:text-stone-100" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Overview</h2>
+            </div>
           </div>
           <div className="flex flex-col items-start lg:items-end gap-3">
             <div className="hidden lg:flex items-center gap-2 text-xs">
@@ -152,37 +156,30 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
         </div>
       )}
 
-      {/* Unified KPI Strip */}
+      {/* Shortcut Actions Strip */}
       <div className="section-card p-3 lg:p-4">
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2">
-          <button
-            type="button"
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+          <ShortcutIconButton
+            icon={<RecordIcon />}
+            label={getActionText('startActivity')}
             onClick={() => navigate('/activity?action=create-activity')}
-            className="action-btn-primary justify-center min-h-[40px]"
-          >
-            {getActionText('startActivity')}
-          </button>
-          <button
-            type="button"
+            variant="primary"
+          />
+          <ShortcutIconButton
+            icon={<EntitiesIcon />}
+            label={getActionText('addEntity')}
             onClick={() => navigate('/entities?action=add-entity')}
-            className="action-btn-secondary justify-center min-h-[40px]"
-          >
-            {getActionText('addEntity')}
-          </button>
-          <button
-            type="button"
+          />
+          <ShortcutIconButton
+            icon={<PendingRecordIcon />}
+            label={getActionText('recordDeferredActivityRecord')}
             onClick={() => navigate('/entities?action=add-deferred')}
-            className="action-btn-secondary justify-center min-h-[40px]"
-          >
-            {getActionText('recordDeferredActivityRecord')}
-          </button>
-          <button
-            type="button"
+          />
+          <ShortcutIconButton
+            icon={<ChannelIcon />}
+            label={`Open ${getMetricLabel('channels')}`}
             onClick={() => navigate('/channels')}
-            className="action-btn-secondary justify-center min-h-[40px]"
-          >
-            {`Open ${tx('Channels')}`}
-          </button>
+          />
         </div>
       </div>
 
@@ -303,7 +300,7 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
                     </div>
                   ) : (
                     recentActivitys.map(activity => {
-                      const activityEntries = records.filter(l => l.activity_id === activity.id);
+                      const activityEntries = recordsByActivityId[activity.id] || [];
                       const recordFlow = activityEntries.reduce((sum, e) => sum + e.unit_amount, 0);
                       const entityCount = new Set(activityEntries.map(e => e.entity_id)).size;
 
@@ -312,8 +309,12 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
                           <div className="flex items-center gap-2.5 min-w-0">
                             <div className={`w-2 h-2 rounded-full shrink-0 ${activity.end_time ? 'bg-stone-300 dark:bg-stone-600' : 'bg-emerald-500 animate-pulse'}`} />
                             <div className="min-w-0">
-                              <p className="font-medium text-stone-900 dark:text-stone-100 text-[13px] truncate">{new Date(activity.date).toLocaleDateString()}</p>
-                              <p className="text-xs text-stone-500 dark:text-stone-400 truncate">{activity.label || 'Activity'}</p>
+                              <p className="font-medium text-stone-900 dark:text-stone-100 text-[13px] truncate">
+                                {activity.name || new Date(activity.date).toLocaleDateString()}
+                              </p>
+                              <p className="text-xs text-stone-500 dark:text-stone-400 truncate">
+                                {activity.name ? new Date(activity.date).toLocaleDateString() : (activity.label || 'Activity')}
+                              </p>
                             </div>
                           </div>
                           <div className="text-right">

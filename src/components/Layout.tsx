@@ -14,6 +14,7 @@ import GlobalTelemetryPanel from './GlobalTelemetryPanel';
 import IdentityBadge from './IdentityBadge';
 import { preloadRoute } from '../lib/routePreloaders';
 import { ChevronDown, Globe } from 'lucide-react';
+import EntitiesIcon from './icons/EntitiesIcon';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { theme, toggleTheme } = useTheme();
@@ -38,12 +39,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       items: [
         { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Overview', hint: 'Operational overview and key metrics' },
         { to: '/activity', icon: <History size={18} />, label: 'Activities', hint: 'Activity records and management' },
-
-        { to: '/entities', icon: <Users size={18} />, label: 'Entities', hint: 'Entity list and detailed profiles' },
+        { to: '/entities', icon: <EntitiesIcon size={18} />, label: 'Entities', hint: 'Entity list and detailed profiles' },
 
         { to: '/channels', icon: <Circle size={18} />, label: 'Channels', hint: 'Channel tracking and settings overview' },
         { to: '/collaborations', icon: <Handshake size={18} />, label: 'Collaborations', hint: 'Collaboration network and relationship tracking' },
-        { to: '/team-members', icon: <UserCog size={18} />, label: 'Team Members', hint: 'Team management and operator coverage' },
+        { to: '/team', icon: <UserCog size={18} />, label: 'Team Members', hint: 'Team management and operator coverage' },
         { to: '/settings', icon: <Settings size={18} />, label: 'Settings', hint: 'System preferences and access control' },
 
       ],
@@ -56,10 +56,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       items: [
         { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Overview' },
         { to: '/activity', icon: <History size={18} />, label: 'Activities' },
-        { to: '/entities', icon: <Users size={18} />, label: 'Entities' },
+        { to: '/entities', icon: <EntitiesIcon size={18} />, label: 'Entities' },
         { to: '/channels', icon: <Circle size={18} />, label: 'Channels' },
         { to: '/collaborations', icon: <Handshake size={18} />, label: 'Collaborations' },
-        { to: '/team-members', icon: <UserCog size={18} />, label: 'Team Members' },
+        { to: '/team', icon: <UserCog size={18} />, label: 'Team Members' },
       ],
 
     },
@@ -76,7 +76,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     : role === 'operator'
       ? 'border-emerald-700 bg-emerald-900/40 text-emerald-200'
       : 'border-stone-700 bg-stone-800 text-stone-200';
-  const desktopRoleBadgeClass = role === 'admin'
+  const desktopRoleBadgeClass = (isClusterAdmin || role === 'admin')
     ? 'border-violet-200 dark:border-violet-700 bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-200'
     : role === 'operator'
       ? 'border-emerald-200 dark:border-emerald-700 bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-200'
@@ -147,7 +147,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           a: '/activity',
           c: '/collaborations',
           v: '/channels',
-          t: '/team-members',
+          t: '/team',
           s: canAccessAdminUi ? '/settings' : '/activity',
 
         };
@@ -203,7 +203,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           if (normalizedKey === 'm') {
             event.preventDefault();
             clearShortcutPrefix();
-            navigate('/team-members?action=add-member');
+            navigate('/team?action=add-member');
             return;
           }
 
@@ -391,14 +391,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <div className="relative">
               <button
                 onClick={() => setIsOrgSwitcherOpen(!isOrgSwitcherOpen)}
-                className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-stone-100/50 dark:bg-stone-800/40 hover:bg-stone-200/50 dark:hover:bg-stone-800/60 border border-stone-200 dark:border-stone-700/50 transition-all group"
+                className="w-full group grid grid-cols-[1fr_auto] items-center gap-3 px-3 py-2.5 rounded-xl bg-stone-100/50 dark:bg-stone-800/40 hover:bg-stone-200/50 dark:hover:bg-stone-800/60 border border-stone-200 dark:border-stone-700/50 transition-all"
               >
-                <div className="flex items-center gap-2.5 min-w-0">
-                  <div className="w-6 h-6 rounded-lg bg-stone-900 dark:bg-emerald-500/20 flex items-center justify-center shrink-0">
-                    <Globe size={13} className="text-white dark:text-emerald-400" />
+                <div className="flex items-center gap-3 min-w-0 pr-1">
+                  <div className="w-8 h-8 rounded-lg bg-stone-900 dark:bg-emerald-500/20 flex items-center justify-center shrink-0 shadow-sm border border-stone-800 dark:border-emerald-500/10">
+                    <Globe size={14} className="text-white dark:text-emerald-400" />
                   </div>
-                  <div className="text-left min-w-0">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-stone-400 dark:text-stone-500 leading-none mb-1">Organization</p>
+                  <div className="text-left min-w-0 flex-1 flex flex-col gap-1.5">
                     <IdentityBadge 
                       type="org"
                       size="sm"
@@ -406,10 +405,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       name={activeOrg?.name}
                       tag={activeOrg?.tag}
                       slug={activeOrg?.slug}
+                      className="w-full"
+                      hideCopy={true}
                     />
+                    <div className={cn("inline-flex items-center px-2 py-0.5 rounded-full border text-[9px] font-bold uppercase tracking-tight w-fit shrink-0", desktopRoleBadgeClass)}>
+                      {roleLabel}
+                    </div>
                   </div>
                 </div>
-                <ChevronDown size={14} className={cn("text-stone-400 transition-transform duration-200", isOrgSwitcherOpen && "rotate-180")} />
+                <ChevronDown size={15} className={cn("text-stone-400 shrink-0 transition-transform duration-200", isOrgSwitcherOpen && "rotate-180")} />
               </button>
 
               {isOrgSwitcherOpen && (
@@ -439,6 +443,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                             name={org.name}
                             tag={org.tag}
                             slug={org.slug}
+                            hideCopy={true}
                           />
                         </button>
                       ))}
@@ -516,12 +521,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           {isSupabaseConfigured && user && (
             <div className="flex flex-col gap-2 px-1 pb-1">
               <div className="flex items-center justify-between">
-                <span
-                  className={cn('text-[11px] px-2.5 py-1 rounded-full border font-semibold', desktopRoleBadgeClass)}
-                  title={roleSummary}
-                >
-                  {roleLabel}
-                </span>
                 <span className="text-[10px] text-stone-400 dark:text-stone-600 font-medium select-none">
                   © Flow Ops 2026
                 </span>

@@ -29,6 +29,7 @@ interface DistributionPoint {
 interface ChannelChartsProps {
   historyData: HistoryPoint[];
   distributionData: DistributionPoint[];
+  theme: 'dark' | 'light';
 }
 
 function MeasuredChart({
@@ -71,7 +72,7 @@ function MeasuredChart({
   );
 }
 
-export default function ChannelCharts({ historyData, distributionData }: ChannelChartsProps) {
+export default function ChannelCharts({ historyData, distributionData, theme }: ChannelChartsProps) {
   const [selectedSliceIndex, setSelectedSliceIndex] = useState(0);
 
   useEffect(() => {
@@ -94,48 +95,56 @@ export default function ChannelCharts({ historyData, distributionData }: Channel
       : '0%';
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-      <div className="lg:col-span-2 min-w-0 bg-white dark:bg-stone-900 p-6 rounded-xl shadow-sm border border-stone-200 dark:border-stone-800">
-        <div className="flex items-center gap-2 mb-6">
-          <TrendingUp className="text-stone-400" size={18} />
-          <h3 className="font-medium text-stone-900 dark:text-stone-100">Channel History</h3>
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5">
+      <div className="lg:col-span-2 min-w-0 bg-white dark:bg-stone-900 p-4 lg:p-5 rounded-xl border border-stone-200 dark:border-stone-800">
+        <div className="flex items-center gap-2 mb-4">
+          <TrendingUp className="text-stone-400" size={16} />
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">Channel History</h3>
         </div>
-        <MeasuredChart className="h-64 w-full min-w-0">
+        <MeasuredChart className="h-56 w-full min-w-0">
           {({ width, height }) => (
-            <AreaChart width={width} height={height} data={historyData}>
+            <AreaChart width={width} height={height} data={historyData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.1} />
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.15} />
                   <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e5e5e5" />
-              <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fill: '#a8a29e', fontSize: 12 }} dy={10} />
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#292524' : '#f5f5f4'} />
+              <XAxis 
+                dataKey="date" 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fill: '#a8a29e', fontSize: 10 }} 
+                dy={5} 
+              />
               <YAxis
                 axisLine={false}
                 tickLine={false}
-                tick={{ fill: '#a8a29e', fontSize: 12 }}
+                tick={{ fill: '#a8a29e', fontSize: 10 }}
                 tickFormatter={(value) => value.toString()}
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: '#fff',
-                  borderRadius: '8px',
-                  border: '1px solid #e5e5e5',
-                  boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)',
+                  backgroundColor: theme === 'dark' ? '#1c1917' : '#fff',
+                  borderRadius: '12px',
+                  border: 'none',
+                  boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
+                  padding: '8px 12px',
                 }}
+                labelStyle={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: theme === 'dark' ? '#f5f5f4' : '#1c1917' }}
                 formatter={(value?: number) => [formatValue(value ?? 0), 'Total']}
               />
-              <Area type="monotone" dataKey="total" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorTotal)" />
+              <Area type="monotone" dataKey="total" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#colorTotal)" />
             </AreaChart>
           )}
         </MeasuredChart>
       </div>
 
-      <div className="min-w-0 bg-white dark:bg-stone-900 p-6 rounded-xl shadow-sm border border-stone-200 dark:border-stone-800">
-        <div className="flex items-center gap-2 mb-6">
-          <PieChart className="text-stone-400" size={18} />
-          <h3 className="font-medium text-stone-900 dark:text-stone-100">Values Distribution</h3>
+      <div className="min-w-0 bg-white dark:bg-stone-900 p-4 lg:p-5 rounded-xl border border-stone-200 dark:border-stone-800">
+        <div className="flex items-center gap-2 mb-4">
+          <PieChart className="text-stone-400" size={16} />
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">Values Distribution</h3>
         </div>
         <div className="h-72 w-full min-w-0">
           {distributionData.length > 0 ? (

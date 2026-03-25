@@ -7,10 +7,12 @@ import { Collaboration, Entity } from '../types';
 import { formatValue, formatDate } from '../lib/utils';
 import { cn } from '../lib/utils';
 import MobileActivityRecordCard from '../components/MobileActivityRecordCard';
+import EmptyState from '../components/EmptyState';
 import CollapsibleActivitySection from '../components/CollapsibleActivitySection';
 import { useAppRole } from '../context/AppRoleContext';
 import DataActionMenu from '../components/DataActionMenu';
 import EntitySnapshot from '../components/EntitySnapshot';
+import EntitiesIcon from '../components/icons/EntitiesIcon';
 import { useLabels } from '../lib/labels';
 
 const getEntityDisplayName = (name?: string | null) => {
@@ -21,7 +23,7 @@ const getEntityDisplayName = (name?: string | null) => {
 export default function Entities({ embedded = false }: { embedded?: boolean }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { entities, addUnit, requestAdjustment, importUnits, updateUnit, deleteUnit, transferUnits, records, activities, collaborations } = useData();
+  const { entities, addUnit, requestAdjustment, updateUnit, deleteUnit, transferUnits, records, activities, collaborations } = useData();
   const { canAccessAdminUi, canOperateLog, canManageImpact } = useAppRole();
   const { getActionText, tx } = useLabels();
   const canActivityRecordDeferred = canOperateLog;
@@ -95,17 +97,17 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
 
     entities.forEach(p => {
       const entityEntries = records.filter(l => l.entity_id === p.id);
-      const net = entityEntries.reduce((sum, e) => sum + e.net, 0);
-      const totalInflow = entityEntries.reduce((sum, e) => sum + e.unit_amount, 0);
+      const net = entityEntries.reduce((sum, e) => sum + (e.direction === 'increase' ? e.unit_amount : -e.unit_amount), 0);
+      const totalInflow = entityEntries.reduce((sum, e) => sum + (e.direction === 'increase' ? e.unit_amount : 0), 0);
       const activitys = entityEntries.length;
-      const surpluses = entityEntries.filter(e => e.net > 0).length;
+      const surpluses = entityEntries.filter(e => e.direction === 'increase').length;
       
       // Calculate average activity duration
       let totalDuration = 0;
       let durationCount = 0;
       entityEntries.forEach(e => {
-        if (e.joined_at && e.left_at) {
-          totalDuration += (new Date(e.left_at).getTime() - new Date(e.joined_at).getTime()) / (1000 * 60 * 60);
+        if (e.created_at && e.left_at) {
+          totalDuration += (new Date(e.left_at).getTime() - new Date(e.created_at).getTime()) / (1000 * 60 * 60);
           durationCount++;
         }
       });
@@ -143,17 +145,16 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
         const activity = activityById.get(record.activity_id);
         const sortTimestamp =
           record.left_at ||
-          record.joined_at ||
           record.created_at ||
           (activity?.date ? `${activity.date}T00:00:00.000Z` : '');
 
         return {
           id: record.id,
           date: activity?.date || (record.created_at ? record.created_at.split('T')[0] : ''),
-          location: activity?.location || 'Activity',
+          location: activity?.channel_label || 'Activity',
           activityStatus: activity?.status || null,
-          inflow: record.unit_amount || 0,
-          outflow: record.unit_amount || 0,
+          inflow: record.direction === 'increase' ? record.unit_amount : 0,
+          outflow: record.direction === 'decrease' ? record.unit_amount : 0,
           net: (record.direction === 'increase' ? record.unit_amount : -record.unit_amount) || 0,
           isActive: !record.left_at,
           sortTimestamp,
@@ -274,7 +275,11 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
         return;
       }
 
-      await transferUnits(transferFromEntityId, transferToEntityId, parsedAmount);
+      await transferUnits({ 
+        from_entity_id: transferFromEntityId, 
+        to_entity_id: transferToEntityId, 
+        amount: parsedAmount 
+      });
       setImportStatus({ type: 'success', message: 'Entity transfer completed.' });
       setIsTransferring(false);
       setTransferFromEntityId('');
@@ -299,7 +304,11 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
         return;
       }
 
-      await requestAdjustment(outputRequestEntityId, parsedAmount);
+      await requestAdjustment({ 
+        entity_id: outputRequestEntityId, 
+        amount: parsedAmount,
+        type: 'output'
+      });
       setImportStatus({ type: 'success', message: 'Outflow request submitted and marked pending for admin approval.' });
       setIsActivityRecordingOutputRequest(false);
       setOutputRequestEntityId('');
@@ -381,11 +390,15 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
   const activeEntitysCount = entities.filter(p => (p.total || 0) !== 0).length;
   const positiveDeltaEntitys = entities.filter(p => (entityStats.get(p.id)?.net || 0) > 0).length;
   const entityDataMenuItems = [
-    { key: 'add-entity-profile', label: getActionText('addEntity'), onClick: () => setIsAdding(true) },
-
+    { 
+      key: 'add-entity-profile', 
+      label: getActionText('addEntity'), 
+      onClick: () => setIsAdding(true),
+      icon: <Plus size={16} />
+    },
     {
       key: 'transfer-totals',
-      label: 'TransferAmount Totals',
+      label: 'Transfer Totals',
       onClick: () => {
         if (!canManageImpact) {
           setImportStatus({ type: 'error', message: 'Only admin can transfer entity totals.' });
@@ -394,10 +407,11 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
         openTransferForm();
       },
       disabled: !canManageImpact,
+      icon: <ArrowRightLeft size={16} />
     },
     {
       key: 'alignment-request',
-      label: 'ActivityRecord Alignment Request',
+      label: 'Alignment Request',
       onClick: () => {
         if (!canManageImpact) {
           setImportStatus({ type: 'error', message: 'Only admin can record alignment requests.' });
@@ -406,6 +420,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
         setIsActivityRecordingOutputRequest(true);
       },
       disabled: !canManageImpact,
+      icon: <TrendingDown size={16} />
     },
     {
       key: 'record-deferred-record',
@@ -418,7 +433,14 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
         openDeferredForm();
       },
       disabled: !canActivityRecordDeferred,
+      icon: <Clock size={16} />
     },
+    {
+      key: 'import-entities',
+      label: 'Import Entities',
+      onClick: () => fileInputRef.current?.click(),
+      icon: <Download size={16} />
+    }
   ];
 
   return (
@@ -438,13 +460,18 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
       >
         <div>
           {embedded ? (
-            <>
-              <h3 className="text-base font-medium text-stone-900 dark:text-stone-100">Entities</h3>
-            </>
+            <div className="flex items-center gap-2">
+              <h3 className="text-base font-medium text-stone-900 dark:text-stone-100 lowercase">entities</h3>
+            </div>
           ) : (
-            <>
-              <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Entities</h2>
-            </>
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-stone-100 dark:bg-stone-800 flex items-center justify-center shrink-0 shadow-sm border border-stone-200 dark:border-stone-700">
+                <EntitiesIcon size={24} className="text-stone-900 dark:text-stone-100" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Entities</h2>
+              </div>
+            </div>
           )}
         </div>
         <div className={cn('flex flex-col items-start gap-3', !embedded && 'lg:items-end')}>
@@ -584,8 +611,9 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
             </button>
             <button 
               type="submit" 
-              className="action-btn-primary"
+              className="action-btn-primary flex items-center gap-2"
             >
+              <Plus size={16} />
               {getActionText('addEntity')}
             </button>
           </div>
@@ -869,16 +897,14 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
               );
             })}
             {filteredEntitys.length === 0 && (
-              <div className="px-6 py-10 text-center text-stone-400 text-sm">
-                <p>No entities found.</p>
-                <button
-                  type="button"
-                  onClick={() => setIsAdding(true)}
-                  className="action-btn-primary text-xs px-3 py-1.5 mt-3"
-                >
-                  Add first entity
-                </button>
-              </div>
+              <EmptyState
+                title="No entities found."
+                description="Refine your search or add a new entity."
+                onAction={() => setIsAdding(true)}
+                actionLabel="Add first entity"
+                actionIcon={<Plus size={14} />}
+                className="py-12"
+              />
             )}
           </div>
 
@@ -1035,14 +1061,14 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                           <td
                             className={cn(
                               'px-4 py-2.5 text-right font-mono whitespace-nowrap',
-                              (record.direction === 'increase' ? record.unit_amount : -record.unit_amount) > 0
+                              record.net > 0
                                 ? 'text-emerald-600 dark:text-emerald-400'
-                                : (record.direction === 'increase' ? record.unit_amount : -record.unit_amount) < 0
+                                : record.net < 0
                                   ? 'text-red-600 dark:text-red-400'
                                   : 'text-stone-500 dark:text-stone-400',
                             )}
                           >
-                            {formatValue((record.direction === 'increase' ? record.unit_amount : -record.unit_amount))}
+                            {formatValue(record.net)}
                           </td>
                         </tr>
                       ))}

@@ -106,10 +106,11 @@ type DbRole = 'admin' | 'operator' | 'viewer';
 type ClusterRole = 'cluster_admin' | 'cluster_operator' | 'viewer';
 
 type ManageOrganizationsPayload = {
-  action: 'bootstrap-cluster-admin' | 'list-cluster-admins' | 'provision-organization' | 'switch-active-org' | 'set-cluster-role' | 'delete-user' | 'reset-user-password' | 'update-organization-identity' | 'list';
+  action: 'bootstrap-cluster-admin' | 'list-cluster-admins' | 'provision-organization' | 'switch-active-org' | 'set-cluster-role' | 'delete-user' | 'reset-user-password' | 'update-organization-identity' | 'assign-org-admin' | 'list-all-accounts' | 'list';
   org_id?: string;
   cluster_id?: string;
   target_user_id?: string;
+  target_email?: string;
   target_role?: DbRole | ClusterRole;
   new_password?: string;
   access_token?: string;
@@ -316,7 +317,21 @@ Deno.serve(async (request: Request) => {
 
   // Action: list-cluster-admins
   if (payload.action === 'list-cluster-admins') {
-    const clusterId = normalizeId(payload.cluster_id) ?? authority.clusterId;
+    let clusterId = normalizeId(payload.cluster_id);
+    const orgId = normalizeId(payload.org_id);
+
+    if (!clusterId && orgId && (authority.isPlatformAdmin || authority.managedOrgIds.includes(orgId))) {
+      const { data: orgData } = await adminClient
+        .from('organizations')
+        .select('cluster_id')
+        .eq('id', orgId)
+        .maybeSingle();
+      if (orgData?.cluster_id) {
+        clusterId = orgData.cluster_id;
+      }
+    }
+
+    clusterId = clusterId ?? authority.clusterId;
     if (!clusterId) return json(400, { error: 'cluster_id is required.' }, origin);
 
     const { data: admins, error: adminError } = await adminClient
@@ -326,17 +341,55 @@ Deno.serve(async (request: Request) => {
 
     if (adminError) return json(400, { error: adminError.message }, origin);
 
+    // Also fetch Organization-level administrators if orgId is provided
+    let orgAdmins: any[] = [];
+    if (orgId) {
+      const { data: orgMems, error: orgMemError } = await adminClient
+        .from('organization_memberships')
+        .select('user_id, role, created_at')
+        .eq('org_id', orgId)
+        .in('role', ['admin', 'operator']);
+      if (!orgMemError && orgMems) {
+        orgAdmins = orgMems;
+      }
+    }
+
     const { data: { users: authUsers } } = await adminClient.auth.admin.listUsers();
     const emailMap = new Map(authUsers.map((u: any) => [u.id, u.email]));
-    const result = (admins ?? []).map((a: any) => ({
-      user_id: a.user_id,
-      email: emailMap.get(a.user_id) ?? null,
-      role: a.role,
-      active_org_id: (a.profiles as any)?.active_org_id || null,
-      created_at: a.created_at
-    }));
 
-    return json(200, { ok: true, admins: result }, origin);
+    // Combine and normalize
+    const combined = new Map<string, any>();
+
+    // Add cluster members first
+    (admins ?? []).forEach((a: any) => {
+      combined.set(a.user_id, {
+        user_id: a.user_id,
+        email: emailMap.get(a.user_id) ?? null,
+        role: a.role, // cluster_admin, etc.
+        type: 'cluster',
+        active_org_id: (a.profiles as any)?.active_org_id || null,
+        created_at: a.created_at
+      });
+    });
+
+    // Add/Merge organization members
+    orgAdmins.forEach((o: any) => {
+      const existing = combined.get(o.user_id);
+      if (existing) {
+        // If they already have a cluster role, maybe keep it or note both
+        existing.org_role = o.role;
+      } else {
+        combined.set(o.user_id, {
+          user_id: o.user_id,
+          email: emailMap.get(o.user_id) ?? null,
+          role: o.role, // admin, operator
+          type: 'organization',
+          created_at: o.created_at
+        });
+      }
+    });
+
+    return json(200, { ok: true, admins: Array.from(combined.values()), cluster_id: clusterId }, origin);
   }
 
     // Action: set-cluster-role
@@ -503,6 +556,75 @@ Deno.serve(async (request: Request) => {
       if (updateError) return json(400, { error: updateError.message }, origin);
 
       return json(200, { ok: true, message: 'Organization identity updated.' }, origin);
+    }
+
+    // Action: assign-org-admin
+    if (payload.action === 'assign-org-admin') {
+      const orgId = normalizeId(payload.org_id);
+      let targetUserId = normalizeId(payload.target_user_id);
+      const targetEmail = normalizeId(payload.target_email);
+      const role = (payload.target_role as DbRole) || 'admin';
+
+      if (!orgId) return json(400, { error: 'org_id is required.' }, origin);
+      if (!targetUserId && !targetEmail) return json(400, { error: 'target_user_id or target_email is required.' }, origin);
+
+      // Verify access to the organization
+      if (!authority.isPlatformAdmin && !authority.managedOrgIds.includes(orgId)) {
+        return json(403, { error: 'No administrative access to target organization.' }, origin);
+      }
+
+      // Resolve user ID if email provided
+      if (!targetUserId && targetEmail) {
+        const { data: { users: matchingUsers } } = await adminClient.auth.admin.listUsers();
+        const found = matchingUsers.find((u: any) => u.email?.toLowerCase() === targetEmail.toLowerCase());
+        if (!found) return json(404, { error: `User with email ${targetEmail} not found.` }, origin);
+        targetUserId = found.id;
+      }
+
+      if (!targetUserId) return json(400, { error: 'Unable to resolve target user.' }, origin);
+
+      await ensureOrgMembership(adminClient, targetUserId, orgId, role);
+      
+      return json(200, { ok: true, message: `User assigned as ${role} to organization.` }, origin);
+    }
+
+    // Action: list-all-accounts (Platform Admin Only)
+    if (payload.action === 'list-all-accounts') {
+      if (!authority.isPlatformAdmin) return json(403, { error: 'Platform administrative access required.' }, origin);
+
+      const [
+        { data: profiles, error: profileError },
+        { data: clusterMems, error: clusterError },
+        { data: orgMems, error: orgError },
+        { data: { users: authUsers }, error: authError }
+      ] = await Promise.all([
+        adminClient.from('profiles').select('id, active_org_id, active_cluster_id, created_at'),
+        adminClient.from('cluster_memberships').select('user_id, cluster_id, role'),
+        adminClient.from('organization_memberships').select('user_id, org_id, role, status'),
+        adminClient.auth.admin.listUsers()
+      ]);
+
+      if (profileError || clusterError || orgError || authError) {
+        return json(400, { error: 'Aggregated directory fetch failed.' }, origin);
+      }
+
+      const emailMap = new Map(authUsers.map((u: any) => [u.id, u.email]));
+      const accounts = (profiles ?? []).map((p: any) => {
+        const userClusterMems = (clusterMems ?? []).filter((cm: any) => cm.user_id === p.id);
+        const userOrgMems = (orgMems ?? []).filter((om: any) => om.user_id === p.id);
+        
+        return {
+          user_id: p.id,
+          email: emailMap.get(p.id) ?? null,
+          active_org_id: p.active_org_id,
+          active_cluster_id: p.active_cluster_id,
+          cluster_roles: userClusterMems.map((cm: any) => ({ cluster_id: cm.cluster_id, role: cm.role })),
+          org_roles: userOrgMems.map((om: any) => ({ org_id: om.org_id, role: om.role, status: om.status })),
+          created_at: p.created_at
+        };
+      });
+
+      return json(200, { ok: true, accounts }, origin);
     }
 
   // Default Action: list (all organizations and users in scope)

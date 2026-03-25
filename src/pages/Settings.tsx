@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, LogOut, CheckCircle2, AlertTriangle, Key, Globe } from 'lucide-react';
+import { ShieldCheck, LogOut, CheckCircle2, AlertTriangle, Key, Globe, Settings as SettingsIcon } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAppRole } from '../context/AppRoleContext';
 import { useAuth } from '../context/AuthContext';
@@ -42,8 +42,20 @@ type ProvisionResult = {
 type ManagedClusterAccount = {
   user_id: string;
   email: string | null;
-  role: 'cluster_admin' | 'cluster_operator' | 'viewer';
+  role: 'cluster_admin' | 'cluster_operator' | 'viewer' | 'admin' | 'operator';
+  type: 'cluster' | 'organization';
+  org_role?: 'admin' | 'operator' | 'viewer';
   active_org_id: string | null;
+  created_at: string | null;
+};
+
+type PlatformAccount = {
+  user_id: string;
+  email: string | null;
+  active_org_id: string | null;
+  active_cluster_id: string | null;
+  cluster_roles: Array<{ cluster_id: string; role: string }>;
+  org_roles: Array<{ org_id: string; role: string; status: string }>;
   created_at: string | null;
 };
 
@@ -118,12 +130,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       return;
     }
     if (!window.confirm('Bootstrap a new cluster and make yourself cluster admin? This is a one-time operation.')) return;
-    const accessToken = await getSupabaseAccessToken();
-    if (!accessToken) { notify({ type: 'error', message: 'Unable to get access token. Please sign in.' }); return; }
-    const { data, error } = await supabase.functions.invoke('manage-organizations', {
-      headers: { Authorization: `Bearer ${accessToken}`, apikey: SUPABASE_ANON_KEY },
-      body: { action: 'bootstrap-cluster-admin' },
-    });
+    const { data, error } = await invokeSafe('manage-organizations', { action: 'bootstrap-cluster-admin' });
     if (error) { notify({ type: 'error', message: `Bootstrap failed: ${String(error)}` }); return; }
     notify({ type: 'success', message: (data as any)?.message ?? 'Cluster bootstrapped! Reload to activate your new cluster.' });
     await refreshData();
@@ -145,6 +152,60 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
   const { notify } = useNotification();
   const { user, updatePassword: supabaseUpdatePassword } = useAuth();
+  const refreshPromiseRef = React.useRef<Promise<any> | null>(null);
+
+  const invokeSafe = React.useCallback(async <T = any>(
+    functionName: string,
+    body: any,
+    options: { retry?: boolean } = { retry: true }
+  ): Promise<{ data: T | null; error: any }> => {
+    const execute = async (isRetry: boolean): Promise<{ data: T | null; error: any }> => {
+      const { data: { session }, error: sessionError } = await supabase!.auth.getSession();
+      
+      if (sessionError || !session?.access_token) {
+        throw new Error("No active session. Please sign in again.");
+      }
+
+      const { data, error } = await supabase!.functions.invoke<T>(functionName, {
+        headers: { 
+          Authorization: `Bearer ${session.access_token}`,
+          'X-Client-Info': 'flow-ops-admin'
+        },
+        body,
+      });
+
+      if (error && (error as any).status === 401 && !isRetry && options.retry) {
+        console.warn(`[invokeSafe] 401 for ${functionName}, attempting singleton refresh...`);
+        
+        if (!refreshPromiseRef.current) {
+          refreshPromiseRef.current = supabase!.auth.refreshSession().finally(() => {
+            refreshPromiseRef.current = null;
+          });
+        }
+        
+        const { error: refreshError } = await refreshPromiseRef.current;
+        if (refreshError) throw refreshError;
+        
+        return execute(true);
+      }
+
+      if (error && (error as any).status === 401) {
+        notify({ type: 'error', message: 'Session expired. Please sign in again.' });
+        await supabase!.auth.signOut();
+        window.location.href = '/auth';
+        return { data: null, error: new Error('Session expired') };
+      }
+
+      return { data, error };
+    };
+
+    try {
+      return await execute(false);
+    } catch (err: any) {
+      console.error(`[invokeSafe] Fatal error calling ${functionName}:`, err);
+      return { data: null, error: err };
+    }
+  }, [notify]);
   
   // Password Management State
   const [newPassword, setNewPassword] = React.useState('');
@@ -177,6 +238,8 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [clusterAdmins, setClusterAdmins] = React.useState<ManagedClusterAccount[]>([]);
   const [managedClusterId, setManagedClusterId] = React.useState<string | null>(null);
   const [clusterManagedOrgIds, setClusterManagedOrgIds] = React.useState<string[]>([]);
+  const [newOrgAdminEmail, setNewOrgAdminEmail] = React.useState('');
+  const [isProvisioning, setIsProvisioning] = React.useState(false);
 
   // Wire real state to the variables used in JSX
   const clusterId = managedClusterId || contextClusterId;
@@ -200,6 +263,11 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [editOrgTag, setEditOrgTag] = React.useState('');
   const [editOrgSlug, setEditOrgSlug] = React.useState('');
   const [isUpdatingOrgIdentity, setIsUpdatingOrgIdentity] = React.useState(false);
+  
+  // Platform Directory State
+  const [platformAccounts, setPlatformAccounts] = React.useState<PlatformAccount[]>([]);
+  const [platformDirectoryLoading, setPlatformDirectoryLoading] = React.useState(false);
+  const [platformDirectorySearch, setPlatformDirectorySearch] = React.useState('');
 
   const isOrgAdmin = !isClusterAdmin && role === 'admin';
 
@@ -230,18 +298,15 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
   const handleUpdateOrgIdentity = async () => {
     if (!activeOrgId || !supabase) return;
+    await refreshAuthority();
     setIsUpdatingOrgIdentity(true);
     try {
-      const accessToken = await getSupabaseAccessToken();
-      const { error } = await supabase.functions.invoke('manage-organizations', {
-        headers: { Authorization: `Bearer ${accessToken}`, apikey: SUPABASE_ANON_KEY },
-        body: {
-          action: 'update-organization-identity',
-          org_id: activeOrgId,
-          name: editOrgName,
-          tag: editOrgTag,
-          slug: editOrgSlug
-        }
+      const { error } = await invokeSafe('manage-organizations', {
+        action: 'update-organization-identity',
+        org_id: activeOrgId,
+        name: editOrgName,
+        tag: editOrgTag,
+        slug: editOrgSlug
       });
       if (error) throw error;
       notify({ type: 'success', message: 'Organization identity updated.' });
@@ -398,21 +463,9 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     setClusterAdminsNotice(null);
 
     try {
-      const accessToken = await getSupabaseAccessToken();
-      if (!accessToken) {
-        setClusterAdminsNotice('Cluster admin loading requires an active auth session.');
-        return;
-      }
-
-      const { data, error } = await supabase.functions.invoke<ManageClusterAdminsResult>('manage-organizations', {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          apikey: SUPABASE_ANON_KEY,
-        },
-        body: {
-          action: 'list-cluster-admins',
-          org_id: orgId,
-        },
+      const { data, error } = await invokeSafe<ManageClusterAdminsResult>('manage-organizations', {
+        action: 'list-cluster-admins',
+        org_id: orgId,
       });
 
       if (error) {
@@ -430,14 +483,32 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     }
   }, [activeOrgId, canAccessAdminUi]);
 
+  const fetchPlatformDirectory = React.useCallback(async () => {
+    if (!isSupabaseConfigured || !supabase || !isPlatformAdmin) return;
+    setPlatformDirectoryLoading(true);
+    try {
+      const { data, error } = await invokeSafe<{ ok: boolean; accounts: PlatformAccount[] }>('manage-organizations', {
+        action: 'list-all-accounts'
+      });
+      if (error) throw error;
+      setPlatformAccounts(data?.accounts ?? []);
+    } catch (err) {
+      notify({ type: 'error', message: `Directory fetch failed: ${err instanceof Error ? err.message : String(err)}` });
+    } finally {
+      setPlatformDirectoryLoading(false);
+    }
+  }, [isPlatformAdmin, notify]);
+
   React.useEffect(() => {
     void fetchAccessRequests();
     void fetchAccessInvites();
     void fetchClusterAdmins();
-  }, [fetchAccessInvites, fetchAccessRequests, fetchClusterAdmins]);
+    if (isPlatformAdmin) void fetchPlatformDirectory();
+  }, [fetchAccessInvites, fetchAccessRequests, fetchClusterAdmins, isPlatformAdmin, fetchPlatformDirectory]);
 
   const reviewAccessRequest = async (request: AccessRequestRow, status: 'approved' | 'rejected') => {
     if (!supabase || !user) return;
+    await refreshAuthority();
     setBusyRequestId(request.id);
     setRequestsNotice(null);
     setRequestsNoticeLoginValue(null);
@@ -452,27 +523,11 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         return;
       }
 
-      const accessToken = await getSupabaseAccessToken();
-
-      if (!accessToken) {
-        const detailedError = 'Approval failed: missing active auth activity. Please sign out and sign in again.';
-        setRequestsNotice(detailedError);
-        notify({ type: 'error', message: detailedError });
-        setBusyRequestId(null);
-        return;
-      }
-
-      const { data, error } = await supabase.functions.invoke<ProvisionResult>('provision-user', {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          apikey: SUPABASE_ANON_KEY,
-        },
-        body: {
-          access_request_id: request.id,
-          teamMember_id: pendingTeamMemberIds[request.id]?.trim() || undefined,
-          password: initialPassword,
-          approved_role: pendingApprovedRoles[request.id] || request.requested_role,
-        },
+      const { data, error } = await invokeSafe<ProvisionResult>('provision-user', {
+        access_request_id: request.id,
+        teamMember_id: pendingTeamMemberIds[request.id]?.trim() || undefined,
+        password: initialPassword,
+        approved_role: pendingApprovedRoles[request.id] || request.requested_role,
       });
       if (error) {
         const detailedError = (error as any)?.message ?? String(error);
@@ -531,30 +586,19 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
   const updateClusterAccountRole = async (account: ManagedClusterAccount) => {
     if (!supabase || !activeOrgId) return;
+    await refreshAuthority();
 
     const nextRole = pendingClusterRoles[account.user_id] || account.role;
     if (nextRole === account.role) return;
 
-    const accessToken = await getSupabaseAccessToken();
-    if (!accessToken) {
-      setClusterAdminsNotice('Session expired.');
-      return;
-    }
-
     setBusyClusterUserId(account.user_id);
     setClusterAdminsNotice(null);
 
-    const { error } = await supabase.functions.invoke('manage-organizations', {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        apikey: SUPABASE_ANON_KEY,
-      },
-      body: {
-        action: 'set-cluster-role',
-        org_id: activeOrgId,
-        target_user_id: account.user_id,
-        target_role: nextRole,
-      },
+    const { error } = await invokeSafe('manage-organizations', {
+      action: 'set-cluster-role',
+      org_id: activeOrgId,
+      target_user_id: account.user_id,
+      target_role: nextRole,
     });
 
     if (error) {
@@ -599,10 +643,9 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     if (!window.confirm('Send password reset email to this user?')) return;
     setBusyClusterUserId(targetUserId);
     try {
-      const accessToken = await getSupabaseAccessToken();
-      const { data, error } = await supabase!.functions.invoke('manage-organizations', {
-        headers: { Authorization: `Bearer ${accessToken}`, apikey: SUPABASE_ANON_KEY },
-        body: { action: 'reset-user-password', target_user_id: targetUserId },
+      const { data, error } = await invokeSafe('manage-organizations', { 
+        action: 'reset-user-password', 
+        target_user_id: targetUserId 
       });
       if (error) throw error;
       notify({ type: 'success', message: (data as any)?.message || 'Reset email sent.' });
@@ -615,22 +658,14 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
   const deleteClusterAccount = async (account: ManagedClusterAccount) => {
     if (!supabase || !activeOrgId) return;
+    await refreshAuthority();
     if (!window.confirm(`Delete account ${account.email}?`)) return;
 
-    const accessToken = await getSupabaseAccessToken();
-    if (!accessToken) return;
-
     setBusyClusterUserId(account.user_id);
-    const { error } = await supabase.functions.invoke('manage-organizations', {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        apikey: SUPABASE_ANON_KEY,
-      },
-      body: {
-        action: 'delete-user',
-        org_id: activeOrgId,
-        target_user_id: account.user_id,
-      },
+    const { error } = await invokeSafe('manage-organizations', {
+      action: 'delete-user',
+      org_id: activeOrgId,
+      target_user_id: account.user_id,
     });
 
     if (error) {
@@ -719,40 +754,51 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     if (role === 'admin') return 'Org Admin';
     return role.charAt(0).toUpperCase() + role.slice(1);
   }, [isPlatformAdmin, isClusterAdmin, clusterRole, role]);
-
-
   const provisionOrganization = async () => {
     if (!supabase || !activeOrgId || !clusterId) return;
     if (!window.confirm('Add a new organization to this cluster?')) return;
 
-    const accessToken = await getSupabaseAccessToken();
-    if (!accessToken) return;
-
-    const { data, error } = await supabase.functions.invoke('manage-organizations', {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        apikey: SUPABASE_ANON_KEY,
-      },
-      body: {
+    await refreshAuthority();
+    setIsProvisioning(true);
+    try {
+      const { data, error } = await invokeSafe('manage-organizations', {
         action: 'provision-organization',
         org_id: activeOrgId,
         cluster_id: clusterId,
-      },
-    });
+      });
 
-    if (error) {
-      notify({ type: 'error', message: `Provisioning failed: ${String(error)}` });
-      return;
-    }
+      if (error) {
+        notify({ type: 'error', message: `Provisioning failed: ${String(error)}` });
+        return;
+      }
 
-    notify({ type: 'success', message: 'New organization provisioned.' });
-    // Refresh authority so managedOrgIds updates → availableOrgs re-fetches → switcher shows new org
-    await refreshAuthority();
-    await refreshData();
-    await fetchClusterAdmins();
-    // Auto-switch into the newly provisioned org if returned
-    if ((data as any)?.org_id) {
-      switchOrg((data as any).org_id);
+      const newOrgId = (data as any)?.org_id;
+      
+      if (newOrgId && newOrgAdminEmail.trim()) {
+        const { error: assignError } = await invokeSafe('manage-organizations', {
+          action: 'assign-org-admin',
+          org_id: newOrgId,
+          target_email: newOrgAdminEmail.trim(),
+          target_role: 'admin',
+        });
+        if (assignError) {
+          console.warn('Organization created but admin assignment failed:', assignError);
+        }
+      }
+
+      notify({ type: 'success', message: 'New organization provisioned.' });
+      setNewOrgAdminEmail('');
+      await refreshAuthority();
+      await refreshData();
+      await fetchClusterAdmins();
+      
+      if (newOrgId) {
+        switchOrg(newOrgId);
+      }
+    } catch (err) {
+      notify({ type: 'error', message: `Error: ${err instanceof Error ? err.message : String(err)}` });
+    } finally {
+      setIsProvisioning(false);
     }
   };
 
@@ -772,74 +818,97 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   return (
     <div className={cn(embedded ? 'space-y-6' : 'page-shell', 'w-full min-w-0 overflow-x-hidden')}>
       {!embedded && (
-        <div className="mb-6">
-          <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100 mb-1">Settings</h2>
-          <p className="text-xs text-stone-500">Deterministic Cluster-Organization Administration</p>
+        <div className="section-card p-5 lg:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5 mb-8 text-stone-900 dark:text-stone-100">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-stone-100 dark:bg-stone-800 flex items-center justify-center shrink-0 shadow-sm border border-stone-200 dark:border-stone-700">
+              <SettingsIcon size={24} className="text-stone-900 dark:text-stone-100" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Settings</h2>
+            </div>
+          </div>
         </div>
       )}
 
       <div className="space-y-8">
         {/* SECTION 1: PERSONAL ACCOUNT */}
         <div className="section">
-          <div className="flex items-center gap-2 mb-4">
-            <ShieldCheck size={20} className="text-stone-400" />
-            <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Personal Account</h3>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl p-5 shadow-sm space-y-3">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Authority Resolution</p>
-              <div className="space-y-2 text-sm text-stone-700 dark:text-stone-300">
-                <p className="flex justify-between items-center bg-stone-50 dark:bg-stone-800/50 p-2 rounded-lg">
-                  <span className="font-medium text-stone-500">Auth:</span> 
-                  <span className="font-semibold text-emerald-600 dark:text-emerald-400">{user ? 'Authenticated' : 'None'}</span>
-                </p>
-                <p className="flex justify-between items-center bg-stone-50 dark:bg-stone-800/50 p-2 rounded-lg">
-                  <span className="font-medium text-stone-500">Role:</span> 
-                  <span className="font-bold uppercase tracking-tight text-stone-700 dark:text-stone-200">{roleLabel}</span>
-                </p>
-                <p className="flex justify-between items-center bg-stone-50 dark:bg-stone-800/50 p-2 rounded-lg">
-                  <span className="font-medium text-stone-500">Backend:</span> 
-                  <span className="italic text-stone-400">{backendStatus}</span>
-                </p>
-              </div>
+          <div className="section-card p-6">
+            <div className="flex items-center gap-2 mb-6">
+              <ShieldCheck size={20} className="text-stone-400" />
+              <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Personal Account</h3>
             </div>
-
-            <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl p-5 shadow-sm">
-              <div className="flex items-center gap-2 mb-4">
-                <Key size={16} className="text-stone-400" />
-                <span className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Security Credentials</span>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-start">
+              {/* Authority Resolution */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Globe size={16} className="text-stone-400" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Authority Info</span>
+                </div>
+                <div className="space-y-2 text-sm">
+                  {[
+                    { label: 'Cloud Identity', value: user ? 'Authenticated' : 'None', highlight: true, color: 'text-emerald-600 dark:text-emerald-400' },
+                    { label: 'Active Role', value: roleLabel, bold: true },
+                    { label: 'Session Detail', value: backendStatus, italic: true, color: 'text-stone-400' }
+                  ].map((item, idx) => (
+                    <div key={idx} className="flex justify-between items-center bg-stone-50/50 dark:bg-stone-800/40 px-3 py-2.5 rounded-lg border border-stone-100/50 dark:border-stone-800">
+                      <span className="text-xs font-medium text-stone-500">{item.label}</span>
+                      <span className={cn(
+                        "text-xs",
+                        item.highlight ? "font-semibold" : "font-medium",
+                        item.bold && "font-bold uppercase tracking-tight text-stone-700 dark:text-stone-200",
+                        item.italic && "italic",
+                        item.color || "text-stone-700 dark:text-stone-300"
+                      )}>
+                        {item.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <p className="text-[11px] text-stone-500 mb-3 px-1 leading-relaxed">
-                Update the security credentials for your current logged-in identity (<span className="text-stone-900 dark:text-stone-100 font-medium">{user?.email}</span>).
-              </p>
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase text-stone-400">New Password</label>
-                  <input 
-                    type="password" 
-                    className="w-full bg-stone-50 dark:bg-stone-800 border-stone-200 dark:border-stone-700 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-emerald-500 outline-none transition-all"
-                    placeholder="Min 8 characters"
-                    value={newPassword}
-                    onChange={(e) => setNewPassword(e.target.value)}
-                  />
+
+              {/* Security Credentials */}
+              <div className="md:border-l md:border-stone-100 dark:md:border-stone-800 md:pl-10 space-y-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <Key size={16} className="text-stone-400" />
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Security Access</span>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase text-stone-400">Confirm Password</label>
-                  <input 
-                    type="password" 
-                    className="w-full bg-stone-50 dark:bg-stone-800 border-stone-200 dark:border-stone-700 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-emerald-500 outline-none transition-all"
-                    placeholder="Repeat password"
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                  />
+                <p className="text-[11px] text-stone-500 leading-relaxed px-1">
+                  Update security for <span className="text-stone-900 dark:text-stone-100 font-medium">{user?.email}</span>
+                </p>
+                
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 gap-3">
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold uppercase text-stone-400 ml-1">New Password</label>
+                      <input 
+                        type="password" 
+                        className="control-input py-2 text-xs"
+                        placeholder="Min 8 characters"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <label className="text-[10px] font-bold uppercase text-stone-400 ml-1">Confirm Password</label>
+                      <input 
+                        type="password" 
+                        className="control-input py-2 text-xs"
+                        placeholder="Repeat password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => void handleUpdatePassword()}
+                    disabled={isUpdatingPassword}
+                    className="action-btn-primary w-full py-2.5 text-xs font-semibold shadow-sm"
+                  >
+                    {isUpdatingPassword ? 'Updating...' : 'Update Password'}
+                  </button>
                 </div>
-                <button
-                  onClick={() => void handleUpdatePassword()}
-                  disabled={isUpdatingPassword}
-                  className="w-full py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-lg text-xs font-semibold hover:opacity-90 disabled:opacity-50 transition-all active:scale-[0.98]"
-                >
-                  {isUpdatingPassword ? 'Updating...' : 'Update Password'}
-                </button>
               </div>
             </div>
           </div>
@@ -987,20 +1056,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               </div>
             </div>
 
-            <div className="pt-4 border-t border-stone-100 dark:border-stone-800 flex flex-wrap gap-4">
-              <div className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 flex-1 min-w-[200px]">
-                <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1">Governance Note</p>
-                <p className="text-[11px] text-stone-500 leading-relaxed italic">
-                  Administrative authority is hierarchically resolved. Access granted at the Cluster level extends to all associated Organizations within that scope.
-                </p>
-              </div>
-              <div className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 flex-1 min-w-[200px]">
-                <p className="text-[10px] font-bold text-stone-400 uppercase tracking-widest mb-1">Identity Resolution</p>
-                <p className="text-[11px] text-stone-500 leading-relaxed italic">
-                  We prioritize human-readable Tags and Slugs for operational clarity. Raw identifiers are kept as secondary reference markers.
-                </p>
-              </div>
-            </div>
           </div>
         </div>
 
@@ -1012,7 +1067,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Organization Identity</h3>
             </div>
 
-            <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm p-6">
+            <div className="section-card p-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                 <div className="space-y-2">
                   <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Organization Name</label>
@@ -1155,7 +1210,122 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
           </div>
         )}
 
-        {/* SECTION 4: CLUSTER MANAGEMENT (Cluster Admin Only) */}
+        {/* SECTION 4: GLOBAL PLATFORM DIRECTORY (Platform Admin Only) */}
+        {isPlatformAdmin && (
+          <div className="section border-t border-stone-200 dark:border-stone-800 pt-8">
+            <div className="flex items-center justify-between mb-6">
+              <div className="flex items-center gap-2">
+                <Globe size={20} className="text-emerald-500" />
+                <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Global Platform Directory</h3>
+              </div>
+              <div className="flex items-center gap-3">
+                <input 
+                  type="text" 
+                  placeholder="Seach users across all clusters..." 
+                  className="w-64 text-[11px] bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500"
+                  value={platformDirectorySearch}
+                  onChange={e => setPlatformDirectorySearch(e.target.value)}
+                />
+                <button 
+                  onClick={() => void fetchPlatformDirectory()} 
+                  className="text-[10px] font-bold text-stone-400 uppercase hover:text-stone-600 transition-colors"
+                >
+                  Refresh
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-stone-50/50 dark:bg-stone-800/30 border-b border-stone-100 dark:border-stone-800">
+                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400">Account / email</th>
+                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400">Cluster roles</th>
+                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400">Org memberships</th>
+                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
+                    {platformDirectoryLoading ? (
+                      <tr>
+                        <td colSpan={4} className="px-5 py-12">
+                          <LoadingLine label="Syncing platform directory..." compact />
+                        </td>
+                      </tr>
+                    ) : platformAccounts.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="px-5 py-12 text-center text-[11px] text-stone-400 italic">No users found in platform directory.</td>
+                      </tr>
+                    ) : platformAccounts
+                        .filter(acc => !platformDirectorySearch || acc.email?.toLowerCase().includes(platformDirectorySearch.toLowerCase()))
+                        .map(acc => (
+                      <tr key={acc.user_id} className="group hover:bg-stone-50/50 dark:hover:bg-stone-800/20 transition-colors">
+                        <td className="px-5 py-4">
+                          <p className="text-xs font-bold text-stone-900 dark:text-stone-100">{acc.email || 'unset'}</p>
+                          <p className="text-[10px] text-stone-400 font-mono mt-0.5">{acc.user_id.slice(0, 8)}...</p>
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="flex flex-wrap gap-1">
+                            {acc.cluster_roles.length > 0 ? acc.cluster_roles.map((cr, i) => (
+                              <span key={i} className="text-[9px] font-black uppercase tracking-tighter bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-100 dark:border-emerald-900/20">
+                                {cr.role.replace('_', ' ')}
+                              </span>
+                            )) : (
+                              <span className="text-[9px] text-stone-300 dark:text-stone-600 font-bold uppercase italic">None</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="flex flex-wrap gap-1">
+                            {acc.org_roles.length > 0 ? acc.org_roles.map((om, i) => (
+                              <span key={i} className="text-[9px] font-black uppercase tracking-tighter bg-violet-50 dark:bg-violet-900/10 text-violet-600 dark:text-violet-400 px-1.5 py-0.5 rounded border border-violet-100 dark:border-violet-900/20">
+                                {om.role}
+                              </span>
+                            )) : (
+                              <span className="text-[9px] text-stone-300 dark:text-stone-600 font-bold uppercase italic">None</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-5 py-4 text-right">
+                          <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button 
+                              onClick={() => {
+                                if (acc.email) {
+                                  setNewOrgAdminEmail(acc.email);
+                                  window.scrollTo({ top: document.getElementById('provisioning-card')?.offsetTop || 0, behavior: 'smooth' });
+                                }
+                              }}
+                              className="text-[10px] font-bold text-emerald-600 uppercase hover:underline"
+                            >
+                              Provision Org
+                            </button>
+                            <button 
+                              onClick={() => {
+                                if (acc.user_id === user?.id) {
+                                  notify({ type: 'error', message: 'You cannot reset your own password from here.' });
+                                  return;
+                                }
+                                if (window.confirm(`Send password reset email to ${acc.email}?`)) {
+                                  void resetUserPassword(acc.user_id);
+                                }
+                              }}
+                              className="text-[10px] font-bold text-stone-400 uppercase hover:text-stone-600 transition-colors"
+                            >
+                              Reset
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* SECTION 5: CLUSTER MANAGEMENT (Cluster Admin Only) */}
         {(isClusterAdmin || isPlatformAdmin) && (
           <div className="section border-t border-stone-200 dark:border-stone-800 pt-8">
             <div className="flex items-center gap-2 mb-6">
@@ -1185,12 +1355,21 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                       const isSelf = admin.user_id === user?.id;
                       const isLastAdmin = admin.role === 'cluster_admin' && clusterAdmins.filter(a => a.role === 'cluster_admin').length === 1;
                       return (
-                        <div key={admin.user_id} className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700/50 flex items-center justify-between group">
+                        <div key={admin.user_id} className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700/50 flex items-center justify-between group gap-4">
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-bold text-stone-900 dark:text-stone-100 truncate">{admin.email} {isSelf && '(You)'}</p>
-                            <span className="text-[9px] font-black uppercase tracking-tighter text-emerald-600 dark:text-emerald-400">{admin.role.replace('_', ' ')}</span>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                              {admin.type === 'cluster' ? (
+                                <span className="text-[9px] font-black uppercase tracking-tighter text-emerald-600 dark:text-emerald-400">CLUSTER {admin.role.replace('_', ' ')}</span>
+                              ) : (
+                                <span className="text-[9px] font-black uppercase tracking-tighter text-violet-600 dark:text-violet-400">ORG {admin.role}</span>
+                              )}
+                              {admin.org_role && (
+                                <span className="text-[9px] font-black uppercase tracking-tighter text-stone-400">• ORG {admin.org_role}</span>
+                              )}
+                            </div>
                           </div>
-                          {!isSelf && (
+                          {!isSelf && admin.type === 'cluster' && (
                             <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                               <select 
                                 className="text-[10px] bg-white dark:bg-stone-900 border-stone-200 rounded px-1 py-0.5 outline-none font-bold text-stone-600"
@@ -1205,6 +1384,9 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                             </div>
                           )}
                           {isSelf && <span className="text-[9px] font-bold text-stone-400 uppercase tracking-widest">Fixed</span>}
+                          {admin.type === 'organization' && !isSelf && (
+                            <span className="text-[9px] font-bold text-stone-300 dark:text-stone-600 uppercase italic">Org Managed</span>
+                          )}
                         </div>
                       );
                     })}
@@ -1222,13 +1404,30 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                   <p className="text-[11px] text-stone-600 dark:text-stone-400 leading-relaxed italic">
                     All provisioned organizations use deterministic UUID mapping to ensure secondary systems and edge functions recognize the new context without manual configuration.
                   </p>
-                  <div className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Initial Admin Email (Optional)</label>
+                      <input 
+                        type="email" 
+                        placeholder="admin@example.com" 
+                        className="w-full text-xs font-bold bg-stone-50 dark:bg-stone-800 border-none rounded-lg px-3 py-2.5 outline-none focus:ring-1 focus:ring-emerald-500"
+                        value={newOrgAdminEmail}
+                        onChange={e => setNewOrgAdminEmail(e.target.value)}
+                        disabled={isProvisioning}
+                      />
+                      <p className="text-[9px] text-stone-400">If provided, this user will be granted administrative access to the new workspace.</p>
+                    </div>
+
                     {clusterId ? (
-                      <button onClick={() => void provisionOrganization()} className="action-btn-primary w-full h-10 text-xs justify-center font-bold">
-                        Add Organization to Cluster
+                      <button 
+                        onClick={() => void provisionOrganization()} 
+                        disabled={isProvisioning}
+                        className="action-btn-primary w-full h-11 text-xs justify-center font-bold"
+                      >
+                        {isProvisioning ? <LoadingLine label="Provisioning..." compact /> : 'Add Organization to Cluster'}
                       </button>
                     ) : (
-                      <button onClick={() => void bootstrapClusterAdmin()} className="w-full h-10 rounded-xl border-2 border-amber-200 bg-amber-50 text-amber-800 text-[11px] font-bold uppercase tracking-widest hover:bg-amber-100 transition-colors">
+                      <button onClick={() => void bootstrapClusterAdmin()} className="w-full h-11 rounded-xl border-2 border-amber-200 bg-amber-50 text-amber-800 text-[11px] font-bold uppercase tracking-widest hover:bg-amber-100 transition-colors">
                         Self-Bootstrap Cluster
                       </button>
                     )}
@@ -1246,7 +1445,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
             <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Governance & Export</h3>
           </div>
 
-          <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl shadow-sm max-w-2xl overflow-hidden">
+          <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl shadow-sm w-full overflow-hidden">
             <div className="p-5 border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30">
               <div className="flex items-center justify-between mb-1">
                 <h4 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Governed Bulk Export</h4>
@@ -1342,11 +1541,11 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                     if (!window.confirm(`Initiate ${exportScope} export? This action is audit-logged.`)) return;
                     setIsExporting(true);
                     try {
-                      const accessToken = await getSupabaseAccessToken();
-                      if (!accessToken) throw new Error('Session expired.');
-                      const { data, error } = await supabase!.functions.invoke('export-data', {
-                        headers: { Authorization: `Bearer ${accessToken}`, apikey: SUPABASE_ANON_KEY },
-                        body: { scope: exportScope, dataset: exportDataset, org_id: exportOrgId || activeOrgId || '', cluster_id: contextClusterId || '' },
+                      const { data, error } = await invokeSafe('export-data', { 
+                        scope: exportScope, 
+                        dataset: exportDataset, 
+                        org_id: exportOrgId || activeOrgId || '', 
+                        cluster_id: contextClusterId || '' 
                       });
                       if (error) throw error;
                       const result = data as any;

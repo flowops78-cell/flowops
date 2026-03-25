@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import { LayoutDashboard, Users, UserCog, History, Settings, Landmark, Briefcase, Handshake, Circle } from 'lucide-react';
+import EntitiesIcon from './icons/EntitiesIcon';
 import { cn } from '../lib/utils';
 import { useAppRole } from '../context/AppRoleContext';
 
@@ -14,10 +15,10 @@ interface NavItem {
 const navItems: NavItem[] = [
   { to: "/dashboard", icon: <LayoutDashboard size={20} />, label: "Brief", hint: "Operational dashboard and value summary" },
   { to: "/activity", icon: <History size={20} />, label: "Activities", hint: "Activity records and management" },
-  { to: "/entities", icon: <Users size={20} />, label: "Entities", hint: "Entity profiles and status overview" },
+  { to: "/entities", icon: <EntitiesIcon size={20} />, label: "Entities", hint: "Entity profiles and status overview" },
   { to: "/channels", icon: <Circle size={20} />, label: "Channels", hint: "Channel tracking and settings overview" },
   { to: "/collaborations", icon: <Handshake size={20} />, label: "Collaborations", hint: "Collaboration network and relationship tracking" },
-  { to: "/team-members", icon: <UserCog size={20} />, label: "Team Members", hint: "Team management and activity block operations" },
+  { to: "/team", icon: <UserCog size={20} />, label: "Team Members", hint: "Team management and activity block operations" },
   { to: "/settings", icon: <Settings size={20} />, label: "Settings", hint: "System settings and data actions" },
 ];
 
@@ -27,7 +28,7 @@ export default function MobileDock() {
   const normalizedPath = location.pathname;
   const visibleNavItems = canAccessAdminUi
     ? navItems
-    : navItems.filter(item => item.to === '/activity' || item.to === '/team-members');
+    : navItems.filter(item => item.to === '/activity' || item.to === '/team');
 
   return (
     <>

@@ -3,6 +3,7 @@ import { useData } from '../context/DataContext';
 import { Plus, ArrowUpRight, ArrowDownLeft, Circle, SquareStack, AlertCircle, Trash2, Pencil } from 'lucide-react';
 import { formatCompactValue, formatValue, formatDate } from '../lib/utils';
 import ChannelCharts from '../components/charts/ChannelCharts';
+import { useTheme } from '../context/ThemeContext';
 import { cn } from '../lib/utils';
 import Papa from 'papaparse';
 import MobileActivityRecordCard from '../components/MobileActivityRecordCard';
@@ -22,6 +23,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     entities: rawEntities,
     records: rawRecords,
     channels: rawChannels,
+    activities: rawActivities,
     addChannelRecord,
     loading,
     loadingProgress,
@@ -31,12 +33,27 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   const entities = rawEntities ?? [];
   const records = rawRecords ?? [];
   const channels = rawChannels ?? [];
+  const activities = rawActivities ?? [];
 
   // Derive channelEntries from canonical records (applied records that have a direction)
   // This replaces the removed channelEntries API
+  const activityMap = useMemo(() => {
+    const map = new Map<string, any>();
+    activities.forEach(a => map.set(a.id, a));
+    return map;
+  }, [activities]);
+
   const channelEntries = useMemo(() =>
-    records.filter(r => r.status === 'applied'),
-    [records]
+    records.filter(r => r.status === 'applied').map(r => {
+      const activity = activityMap.get(r.activity_id);
+      return {
+        ...r,
+        date: r.created_at || '',
+        amount: r.unit_amount || 0,
+        method: activity?.channel_label || r.notes || 'Activity',
+      };
+    }),
+    [records, activityMap]
   );
 
   // Removed APIs — stubbed as safe no-ops until the Channels page is fully migrated
@@ -373,7 +390,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       // canonical: direction=increase → inflow, decrease/transfer → outflow
       const multiplier = record.direction === 'increase' ? 1 : -1;
       const amount = (record.unit_amount ?? 0) * multiplier;
-      const label = record.notes ?? record.direction ?? 'other';
+      const label = record.method || 'other';
       nextChannelTotals[label] = (nextChannelTotals[label] || 0) + amount;
     });
 
@@ -447,7 +464,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
   const normalizedOrgSearch = orgSearchQuery.trim().toLowerCase();
   const filteredActiveChannelEntries = useMemo(() => activeChannelEntries.filter(record => {
-    if (orgTypeFilter !== 'all' && record.direction !== orgTypeFilter) return false;
+    const normalizedDirection = orgTypeFilter === 'increment' ? 'increase' : orgTypeFilter === 'decrement' ? 'decrease' : 'all';
+    if (orgTypeFilter !== 'all' && record.direction !== normalizedDirection) return false;
     const recDate = (record.created_at ?? '').slice(0, 10);
     if (orgDateStart && recDate < orgDateStart) return false;
     if (orgDateEnd && recDate > orgDateEnd) return false;
@@ -459,7 +477,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   }), [activeChannelEntries, orgTypeFilter, orgDateStart, orgDateEnd, normalizedOrgSearch]);
 
   const filteredArchivedChannelEntries = useMemo(() => archivedChannelEntries.filter(record => {
-    if (orgTypeFilter !== 'all' && record.direction !== orgTypeFilter) return false;
+    const normalizedDirection = orgTypeFilter === 'increment' ? 'increase' : orgTypeFilter === 'decrement' ? 'decrease' : 'all';
+    if (orgTypeFilter !== 'all' && record.direction !== normalizedDirection) return false;
     const recDate = (record.created_at ?? '').slice(0, 10);
     if (orgDateStart && recDate < orgDateStart) return false;
     if (orgDateEnd && recDate > orgDateEnd) return false;
@@ -535,7 +554,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     const unitTotals = new Map<string, number>();
     activeAdjustments.forEach(adjustment => {
       const current = unitTotals.get(adjustment.entity_id) || 0;
-      const next = current + ((adjustment as any).direction === 'increase' ? (adjustment as any).unit_amount : -(adjustment as any).unit_amount);
+      const multiplier = adjustment.type === 'input' ? 1 : -1;
+      const next = current + (adjustment.amount * multiplier);
       unitTotals.set(adjustment.entity_id, next);
     });
     const settledUnits = new Set(
@@ -595,7 +615,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     return account ? `${label} • ${account}` : label;
   };
 
-  const isTransferActivityRecord = (record: any) => record.method?.includes('::');
+  const isTransferActivityRecord = (record: any) => record.direction === 'transfer';
 
   const handleTotalCardClick = (base: string) => {
     recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -614,6 +634,20 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   };
 
   // --- Chart Data Preparation ---
+  const historyData = useMemo(() => {
+    const last30Days = Array.from({ length: 30 }, (_, i) => {
+      const date = new Date();
+      date.setDate(date.getDate() - i);
+      return date.toISOString().split('T')[0];
+    }).reverse();
+
+    return last30Days.map(dateStr => {
+      const dailyTotal = (channelEntries || [])
+        .filter(r => (r.created_at ?? '').startsWith(dateStr))
+        .reduce((sum, r) => sum + (r.direction === 'increase' ? r.unit_amount : -r.unit_amount), 0);
+      return { date: dateStr.slice(5), total: dailyTotal, fullDate: dateStr };
+    });
+  }, [channelEntries]);
 
   const distributionData = useMemo(() => {
     return channelCardData
@@ -625,33 +659,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       }));
   }, [channelCardData]);
 
-  const historyData = useMemo(() => {
-    const sorted = [...channelEntries].sort((a, b) =>
-      (a.created_at ?? '').localeCompare(b.created_at ?? ''));
-    const points: { date: string; total: number; fullDate: string }[] = [];
-    let runningTotal = 0;
-
-    // Group by date to avoid plot saturation
-    const dailyTotals: Record<string, number> = {};
-    sorted.forEach(tx => {
-      const multiplier = tx.direction === 'increase' ? 1 : -1;
-      const dateKey = (tx.created_at ?? '').slice(0, 10);
-      runningTotal += (tx.unit_amount ?? 0) * multiplier;
-      dailyTotals[dateKey] = runningTotal;
-    });
-
-    Object.entries(dailyTotals)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .forEach(([date, total]) => {
-        points.push({
-          date: formatDate(date),
-          total: total,
-          fullDate: date
-        });
-      });
-
-    return points.slice(-30); // Last 30 days of activity
-  }, [channelEntries, formatDate]);
+  const { theme } = useTheme();
 
   const p2pOptionDisplay = (method: string, amount: number) => `${formatMethodLabel(method)} (${formatValue(amount)})`;
 
@@ -954,12 +962,12 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
     const today = new Date().toISOString().split('T')[0];
     try {
-      await transferChannelValues(
-        transferFromMethod,
-        targetMethod,
-        parsedAmount,
-        today,
-      );
+      await transferChannelValues({
+        from_method: transferFromMethod,
+        to_method: targetMethod,
+        amount: parsedAmount,
+        date: today,
+      });
 
       clearSaveTransferTimers();
       setSaveTransferProgress(100);
@@ -1037,7 +1045,10 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       return;
     }
     const ids = activeChannelEntries
-      .filter(record => record.date >= orgDateStart && record.date <= orgDateEnd)
+      .filter(record => {
+        const d = (record.created_at ?? '').slice(0, 10);
+        return d >= (orgDateStart || '') && d <= (orgDateEnd || '');
+      })
       .map(record => record.id);
     if (ids.length === 0) {
       notify({ type: 'error', message: 'No active channel records in selected range.' });
@@ -1209,10 +1220,14 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
         </div>
       )}
       {!embedded ? (
-        <section className="section-card p-5 lg:p-6 flex flex-col lg:flex-row lg:items-end justify-between gap-5">
-          <div>
-            <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Channels</h2>
-            <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">Values management and channel activity.</p>
+        <section className="section-card p-5 lg:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-stone-100 dark:bg-stone-800 flex items-center justify-center shrink-0 shadow-sm border border-stone-200 dark:border-stone-700">
+              <Circle size={24} className="text-stone-900 dark:text-stone-100" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Channels</h2>
+            </div>
           </div>
           <div className="flex flex-col items-start lg:items-end gap-1">
             <p className="text-[11px] uppercase tracking-[0.08em] text-stone-500 dark:text-stone-400">Total</p>
@@ -1272,7 +1287,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
             </div>
 
             <div className="p-5 border-t border-stone-200/80 dark:border-stone-800/80">
-              <ChannelCharts historyData={historyData} distributionData={distributionData} />
+              <ChannelCharts historyData={historyData} distributionData={distributionData} theme={theme} />
             </div>
 
             <div className="border-t border-stone-200/80 dark:border-stone-800/80 p-5">
@@ -1721,23 +1736,23 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
               {filteredActiveChannelEntries.map(t => (
                 <MobileActivityRecordCard
                   key={t.id}
-                  title={<span className="text-xs text-stone-500 dark:text-stone-400 font-normal">{formatDate(t.date)}</span>}
+                  title={<span className="text-xs text-stone-500 dark:text-stone-400 font-normal">{formatDate(t.created_at || '')}</span>}
                   right={(
                     <p className={cn(
                       "font-mono font-medium text-sm",
                       t.direction === 'increase' ? "amount-positive" : "amount-negative"
                     )}>
-                      {t.direction === 'increase' ? '+' : '-'}{formatValue(t.amount)}
+                      {t.direction === 'increase' ? '+' : '-'}{formatValue(t.unit_amount)}
                     </p>
                   )}
                   meta={(
                     <span className="inline-flex items-center gap-1.5 capitalize">
                       {isTransferActivityRecord(t) && (
                         <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                          TransferAmount
+                          Transfer
                         </span>
                       )}
-                      <span>{t.direction === 'increase' ? 'Inflow' : 'Outflow'} • {formatMethodLabel(t.method)}</span>
+                      <span>{t.direction === 'increase' ? 'Inflow' : 'Outflow'} • {formatMethodLabel(t.notes)}</span>
                     </span>
                   )}
                 >
@@ -1786,16 +1801,16 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     {filteredArchivedChannelEntries.map(t => (
                       <MobileActivityRecordCard
                         key={t.id}
-                        title={<span className="text-xs text-stone-500 dark:text-stone-400 font-normal">{formatDate(t.date)}</span>}
+                        title={<span className="text-xs text-stone-500 dark:text-stone-400 font-normal">{formatDate(t.created_at || '')}</span>}
                         right={(
                           <p className={cn(
                             "font-mono font-medium text-sm",
                             t.direction === 'increase' ? "amount-positive" : "amount-negative"
                           )}>
-                            {t.direction === 'increase' ? '+' : '-'}{formatValue(t.amount)}
+                            {t.direction === 'increase' ? '+' : '-'}{formatValue(t.unit_amount)}
                           </p>
                         )}
-                        meta={<span className="capitalize">{t.type} • {formatMethodLabel(t.method)}</span>}
+                        meta={<span className="capitalize">{t.direction} • {formatMethodLabel(t.notes)}</span>}
                       >
                         <div className="mt-2 flex justify-end gap-2">
                           {canOperateValue && (
@@ -1853,12 +1868,12 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                         ? "bg-blue-50/60 dark:bg-blue-900/10"
                         : "odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60"
                     )}>
-                      <td className="sticky-col px-6 py-2.5 text-stone-500 dark:text-stone-400">{formatDate(t.date)}</td>
+                      <td className="sticky-col px-6 py-2.5 text-stone-500 dark:text-stone-400">{formatDate(t.created_at || '')}</td>
                       <td className="px-6 py-2.5">
                         <div className="inline-flex items-center gap-1.5">
                           {isTransferActivityRecord(t) && (
                             <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                              TransferAmount
+                              Transfer
                             </span>
                           )}
                           <span className={cn(
@@ -1872,14 +1887,14 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-2.5 text-stone-900 dark:text-stone-100">{formatMethodLabel(t.method)}</td>
+                      <td className="px-6 py-2.5 text-stone-900 dark:text-stone-100">{formatMethodLabel(t.notes)}</td>
                       <td className="px-6 py-2.5 text-stone-500 dark:text-stone-400">
                       </td>
                       <td className={cn(
                         "px-6 py-2.5 text-right font-mono font-medium",
                         t.direction === 'increase' ? "amount-positive" : "amount-negative"
                       )}>
-                        {t.direction === 'increase' ? '+' : '-'}{formatValue(t.amount)}
+                        {t.direction === 'increase' ? '+' : '-'}{formatValue(t.unit_amount)}
                       </td>
                       <td className="sticky-col-right px-6 py-2.5 text-right">
                         {canOperateValue && (

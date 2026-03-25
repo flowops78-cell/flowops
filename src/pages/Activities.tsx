@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useData } from '../context/DataContext';
-import { Plus, Calendar, ChevronRight, Smartphone, Clock, Trash2, Loader2 } from 'lucide-react';
+import { Plus, Calendar, ChevronRight, Smartphone, Clock, Trash2, Loader2, History } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { APP_MIN_DATE, cn, formatValue, formatDate } from '../lib/utils';
 import { useNotification } from '../context/NotificationContext';
@@ -10,9 +10,18 @@ import DataActionMenu from '../components/DataActionMenu';
 import LoadingLine from '../components/LoadingLine';
 import { useLabels } from '../lib/labels';
 import EmptyState from '../components/EmptyState';
+import { Activity, ActivityRecord } from '../types';
 
 export default function Activities({ embedded = false }: { embedded?: boolean }) {
-  const { activities, addActivity, deleteActivity, records, entities, loading, loadingProgress } = useData();
+  const { 
+    activities, 
+    addActivity, 
+    deleteActivity, 
+    entities, 
+    loading, 
+    loadingProgress,
+    recordsByActivityId
+  } = useData();
   const location = useLocation();
   const navigate = useNavigate();
   const { notify } = useNotification();
@@ -31,6 +40,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
   // New Activity Form
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [startTime, setStartTime] = useState(new Date().toTimeString().slice(0, 5));
+  const [activityName, setActivityName] = useState('');
 
   // New Fields
   const [channel, setChannel] = useState('Channel 1');
@@ -94,6 +104,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
     try {
       await addActivity({
         date,
+        name: activityName.trim() || undefined,
         start_time: buildStartTime(date, startTime),
         status: 'active',
         assigned_user_id: user?.id,
@@ -107,6 +118,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
       // Reset form
       setDate(new Date().toISOString().split('T')[0]);
       setStartTime(new Date().toTimeString().slice(0, 5));
+      setActivityName('');
       setChannel('Channel 1');
       notify({ type: 'success', message: 'Activity created successfully.' });
     } catch (error: any) {
@@ -164,14 +176,28 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
   const archivedActivitys = activities
     .filter(activity => activity.status === 'archived');
 
-  const renderActivityCard = (activity: typeof activities[number]) => {
-    const activityEntries = records.filter(l => l.activity_id === activity.id);
+  const ActivityCard = React.memo(({ 
+    activity, 
+    activityEntries, 
+    onDelete, 
+    deletingId, 
+    tx, 
+    formatDate, 
+    formatValue 
+  }: { 
+    activity: Activity; 
+    activityEntries: ActivityRecord[]; 
+    onDelete: (e: React.MouseEvent, id: string) => void;
+    deletingId: string | null;
+    tx: any;
+    formatDate: any;
+    formatValue: any;
+  }) => {
     const totalrecordValue = activityEntries.reduce((sum, e) => sum + e.unit_amount, 0);
     const unitCount = new Set(activityEntries.map(e => e.entity_id)).size;
 
     return (
       <Link
-        key={activity.id}
         to={`/activity/${activity.id}`}
         className="block section-card-hover interactive-3d p-6 group"
       >
@@ -181,7 +207,14 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               <Calendar size={20} />
             </div>
             <div>
-              <h3 className="font-medium text-stone-900 dark:text-stone-100 text-lg">{formatDate(activity.date)}</h3>
+              <h3 className="font-medium text-stone-900 dark:text-stone-100 text-lg">
+                {activity.name || formatDate(activity.date)}
+              </h3>
+              {activity.name && (
+                <p className="text-xs text-stone-500 dark:text-stone-400 -mt-0.5">
+                  {formatDate(activity.date)}
+                </p>
+              )}
 
               <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
                 <div className="flex items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400">
@@ -218,19 +251,20 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
             </div>
             <button
               type="button"
-              onClick={(event) => { void handleDeleteActivity(event, activity.id); }}
-              disabled={deletingActivityId === activity.id}
+              onClick={(event) => { onDelete(event, activity.id); }}
+              disabled={deletingId === activity.id}
               className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-stone-200 bg-white text-stone-400 shadow-sm transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600 dark:border-stone-700 dark:bg-stone-800 dark:hover:border-red-900 dark:hover:bg-red-900/20 disabled:cursor-not-allowed disabled:opacity-70"
-              title={deletingActivityId === activity.id ? tx('Deleting activity…') : tx('Delete Activity')}
+              title={deletingId === activity.id ? tx('Deleting activity…') : tx('Delete Activity')}
             >
-              {deletingActivityId === activity.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+              {deletingId === activity.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
             </button>
             <ChevronRight className="text-stone-300 dark:text-stone-700 group-hover:text-stone-600 dark:group-hover:text-stone-300 hidden md:block" />
           </div>
         </div>
       </Link>
     );
-  };
+  });
+  ActivityCard.displayName = 'ActivityCard';
 
 
 
@@ -238,11 +272,13 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
     <div className="page-shell">
       {!embedded ? (
         <div className="section-card p-5 lg:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-          <div className="space-y-2">
-            <div className="inline-flex items-center rounded-full border border-stone-200 bg-stone-50 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-stone-500 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-400">
-              Activity Registry
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-stone-100 dark:bg-stone-800 flex items-center justify-center shrink-0 shadow-sm border border-stone-200 dark:border-stone-700">
+              <History size={24} className="text-stone-900 dark:text-stone-100" />
             </div>
-            <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Activity History</h2>
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Activities</h2>
+            </div>
           </div>
           <div className="flex flex-col items-start lg:items-end gap-3">
             <div className="hidden lg:flex items-center gap-2 text-xs">
@@ -250,23 +286,25 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
                 {tx('Activities')}: <span className="font-mono text-stone-900 dark:text-stone-100">{activities.length}</span>
               </span>
             </div>
-            <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-[minmax(0,1fr)_auto]">
-              <button
-                onClick={() => {
-                  if (!canOperateLog) {
-                    notify({ type: 'error', message: 'Only admin/operator can create an activity.' });
-                    return;
-                  }
-                  setIsCreating(true);
-                }}
-                disabled={!canOperateLog}
-                className="action-btn-primary flex-1 sm:flex-none justify-center min-h-[46px]"
-                title="Create Activity (C then A)"
-              >
-                <Plus size={16} />
-                {tx('New Activity')}
-              </button>
-            </div>
+            {!isCreating && (
+              <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-[minmax(0,1fr)_auto]">
+                <button
+                  onClick={() => {
+                    if (!canOperateLog) {
+                      notify({ type: 'error', message: 'Only admin/operator can create an activity.' });
+                      return;
+                    }
+                    setIsCreating(true);
+                  }}
+                  disabled={!canOperateLog}
+                  className="action-btn-primary flex-1 sm:flex-none justify-center min-h-[46px]"
+                  title="Create Activity (C then A)"
+                >
+                  <Plus size={16} />
+                  {tx('New Activity')}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       ) : (
@@ -294,6 +332,19 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
         <form onSubmit={handleCreateActivity} className="section-card p-6 animate-in fade-in slide-in-from-top-4">
           <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">{tx('Create Activity')}</h3>
           
+          <div className="mb-4 space-y-1">
+            <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Activity Name (Optional)</label>
+            <input 
+              type="text"
+              className="control-input w-full" 
+              placeholder="e.g. Afternoon Session, High Intensity Segment..."
+              value={activityName} 
+              onChange={e => setActivityName(e.target.value)} 
+              maxLength={60}
+            />
+            <p className="text-[10px] text-stone-400 px-1">Optional label for quick identification (max 60 chars)</p>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
             {/* Date */}
             <div className="space-y-1">
@@ -360,6 +411,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               disabled={isSavingActivity}
               className="action-btn-primary"
             >
+              <Plus size={16} />
               {isSavingActivity ? tx('Saving...') : tx('Create Activity')}
             </button>
           </div>
@@ -381,7 +433,18 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
           <div className="space-y-3">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">{tx('Active Activities')}</h3>
             <div className="space-y-4">
-              {activeActivitys.map(renderActivityCard)}
+              {activeActivitys.map(activity => (
+                <ActivityCard 
+                  key={activity.id}
+                  activity={activity}
+                  activityEntries={recordsByActivityId[activity.id] || []}
+                  onDelete={handleDeleteActivity}
+                  deletingId={deletingActivityId}
+                  tx={tx}
+                  formatDate={formatDate}
+                  formatValue={formatValue}
+                />
+              ))}
             </div>
           </div>
         )}
@@ -390,7 +453,18 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
           <div className="space-y-3">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">{tx('Completed Activities')}</h3>
             <div className="space-y-4">
-              {completedActivitys.map(renderActivityCard)}
+              {completedActivitys.map(activity => (
+                <ActivityCard 
+                  key={activity.id}
+                  activity={activity}
+                  activityEntries={recordsByActivityId[activity.id] || []}
+                  onDelete={handleDeleteActivity}
+                  deletingId={deletingActivityId}
+                  tx={tx}
+                  formatDate={formatDate}
+                  formatValue={formatValue}
+                />
+              ))}
             </div>
           </div>
         )}
@@ -415,7 +489,18 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
             </div>
             {isArchivedSectionExpanded && (
               <div className="space-y-4">
-                {archivedActivitys.map(renderActivityCard)}
+                {archivedActivitys.map(activity => (
+                  <ActivityCard 
+                    key={activity.id}
+                    activity={activity}
+                    activityEntries={recordsByActivityId[activity.id] || []}
+                    onDelete={handleDeleteActivity}
+                    deletingId={deletingActivityId}
+                    tx={tx}
+                    formatDate={formatDate}
+                    formatValue={formatValue}
+                  />
+                ))}
               </div>
             )}
           </div>
@@ -428,6 +513,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               description="Create your first activity to start tracking records and outcomes."
               actionLabel="Create Activity"
               onAction={() => setIsCreating(true)}
+              actionIcon={<Plus size={16} />}
             />
           </div>
         )}

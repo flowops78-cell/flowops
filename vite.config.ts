@@ -50,6 +50,10 @@ export default defineConfig({
     },
   },
   build: {
+    target: 'esnext',
+    minify: 'esbuild',
+    sourcemap: false,
+    reportCompressedSize: false,
     rollupOptions: {
       output: {
         chunkFileNames: chunkInfo => `assets/${renameChunk(chunkInfo.name)}-[hash].js`,
@@ -78,11 +82,13 @@ export default defineConfig({
             id.includes('react-router') ||
             id.includes('scheduler')
           ) {
-            return 'system-core';
+            return 'framework';
           }
 
-          if (id.includes('/@supabase/')) return 'db-client';
-
+          if (id.includes('/lucide-react/')) return 'icons';
+          if (id.includes('/motion/')) return 'motion';
+          if (id.includes('/@supabase/')) return 'db';
+          
           if (
             id.includes('/recharts/') ||
             id.includes('/victory-vendor/') ||

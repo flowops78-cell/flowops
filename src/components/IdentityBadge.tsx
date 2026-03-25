@@ -12,6 +12,7 @@ interface IdentityBadgeProps {
   size?: 'sm' | 'md' | 'lg';
   showUuid?: boolean;
   showShortId?: boolean;
+  hideCopy?: boolean;
   className?: string;
 }
 
@@ -24,6 +25,7 @@ const IdentityBadge: React.FC<IdentityBadgeProps> = ({
   size = 'md',
   showUuid = false,
   showShortId = true,
+  hideCopy = false,
   className
 }) => {
   const { notify } = useNotification();
@@ -79,7 +81,7 @@ const IdentityBadge: React.FC<IdentityBadgeProps> = ({
           </span>
         )}
         
-        {shortId && (
+        {shortId && !hideCopy && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -106,12 +108,14 @@ const IdentityBadge: React.FC<IdentityBadgeProps> = ({
       {showUuid && (
         <div className="mt-1 flex items-center gap-2 p-1.5 rounded bg-stone-50 dark:bg-stone-900/50 border border-stone-100 dark:border-stone-800 text-[9px] font-mono text-stone-500">
           <span className="truncate flex-1">{id}</span>
-          <button 
-            onClick={() => copyToClipboard(id, 'UUID')}
-            className="text-stone-400 hover:text-blue-600"
-          >
-            <Copy size={10} />
-          </button>
+          {!hideCopy && (
+            <button 
+              onClick={() => copyToClipboard(id, 'UUID')}
+              className="text-stone-400 hover:text-blue-600"
+            >
+              <Copy size={10} />
+            </button>
+          )}
         </div>
       )}
     </div>

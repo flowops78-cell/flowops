@@ -7,6 +7,7 @@ type EmptyStateProps = {
   description: string;
   actionLabel?: string;
   onAction?: () => void;
+  actionIcon?: ReactNode;
   className?: string;
 };
 
@@ -16,6 +17,7 @@ export default function EmptyState({
   description,
   actionLabel,
   onAction,
+  actionIcon,
   className,
 }: EmptyStateProps) {
   return (
@@ -27,8 +29,9 @@ export default function EmptyState({
         <button
           type="button"
           onClick={onAction}
-          className="action-btn-primary mt-4 text-xs px-3 py-1.5"
+          className="action-btn-primary mt-4 text-xs px-3 py-1.5 flex items-center justify-center gap-2 mx-auto"
         >
+          {actionIcon}
           {actionLabel}
         </button>
       ) : null}

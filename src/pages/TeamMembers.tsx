@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
-import { Plus, Clock, User, LayoutGrid, List, Trash2 } from 'lucide-react';
+import { Plus, Clock, User, LayoutGrid, List, Trash2, Users } from 'lucide-react';
 import { formatValue, formatDate } from '../lib/utils';
 import ContextPanel from '../components/ContextPanel';
 import MobileActivityRecordCard from '../components/MobileActivityRecordCard';
@@ -80,8 +80,9 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
   const activeTeamMemberActivityByTeamMemberId = useMemo(() => {
     const map = new Map<string, typeof activityLogs[number]>();
     activityLogs.forEach(log => {
-      if (log.status === 'active' && !map.has(log.teamMember_id ?? '')) {
-        map.set(log.teamMember_id ?? '', log);
+      const actorId = log.teamMember_id ?? '';
+      if (log.status === 'active' && !map.has(actorId)) {
+        map.set(actorId, log);
       }
     });
     return map;
@@ -339,11 +340,15 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
     <div className="page-shell">
 
       {!embedded && (
-        <div className="section-card p-5 lg:p-6 flex flex-col gap-4">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center justify-between">
-            <div>
-              <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Team Members</h2>
-              <p className="text-stone-500 dark:text-stone-400 text-sm">Team roster and operational roles.</p>
+        <div className="section-card p-5 lg:p-6 flex flex-col gap-6">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-stone-100 dark:bg-stone-800 flex items-center justify-center shrink-0 shadow-sm border border-stone-200 dark:border-stone-700">
+                <Users size={24} className="text-stone-900 dark:text-stone-100" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Team Members</h2>
+              </div>
             </div>
             <div className="flex flex-col items-start lg:items-end gap-3">
               <div className="hidden lg:flex items-center gap-2 text-xs">
@@ -471,7 +476,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
       ) : rosterViewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {teamMembers.map(teamMember => {
-            const activeActivity = activeTeamMemberActivityByTeamMemberId.get(teamMember.id);
+            const activeActivity = activeTeamMemberActivityByTeamMemberId.get(teamMember.user_id ?? '');
             return (
               <div 
                 key={teamMember.id} 
@@ -535,7 +540,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
               </thead>
               <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
                 {teamMembers.map(teamMember => {
-                  const activeActivity = activeTeamMemberActivityByTeamMemberId.get(teamMember.id);
+                  const activeActivity = activeTeamMemberActivityByTeamMemberId.get(teamMember.user_id ?? '');
                   return (
                     <tr key={teamMember.id} className="hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
                       <td className="px-4 py-3">
@@ -601,7 +606,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
             </thead>
             <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
               {visibleTeamMemberActivities.map(log => {
-                const teamMember = teamMembers.find(m => m.id === log.teamMember_id);
+                const teamMember = teamMembers.find(m => m.user_id === log.teamMember_id);
                 return (
                   <tr key={log.id} className="hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
                     <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100">{teamMember ? getTeamMemberDisplayName(teamMember.name) : 'Unknown'}</td>

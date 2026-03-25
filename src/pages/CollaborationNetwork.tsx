@@ -8,6 +8,7 @@ import { formatValue, formatDate, parseNonNegativeNumber } from '../lib/utils';
 import { cn } from '../lib/utils';
 import CollapsibleActivitySection from '../components/CollapsibleActivitySection';
 import MobileActivityRecordCard from '../components/MobileActivityRecordCard';
+import EmptyState from '../components/EmptyState';
 
 const getCollaborationRoleLabel = (role: string) => {
   switch (role) {
@@ -27,6 +28,8 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
   const {
     collaborations: rawCollaborations,
     entities: rawEntities,
+    recordsByEntityId,
+    recordsByActivityId,
     records: rawRecords,
     activities: rawActivities,
   } = useData();
@@ -357,10 +360,12 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
     );
 
     const relatedActivityDateSet = new Set<string>();
-    records.forEach((record: ActivityRecord) => {
-      if (!attributedEntityIds.has(record.entity_id)) return;
-      const activity = activities.find((item: Activity) => item.id === record.activity_id);
-      if (activity?.date) relatedActivityDateSet.add(activity.date);
+    attributedEntityIds.forEach(entityId => {
+      const entityRecords = recordsByEntityId[entityId] || [];
+      entityRecords.forEach(record => {
+        const activity = activities.find((item: Activity) => item.id === record.activity_id);
+        if (activity?.date) relatedActivityDateSet.add(activity.date);
+      });
     });
 
     const sortedDates = Array.from(relatedActivityDateSet).sort();
@@ -418,20 +423,22 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
     const activityLookup = new Map(activities.map((w: Activity) => [w.id, w]));
     const alignmentAccumulator = new Map<string, { activityId: string; date: string; channel: string; activityUnits: number; systemContribution: number }>();
 
-    records.forEach((record: ActivityRecord) => {
-      if (!attributedEntityIds.has(record.entity_id)) return;
-      const activity = activityLookup.get(record.activity_id);
-      if (!activity || !isInDateRange(activity.date)) return;
+    attributedEntityIds.forEach(entityId => {
+      const entityRecords = recordsByEntityId[entityId] || [];
+      entityRecords.forEach(record => {
+        const activity = activityLookup.get(record.activity_id);
+        if (!activity || !isInDateRange(activity.date)) return;
 
-      const current = alignmentAccumulator.get(activity.id) || {
-        activityId: activity.id,
-        date: activity.date,
-        channel: activity.channel_label || 'Operational Context',
-        activityUnits: 0,
-        systemContribution: activity.operational_weight || 0,
-      };
-      current.activityUnits += record.unit_amount || 0;
-      alignmentAccumulator.set(activity.id, current);
+        const current = alignmentAccumulator.get(activity.id) || {
+          activityId: activity.id,
+          date: activity.date,
+          channel: activity.channel_label || 'Operational Context',
+          activityUnits: 0,
+          systemContribution: activity.operational_weight || 0,
+        };
+        current.activityUnits += record.unit_amount || 0;
+        alignmentAccumulator.set(activity.id, current);
+      });
     });
 
     const perActivityAlignments = Array.from(alignmentAccumulator.values())
@@ -483,13 +490,15 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
       let activityUnits = 0;
       let contributionSum = 0;
       
-      records.forEach((record: ActivityRecord) => {
-        if (!entityIds.has(record.entity_id)) return;
-        activityUnits += record.unit_amount || 0;
-        const activity = activities.find((w: Activity) => w.id === record.activity_id);
-        if (activity?.operational_weight) {
-          contributionSum += activity.operational_weight;
-        }
+      entityIds.forEach(entityId => {
+        const entityRecords = recordsByEntityId[entityId] || [];
+        entityRecords.forEach(record => {
+          activityUnits += record.unit_amount || 0;
+          const activity = activities.find((w: Activity) => w.id === record.activity_id);
+          if (activity?.operational_weight) {
+            contributionSum += activity.operational_weight;
+          }
+        });
       });
       
       metricsMap.set(collaboration.id, {
@@ -616,8 +625,13 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
       )}
       {!embedded ? (
         <div className="section-card p-5 lg:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-          <div>
-            <h2 className="text-2xl font-light text-stone-900 dark:text-stone-100">Collaborations</h2>
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-stone-100 dark:bg-stone-800 flex items-center justify-center shrink-0 shadow-sm border border-stone-200 dark:border-stone-700">
+              <Handshake size={24} className="text-stone-900 dark:text-stone-100" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Collaborations</h2>
+            </div>
           </div>
           <div className="flex flex-col items-start lg:items-end gap-3">
             <div className="hidden lg:flex items-center gap-2 text-xs">
@@ -632,7 +646,7 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
               <button
                 onClick={() => setIsAdding(true)}
                 disabled={!canManageImpact}
-                className="action-btn-primary"
+                className="action-btn-primary flex items-center gap-2"
               >
                 <Plus size={16} />
                 Add Collaboration
@@ -746,15 +760,20 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
               )}
             >
               <div className="flex justify-between items-start">
-                <div>
-                  <h3 className="font-medium text-stone-900 dark:text-stone-100">{getCollaborationDisplayName(collaboration.name)}</h3>
-                  <div className="flex items-center gap-2 mt-1">
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400 capitalize">
-                      {getCollaborationRoleLabel(collaboration.collaboration_type || (collaboration as any).role)}
-                    </span>
+                <div className="flex items-start gap-3">
+                  <div className="p-2 rounded-lg bg-stone-100 dark:bg-stone-800 text-stone-500">
+                    <Handshake size={20} />
                   </div>
-                  <div className="text-xs text-stone-400 mt-1">
-                    {entities.filter((p: Entity) => p.collaboration_id === collaboration.id).length} Linked Entities
+                  <div>
+                    <h3 className="font-medium text-stone-900 dark:text-stone-100">{getCollaborationDisplayName(collaboration.name)}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-500 dark:text-stone-400 capitalize">
+                        {getCollaborationRoleLabel(collaboration.collaboration_type || (collaboration as any).role)}
+                      </span>
+                    </div>
+                    <div className="text-xs text-stone-400 mt-1">
+                      {entities.filter((p: Entity) => p.collaboration_id === collaboration.id).length} Linked Entities
+                    </div>
                   </div>
                 </div>
                 <div className="text-right">

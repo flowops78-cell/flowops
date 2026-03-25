@@ -76,6 +76,7 @@ function AppRoutes() {
           <Route path="/overview" element={canAccessAdminUi ? <ActivityOverview /> : <Navigate to="/activity" replace />} />
           <Route path="/collaborations" element={canAccessAdminUi ? <Collaborations /> : <Navigate to="/activity" replace />} />
           <Route path="/team" element={<Team />} />
+          <Route path="/team-members" element={<Navigate to="/team" replace />} />
           <Route path="/settings" element={canAccessAdminUi ? <Settings /> : <Navigate to="/activity" replace />} />
           <Route path="/distribution" element={<Navigate to="/dashboard" replace />} />
           <Route path="/leaderboard" element={<Navigate to="/dashboard" replace />} />

@@ -53,6 +53,7 @@ export interface Entity {
 export interface Activity {
   id: string;
   org_id: string;
+  name?: string;
   label: string;
   date: string;
   status: 'active' | 'completed' | 'archived';

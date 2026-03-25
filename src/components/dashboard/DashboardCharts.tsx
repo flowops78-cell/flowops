@@ -27,6 +27,7 @@ interface TrendPoint {
 interface OutcomePoint {
   name: string;
   net: number;
+  isPositive: boolean;
 }
 
 interface HeatmapPoint {
@@ -55,54 +56,54 @@ export default function DashboardCharts({
   const { tx, getMetricLabel } = useLabels();
   const [insightTab, setInsightTab] = useState<'outcomes' | 'hours'>('outcomes');
   return (
-    <div className="space-y-4 lg:space-y-5">
+    <div className="space-y-3 lg:space-y-4">
       {sidePanel ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 section-card p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-medium text-stone-900 dark:text-stone-100">{tx('Weekly Flow Trend')}</h3>
-              <div className="flex items-center gap-2 text-xs text-stone-500">
-                <Calendar size={14} />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          <div className="lg:col-span-2 section-card p-3 lg:p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">
+                {tx('Weekly Flow Trend')}
+              </h3>
+              <div className="flex items-center gap-2 text-[10px] font-medium text-stone-400">
+                <Calendar size={12} />
                 <span>{tx('Last 7 Days')}</span>
               </div>
             </div>
-            <div className="h-48 min-h-[192px]">
+            <div className="h-40 min-h-[160px]">
               <MeasuredChart className="h-full w-full min-w-0">
                 {({ width, height }) => (
-                <AreaChart width={width} height={height} data={flowTrend}>
+                <AreaChart width={width} height={height} data={flowTrend} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorFlow" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.1} />
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.15} />
                       <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#44403c' : '#e5e5e5'} />
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#292524' : '#f5f5f4'} />
                   <XAxis
                     dataKey="date"
                     axisLine={false}
                     tickLine={false}
-                    tick={{ fontSize: 12, fill: theme === 'dark' ? '#a8a29e' : '#57534e' }}
-                    dy={10}
+                    tick={{ fontSize: 10, fill: theme === 'dark' ? '#78716c' : '#a8a29e' }}
+                    dy={5}
                   />
                   <YAxis
                     axisLine={false}
                     tickLine={false}
-                    tick={{ fontSize: 12, fill: theme === 'dark' ? '#a8a29e' : '#57534e' }}
-                    tickFormatter={(value) => value.toString()}
+                    tick={{ fontSize: 10, fill: theme === 'dark' ? '#78716c' : '#a8a29e' }}
                   />
                   <Tooltip
                     formatter={(value?: number) => [formatValue(value ?? 0), tx('Flow')]}
                     contentStyle={{
-                      borderRadius: '8px',
+                      borderRadius: '12px',
                       border: 'none',
-                      boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                      boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
                       backgroundColor: theme === 'dark' ? '#1c1917' : '#ffffff',
-                      color: theme === 'dark' ? '#f5f5f4' : '#1c1917',
+                      padding: '8px 12px',
                     }}
-                    labelStyle={{ color: theme === 'dark' ? '#f5f5f4' : '#1c1917' }}
-                    itemStyle={{ color: theme === 'dark' ? '#f5f5f4' : '#1c1917' }}
+                    labelStyle={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: theme === 'dark' ? '#f5f5f4' : '#1c1917' }}
                   />
-                  <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorFlow)" />
+                  <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#colorFlow)" />
                 </AreaChart>
                 )}
               </MeasuredChart>
@@ -112,51 +113,51 @@ export default function DashboardCharts({
           {sidePanel}
         </div>
       ) : (
-        <div className="section-card p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-stone-900 dark:text-stone-100">{tx('Weekly Flow Trend')}</h3>
-            <div className="flex items-center gap-2 text-xs text-stone-500">
-              <Calendar size={14} />
+        <div className="section-card p-3 lg:p-4">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">
+              {tx('Weekly Flow Trend')}
+            </h3>
+            <div className="flex items-center gap-2 text-[10px] font-medium text-stone-400">
+              <Calendar size={12} />
               <span>{tx('Last 7 Days')}</span>
             </div>
           </div>
-          <div className="h-48 min-h-[192px]">
+          <div className="h-40 min-h-[160px]">
             <MeasuredChart className="h-full w-full min-w-0">
               {({ width, height }) => (
-              <AreaChart width={width} height={height} data={flowTrend}>
+              <AreaChart width={width} height={height} data={flowTrend} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
                 <defs>
                   <linearGradient id="colorFlow" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.1} />
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.15} />
                     <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#44403c' : '#e5e5e5'} />
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#292524' : '#f5f5f4'} />
                 <XAxis
                   dataKey="date"
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fontSize: 12, fill: theme === 'dark' ? '#a8a29e' : '#57534e' }}
-                  dy={10}
+                  tick={{ fontSize: 10, fill: theme === 'dark' ? '#78716c' : '#a8a29e' }}
+                  dy={5}
                 />
                 <YAxis
                   axisLine={false}
                   tickLine={false}
-                  tick={{ fontSize: 12, fill: theme === 'dark' ? '#a8a29e' : '#57534e' }}
-                  tickFormatter={(value) => value.toString()}
+                  tick={{ fontSize: 10, fill: theme === 'dark' ? '#78716c' : '#a8a29e' }}
                 />
                 <Tooltip
                   formatter={(value?: number) => [formatValue(value ?? 0), tx('Flow')]}
                   contentStyle={{
-                    borderRadius: '8px',
+                    borderRadius: '12px',
                     border: 'none',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+                    boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
                     backgroundColor: theme === 'dark' ? '#1c1917' : '#ffffff',
-                    color: theme === 'dark' ? '#f5f5f4' : '#1c1917',
+                    padding: '8px 12px',
                   }}
-                  labelStyle={{ color: theme === 'dark' ? '#f5f5f4' : '#1c1917' }}
-                  itemStyle={{ color: theme === 'dark' ? '#f5f5f4' : '#1c1917' }}
+                  labelStyle={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: theme === 'dark' ? '#f5f5f4' : '#1c1917' }}
                 />
-                <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorFlow)" />
+                <Area type="monotone" dataKey="value" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#colorFlow)" />
               </AreaChart>
               )}
             </MeasuredChart>
@@ -164,38 +165,38 @@ export default function DashboardCharts({
         </div>
       )}
 
-      <div className="section-card p-4">
-        <div className="flex items-center justify-between mb-4">
-          <div className="toggle-indirect-track inline-flex items-center rounded-xl border border-stone-200/90 dark:border-stone-800 p-1 gap-1 shadow-inner">
+      <div className="section-card p-3 lg:p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="toggle-indirect-track inline-flex items-center rounded-xl border border-stone-200/90 dark:border-stone-800 p-1 gap-1 shadow-inner bg-stone-50/50 dark:bg-stone-900/50">
             <button
               onClick={() => setInsightTab('outcomes')}
               className={cn(
-                'interactive-3d px-3 py-1.5 rounded-lg text-sm font-medium transition-all inline-flex items-center gap-1.5',
+                'interactive-3d px-2.5 py-1 rounded-lg text-xs font-semibold transition-all inline-flex items-center gap-1.5',
                 insightTab === 'outcomes' ? 'toggle-indirect-active' : 'toggle-indirect-idle'
               )}
             >
-              <Award size={13} />
+              <Award size={12} />
               {getMetricLabel('topEntitys')}
             </button>
             <button
               onClick={() => setInsightTab('hours')}
               className={cn(
-                'interactive-3d px-3 py-1.5 rounded-lg text-sm font-medium transition-all inline-flex items-center gap-1.5',
+                'interactive-3d px-2.5 py-1 rounded-lg text-xs font-semibold transition-all inline-flex items-center gap-1.5',
                 insightTab === 'hours' ? 'toggle-indirect-active' : 'toggle-indirect-idle'
               )}
             >
-              <Clock size={13} />
+              <Clock size={12} />
               {getMetricLabel('peakHours')}
             </button>
           </div>
           {insightTab === 'hours' && (
-            <span className="text-xs text-stone-500 flex items-center gap-1">
-              <Clock size={12} />
-              Activity Start Times
+            <span className="text-[10px] font-bold uppercase tracking-widest text-stone-400 flex items-center gap-1">
+              <Clock size={10} />
+              Real-time Start Distribution
             </span>
           )}
         </div>
-        <div className="h-48 min-h-[192px]">
+        <div className="h-44 min-h-[176px]">
           {insightTab === 'outcomes' ? (
             <MeasuredChart className="h-full w-full min-w-0">
               {({ width, height }) => (
@@ -222,7 +223,7 @@ export default function DashboardCharts({
                 />
                 <Bar dataKey="net" radius={[0, 4, 4, 0]} barSize={16}>
                   {topOutcomes.map((record, index) => (
-                    <Cell key={`cell-${index}`} fill={(record.direction === 'increase' ? record.unit_amount : -record.unit_amount) >= 0 ? '#10b981' : '#ef4444'} />
+                    <Cell key={`cell-${index}`} fill={record.isPositive ? '#10b981' : '#ef4444'} />
                   ))}
                 </Bar>
               </BarChart>
@@ -231,16 +232,18 @@ export default function DashboardCharts({
           ) : (
             <MeasuredChart className="h-full w-full min-w-0">
               {({ width, height }) => (
-              <ScatterChart width={width} height={height} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke={theme === 'dark' ? '#44403c' : '#e5e5e5'} />
+              <ScatterChart width={width} height={height} margin={{ top: 20, right: 30, bottom: 20, left: 10 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#33302e' : '#f5f5f4'} />
                 <XAxis
                   type="number"
                   dataKey="hour"
                   name="Hour"
                   domain={[0, 23]}
-                  tickCount={12}
+                  tickCount={13}
                   tickFormatter={(hour) => `${hour}:00`}
                   tick={{ fontSize: 10, fill: theme === 'dark' ? '#a8a29e' : '#57534e' }}
+                  axisLine={false}
+                  tickLine={false}
                 />
                 <YAxis
                   type="number"
@@ -250,26 +253,37 @@ export default function DashboardCharts({
                   tickCount={7}
                   tickFormatter={(day) => days[day]}
                   tick={{ fontSize: 10, fill: theme === 'dark' ? '#a8a29e' : '#57534e' }}
+                  axisLine={false}
+                  tickLine={false}
+                  reversed
                 />
-                <ZAxis type="number" dataKey="value" range={[50, 400]} name="Activities" />
+                <ZAxis type="number" dataKey="value" range={[100, 1000]} name="Activities" />
                 <Tooltip
                   cursor={{ strokeDasharray: '3 3' }}
                   content={({ active, payload }) => {
                     if (active && payload && payload.length) {
                       const data = payload[0].payload as HeatmapPoint;
                       return (
-                        <div className="section-card p-2 shadow-lg text-xs">
-                          <p className="font-medium text-stone-900 dark:text-stone-100">
+                        <div className="section-card p-3 shadow-xl text-xs border-none bg-white dark:bg-stone-900">
+                          <p className="font-bold text-stone-900 dark:text-stone-100 flex items-center gap-2 mb-1">
+                            <Clock size={12} className="text-amber-500" />
                             {days[data.day]} at {data.hour}:00
                           </p>
-                          <p className="text-stone-500 dark:text-stone-400">{data.value} activities started</p>
+                          <p className="text-stone-500 dark:text-stone-400">
+                            <span className="text-stone-900 dark:text-stone-100 font-medium">{data.value}</span> activities started
+                          </p>
                         </div>
                       );
                     }
                     return null;
                   }}
                 />
-                <Scatter name="Activities" data={activeHeatmapData} fill={theme === 'dark' ? '#10b981' : '#059669'} />
+                <Scatter 
+                  name="Activities" 
+                  data={activeHeatmapData} 
+                  fill={theme === 'dark' ? '#10b981' : '#059669'} 
+                  fillOpacity={0.6}
+                />
               </ScatterChart>
               )}
             </MeasuredChart>
