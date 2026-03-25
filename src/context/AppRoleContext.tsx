@@ -58,10 +58,9 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return;
       }
 
-      if (metadataRole) {
-        setProfileRoleLoading(false);
-        return;
-      }
+      // Removed early return: We must always query the database to hydrate 
+      // administrative context (isPlatformAdmin, manageableClusters) even if 
+      // metadataRole provides the basic AppRole string.
 
       setProfileRoleLoading(true);
 

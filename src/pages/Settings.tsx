@@ -194,12 +194,29 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [exportDataset, setExportDataset] = React.useState<string>('all');
   const [isExporting, setIsExporting] = React.useState(false);
   const [lastExportMeta, setLastExportMeta] = React.useState<{ rows: number; ts: string } | null>(null);
+  
+  // Organization Identity State
+  const [editOrgName, setEditOrgName] = React.useState('');
+  const [editOrgTag, setEditOrgTag] = React.useState('');
+  const [editOrgSlug, setEditOrgSlug] = React.useState('');
+  const [isUpdatingOrgIdentity, setIsUpdatingOrgIdentity] = React.useState(false);
+
   const isOrgAdmin = !isClusterAdmin && role === 'admin';
 
   // Sync local scopeClusterId with the global contextClusterId when it changes (e.g. after switchOrg)
   React.useEffect(() => {
     if (contextClusterId) setScopeClusterId(contextClusterId);
   }, [contextClusterId]);
+
+  // Sync Organization Identity fields when activeOrgId changes
+  React.useEffect(() => {
+    if (activeOrgId && availableOrgs[activeOrgId]) {
+      const org = availableOrgs[activeOrgId];
+      setEditOrgName(org.name || '');
+      setEditOrgTag(org.tag || '');
+      setEditOrgSlug(org.slug || '');
+    }
+  }, [activeOrgId, availableOrgs]);
 
   const canManageGlobalData = canAccessAdminUi;
   const profileId = user?.id ?? '';
@@ -210,6 +227,32 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const profileUpdateSql = profileId
     ? `update public.profiles\nset org_id = 'YOUR_ORG_UUID'\nwhere id = '${profileId}';`
     : `update public.profiles\nset org_id = 'YOUR_ORG_UUID'\nwhere id = 'YOUR_AUTH_USER_ID';`;
+
+  const handleUpdateOrgIdentity = async () => {
+    if (!activeOrgId || !supabase) return;
+    setIsUpdatingOrgIdentity(true);
+    try {
+      const accessToken = await getSupabaseAccessToken();
+      const { error } = await supabase.functions.invoke('manage-organizations', {
+        headers: { Authorization: `Bearer ${accessToken}`, apikey: SUPABASE_ANON_KEY },
+        body: {
+          action: 'update-organization-identity',
+          org_id: activeOrgId,
+          name: editOrgName,
+          tag: editOrgTag,
+          slug: editOrgSlug
+        }
+      });
+      if (error) throw error;
+      notify({ type: 'success', message: 'Organization identity updated.' });
+      await refreshData();
+      await refreshAuthority();
+    } catch (err) {
+      notify({ type: 'error', message: `Update failed: ${err instanceof Error ? err.message : String(err)}` });
+    } finally {
+      setIsUpdatingOrgIdentity(false);
+    }
+  };
 
   const clearGlobalData = async () => {
     if (!canManageGlobalData) {
@@ -958,6 +1001,65 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
             </div>
           </div>
         </div>
+
+        {/* SECTION 2.5: ORGANIZATION IDENTITY (Identity Governance) */}
+        {(isPlatformAdmin || isClusterAdmin) && activeOrgId && (
+          <div className="section border-t border-stone-200 dark:border-stone-800 pt-8">
+            <div className="flex items-center gap-2 mb-6">
+              <ShieldCheck size={20} className="text-stone-400" />
+              <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Organization Identity</h3>
+            </div>
+
+            <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm p-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Organization Name</label>
+                  <input
+                    type="text"
+                    className="control-input"
+                    value={editOrgName}
+                    onChange={(e) => setEditOrgName(e.target.value)}
+                    placeholder="e.g. Acme Corporation"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Identity Tag</label>
+                  <input
+                    type="text"
+                    className="control-input font-mono text-xs"
+                    value={editOrgTag}
+                    onChange={(e) => setEditOrgTag(e.target.value.toUpperCase())}
+                    placeholder="e.g. OPS"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Identity Slug</label>
+                  <input
+                    type="text"
+                    className="control-input font-mono text-xs"
+                    value={editOrgSlug}
+                    onChange={(e) => setEditOrgSlug(e.target.value.toLowerCase().replace(/\s+/g, '-'))}
+                    placeholder="e.g. acme-ops"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-6 border-t border-stone-100 dark:border-stone-800">
+                <p className="text-[11px] text-stone-500 italic max-w-md">
+                  Updates to organizational identity propagate across the platform instantly. Ensure slugs and tags align with unified naming conventions.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleUpdateOrgIdentity}
+                  disabled={isUpdatingOrgIdentity}
+                  className="px-4 py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-xl text-xs font-bold hover:opacity-90 transition-all disabled:opacity-50"
+                >
+                  {isUpdatingOrgIdentity ? 'Updating...' : 'Update Identity'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* SECTION 3: ADMINISTRATION (Invites & Requests) */}
         {canViewOperatorLogs && (

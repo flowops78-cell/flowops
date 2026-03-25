@@ -106,13 +106,16 @@ type DbRole = 'admin' | 'operator' | 'viewer';
 type ClusterRole = 'cluster_admin' | 'cluster_operator' | 'viewer';
 
 type ManageOrganizationsPayload = {
-  action: 'bootstrap-cluster-admin' | 'list-cluster-admins' | 'provision-organization' | 'switch-active-org' | 'set-cluster-role' | 'delete-user' | 'reset-user-password' | 'list';
+  action: 'bootstrap-cluster-admin' | 'list-cluster-admins' | 'provision-organization' | 'switch-active-org' | 'set-cluster-role' | 'delete-user' | 'reset-user-password' | 'update-organization-identity' | 'list';
   org_id?: string;
   cluster_id?: string;
   target_user_id?: string;
   target_role?: DbRole | ClusterRole;
   new_password?: string;
   access_token?: string;
+  name?: string;
+  tag?: string;
+  slug?: string;
 };
 
 type ManagedAccount = {
@@ -448,6 +451,58 @@ Deno.serve(async (request: Request) => {
       if (sendError) return json(400, { error: sendError.message }, origin);
 
       return json(200, { ok: true, message: 'Reset email sent.' }, origin);
+    }
+
+    // Action: update-organization-identity
+    if (payload.action === 'update-organization-identity') {
+      const orgId = normalizeId(payload.org_id);
+      const name = normalizeId(payload.name);
+      const tag = normalizeId(payload.tag);
+      const slug = normalizeId(payload.slug);
+
+      if (!orgId) return json(400, { error: 'org_id is required.' }, origin);
+
+      // Verify access to the organization
+      const { data: targetOrg } = await adminClient
+        .from('organizations')
+        .select('cluster_id')
+        .eq('id', orgId)
+        .maybeSingle();
+      
+      if (!targetOrg) return json(404, { error: 'Organization not found.' }, origin);
+
+      if (!authority.isPlatformAdmin) {
+        // Must be cluster admin for this org's cluster
+        const { data: clusterMembership } = await adminClient
+          .from('cluster_memberships')
+          .select('id')
+          .eq('user_id', callerUserId)
+          .eq('cluster_id', targetOrg.cluster_id)
+          .eq('role', 'cluster_admin')
+          .maybeSingle();
+        
+        if (!clusterMembership) {
+          return json(403, { error: 'You do not have administrative authority over this organization.' }, origin);
+        }
+      }
+
+      const updates: Record<string, string | null> = {};
+      if (name !== null) updates.name = name;
+      if (tag !== null) updates.tag = tag;
+      if (slug !== null) updates.slug = slug;
+
+      if (Object.keys(updates).length === 0) {
+        return json(400, { error: 'No valid identity fields provided for update.' }, origin);
+      }
+
+      const { error: updateError } = await adminClient
+        .from('organizations')
+        .update(updates)
+        .eq('id', orgId);
+
+      if (updateError) return json(400, { error: updateError.message }, origin);
+
+      return json(200, { ok: true, message: 'Organization identity updated.' }, origin);
     }
 
   // Default Action: list (all organizations and users in scope)
