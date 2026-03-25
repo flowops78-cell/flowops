@@ -237,13 +237,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const updateActivity = async (activity: any) => {
-    const { error } = await supabase!.from('activities').update({
+    const updates: any = {
       label: activity.label || activity.name,
       date: activity.date,
       status: activity.status || 'active',
       channel_label: activity.channel_label || activity.channel,
       assigned_user_id: activity.assigned_user_id
-    }).eq('id', activity.id);
+    };
+
+    if (activity.start_time) updates.start_time = activity.start_time;
+    if (activity.operational_weight !== undefined) updates.operational_weight = activity.operational_weight;
+    if (activity.channel_weight !== undefined) updates.channel_weight = activity.channel_weight;
+    if (activity.activity_mode) updates.activity_mode = activity.activity_mode;
+
+    const { error } = await supabase!.from('activities').update(updates).eq('id', activity.id);
     if (error) throw error;
     await fetchData();
   };
@@ -256,19 +263,23 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addRecord = async (data: any) => {
     const orgId = requireOrgScope();
-    const { error } = await supabase!
-      .from('records')
-      .insert([{ 
-        org_id: orgId,
-        activity_id: data.activity_id,
-        entity_id: data.entity_id,
-        direction: data.direction,
-        status: data.status || 'pending',
-        unit_amount: data.unit_amount,
-        transfer_group_id: data.transfer_group_id,
-        channel_label: data.channel_label,
-        notes: data.notes
-      }]);
+    const recordData: any = { 
+      org_id: orgId,
+      activity_id: data.activity_id,
+      entity_id: data.entity_id,
+      direction: data.direction,
+      status: data.status || 'pending',
+      unit_amount: data.unit_amount,
+      transfer_group_id: data.transfer_group_id,
+      notes: data.notes
+    };
+    
+    // channel_label is new, omit if missing to avoid 400 if migration not applied
+    if (data.channel_label) {
+      recordData.channel_label = data.channel_label;
+    }
+
+    const { error } = await supabase!.from('records').insert([recordData]);
     if (error) throw error;
     await fetchData();
   };
@@ -328,17 +339,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const requestAdjustment = async (data: any) => {
     const orgId = requireOrgScope();
-    const { error } = await supabase!
-      .from('records')
-      .insert([{ 
-        org_id: orgId,
-        entity_id: data.entity_id,
-        unit_amount: data.amount,
-        direction: data.type === 'input' ? 'increase' : 'decrease',
-        status: 'deferred',
-        channel_label: data.channel_label,
-        notes: data.notes || 'Adjustment request'
-      }]);
+    const recordData: any = {
+      org_id: orgId,
+      entity_id: data.entity_id,
+      unit_amount: data.amount,
+      direction: data.type === 'input' ? 'increase' : 'decrease',
+      status: 'deferred',
+      notes: data.notes || 'Adjustment request'
+    };
+
+    if (data.channel_label) {
+      recordData.channel_label = data.channel_label;
+    }
+
+    const { error } = await supabase!.from('records').insert([recordData]);
     if (error) throw error;
     await fetchData();
   };
