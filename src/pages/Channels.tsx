@@ -2022,18 +2022,17 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                 <p className="text-sm text-stone-500 dark:text-stone-400"><span className="font-mono text-stone-900 dark:text-stone-100 font-medium">{formatValue(totalOutstanding)}</span> · {filteredActiveAdjustments.length} live · {pendingAdjustmentRequests.length} pending</p>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
-                <DataActionMenu
-                  className="text-xs"
-                  items={[
-
-                    {
-                      key: 'new-adjustment-transfer',
-                      label: 'Add Live ActivityRecord',
-                      onClick: () => setIsAddingAdjustment(true),
-                      disabled: !canOperateValue,
-                    },
-                  ]}
-                />
+                {canOperateValue && (
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingAdjustment(true)}
+                    className="action-btn-secondary text-xs"
+                    title="Add Live Record"
+                  >
+                    <Plus size={13} />
+                    Add Live Record
+                  </button>
+                )}
               </div>
             </div>
 
@@ -2111,6 +2110,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                     <input
                       className="control-input"
+                      placeholder="Search entities..."
                       value={adjustmentSearchQuery}
                       onChange={event => setAdjustmentSearchQuery(event.target.value)}
                     />
@@ -2153,19 +2153,19 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
             {isAddingAdjustment && (
               <form onSubmit={handleAddAdjustment} className="mb-6 pt-4 border-t border-stone-200/80 dark:border-stone-800/80">
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                  <select 
+                  <select
                     className="control-input"
                     value={adjustmentUnitId}
                     onChange={e => setAdjustmentUnitId(e.target.value)}
                     disabled={!canOperateValue || isSavingAdjustment}
                     required
                   >
-                    <option value="">Select Collaboration...</option>
+                    <option value="">Select Entity...</option>
                     {entities.map(p => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
                   </select>
-                  <select 
+                  <select
                     className="control-input"
                     value={adjustmentType}
                     onChange={e => setAdjustmentType(e.target.value as any)}
@@ -2175,28 +2175,28 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     <option value="output">Inflow</option>
                   </select>
                   <div className="flex items-center rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 overflow-hidden focus-within:ring-2 focus-within:ring-stone-500">
-                    <input 
-                      type="number" 
-                      className="w-full bg-transparent border-0 px-3 py-2.5 text-stone-900 dark:text-stone-100 focus:outline-none" 
-                      placeholder="Amount" 
-                      value={adjustmentAmount} 
-                      onChange={e => setAdjustmentAmount(e.target.value)} 
+                    <input
+                      type="number"
+                      className="w-full bg-transparent border-0 px-3 py-2.5 text-stone-900 dark:text-stone-100 focus:outline-none"
+                      placeholder="Amount"
+                      value={adjustmentAmount}
+                      onChange={e => setAdjustmentAmount(e.target.value)}
                       disabled={!canOperateValue || isSavingAdjustment}
-                      required 
+                      required
                     />
                   </div>
                 </div>
                 <div className="flex justify-end gap-2">
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     onClick={() => setIsAddingAdjustment(false)}
                     disabled={isSavingAdjustment}
                     className="action-btn-tertiary px-3 py-1.5 text-xs"
                   >
                     Cancel
                   </button>
-                  <button 
-                    type="submit" 
+                  <button
+                    type="submit"
                     disabled={!canOperateValue || isSavingAdjustment}
                     className="px-3 py-1.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-md text-xs hover:bg-stone-800 dark:hover:bg-stone-200 disabled:opacity-70 disabled:cursor-not-allowed"
                   >
@@ -2375,7 +2375,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                 <thead className="sticky top-0 z-10 bg-stone-50 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-700">
                   <tr>
                     <th className="sticky-col px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Date</th>
-                    <th className="px-6 py-2.5 w-[220px] text-[11px] font-semibold uppercase tracking-wide">Contact</th>
+                    <th className="px-6 py-2.5 w-[220px] text-[11px] font-semibold uppercase tracking-wide">Entity</th>
                     <th className="px-6 py-2.5 w-[170px] text-[11px] font-semibold uppercase tracking-wide">Direction</th>
                     <th className="px-6 py-2.5 w-[150px] text-right text-[11px] font-semibold uppercase tracking-wide">Amount</th>
                     <th className="sticky-col-right px-6 py-2.5 w-[170px] text-right text-[11px] font-semibold uppercase tracking-wide">Actions</th>
