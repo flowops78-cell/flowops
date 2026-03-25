@@ -240,30 +240,45 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
   };
 }
 
+let tokenPromise: Promise<string | null> | null = null;
+
 export async function getSupabaseAccessToken() {
   if (!supabase) return null;
+  
+  if (tokenPromise) return tokenPromise;
 
-  const { data, error } = await supabase.auth.getSession();
-  const session = data.session;
-  if (error || !session?.access_token) return null;
+  tokenPromise = (async () => {
+    try {
+      const { data, error } = await supabase.auth.getSession();
+      const session = data.session;
+      
+      if (!error && session?.access_token) {
+        // Validate token with getUser to ensure it's not just a stale local token
+        const { data: authUserData, error: authUserError } = await supabase.auth.getUser(session.access_token);
+        if (!authUserError && authUserData.user) {
+          return session.access_token;
+        }
+      }
 
-  const { data: authUserData, error: authUserError } = await supabase.auth.getUser(session.access_token);
-  if (!authUserError && authUserData.user) {
-    return session.access_token;
-  }
+      // If session is missing or token invalid, try to refresh
+      const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
+      const refreshedSession = refreshData.session;
+      if (refreshError || !refreshedSession?.access_token) {
+        return null;
+      }
 
-  const { data: refreshData, error: refreshError } = await supabase.auth.refreshSession();
-  const refreshedSession = refreshData.session;
-  if (refreshError || !refreshedSession?.access_token) {
-    return null;
-  }
+      const { data: refreshedUserData, error: refreshedUserError } = await supabase.auth.getUser(refreshedSession.access_token);
+      if (refreshedUserError || !refreshedUserData.user) {
+        return null;
+      }
 
-  const { data: refreshedUserData, error: refreshedUserError } = await supabase.auth.getUser(refreshedSession.access_token);
-  if (refreshedUserError || !refreshedUserData.user) {
-    return null;
-  }
+      return refreshedSession.access_token;
+    } finally {
+      tokenPromise = null;
+    }
+  })();
 
-  return refreshedSession.access_token;
+  return tokenPromise;
 }
 
 export function getSupabase() {

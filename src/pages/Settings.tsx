@@ -160,15 +160,14 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     options: { retry?: boolean } = { retry: true }
   ): Promise<{ data: T | null; error: any }> => {
     const execute = async (isRetry: boolean): Promise<{ data: T | null; error: any }> => {
-      const { data: { session }, error: sessionError } = await supabase!.auth.getSession();
-      
-      if (sessionError || !session?.access_token) {
+      const token = await getSupabaseAccessToken();
+      if (!token) {
         throw new Error("No active session. Please sign in again.");
       }
 
       const { data, error } = await supabase!.functions.invoke<T>(functionName, {
         headers: { 
-          'Authorization': `Bearer ${session.access_token}`,
+          'Authorization': `Bearer ${token}`,
           'X-Client-Info': 'flow-ops-admin'
         },
         body,

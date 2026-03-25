@@ -46,6 +46,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
+      // Avoid redundant adoption if token is unchanged
+      if (activity?.access_token === nextSession.access_token) {
+        setLoading(false);
+        return;
+      }
+
       const { data: authUserData, error: authUserError } = await client.auth.getUser(nextSession.access_token);
       if (!mounted) return;
 
@@ -67,15 +73,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .eq('id', nextSession.user.id);
       }
     };
-
-    const bootstrap = async () => {
-      const client = supabase;
-      if (!client) return;
-      const { data } = await client.auth.getSession();
-      await adoptSession(data.session);
-    };
-
-    void bootstrap();
 
     const { data } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
       if (event === 'SIGNED_OUT') {

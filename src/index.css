@@ -144,7 +144,7 @@
     -webkit-overflow-scrolling: touch;
     overscroll-behavior-x: contain;
     scrollbar-gutter: stable;
-    touch-action: pan-x pan-y;
+    touch-action: manipulation;
   }
 
   .overflow-x-auto.drag-scroll-enabled,
@@ -169,12 +169,14 @@
     html,
     body,
     #root {
-      overscroll-behavior-y: none;
+      overscroll-behavior-y: auto;
+      touch-action: manipulation;
     }
 
     .app-scroll-smooth {
       -webkit-overflow-scrolling: touch;
-      overscroll-behavior-y: contain;
+      overscroll-behavior-y: auto;
+      touch-action: manipulation;
     }
   }
 

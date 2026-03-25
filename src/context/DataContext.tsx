@@ -84,8 +84,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return localStorage.getItem('flow_ops_last_org_id');
   });
 
-  const { loading: roleLoading, managedOrgIds, isClusterAdmin, clusterId } = useAppRole();
-  const { loading: authLoading } = useAuth();
+  const { loading: roleLoading, managedOrgIds, serverActiveOrgId, isClusterAdmin, clusterId } = useAppRole();
+  const { user, loading: authLoading } = useAuth();
   const isDemoMode = !isSupabaseConfigured;
 
   const fetchData = async () => {
@@ -152,6 +152,29 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       fetchData();
     }
   }, [authLoading, roleLoading, activeOrgId]);
+
+  // Effect: Synchronize activeOrgId with serverActiveOrgId on first load or fallback to first managed org
+  useEffect(() => {
+    if (roleLoading || authLoading || activeOrgId || isDemoMode) return;
+
+    if (serverActiveOrgId) {
+      setActiveOrgId(serverActiveOrgId);
+      localStorage.setItem('flow_ops_last_org_id', serverActiveOrgId);
+    } else if (managedOrgIds.length > 0) {
+      // Auto-bootstrap: choose first organization
+      const firstOrgId = managedOrgIds[0];
+      console.log('Auto-bootstrapping workspace context:', firstOrgId);
+      setActiveOrgId(firstOrgId);
+      localStorage.setItem('flow_ops_last_org_id', firstOrgId);
+      
+      // Update server profile to persist this choice
+      if (supabase && user?.id) {
+        supabase.from('profiles').update({ active_org_id: firstOrgId }).eq('id', user.id).then(({ error }) => {
+          if (error) console.error('Error persisting bootstrapped context:', error);
+        });
+      }
+    }
+  }, [roleLoading, authLoading, serverActiveOrgId, managedOrgIds.join(','), activeOrgId, user?.id, isDemoMode]);
 
   // Dedicated effect: refresh available orgs whenever the admin's managed org list changes
   // This ensures the Scoped Context Switcher updates immediately after provisioning
