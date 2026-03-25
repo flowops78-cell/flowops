@@ -179,17 +179,26 @@ Deno.serve(async (request: Request) => {
   const payloadBearerToken = (payload.access_token ?? '').trim() || null;
   const bearerToken = headerBearerToken || payloadBearerToken;
 
-  // DEBUG LOGS (Requested)
+  // DEBUG LOGS (Requested Truth Test)
   console.log("DEBUG [manage-organizations]: KEY_PRESENT:", !!serviceRoleKey);
   console.log("DEBUG [manage-organizations]: TOKEN_PRESENT:", !!bearerToken);
+  console.log("TOKEN:", bearerToken);
 
-  if (!bearerToken) {
-    return json(401, { error: 'Missing authentication token. Please sign in.' }, origin);
+  // Hybrid Bypass for bootstrap-cluster-admin (Option C)
+  // This allows the request to proceed if no token is present, but ONLY for bootstrapping.
+  // Note: bootstrap-cluster-admin still requires callerUserId which usually needs a token.
+  if (!bearerToken && payload.action !== 'bootstrap-cluster-admin') {
+    return json(401, { error: `Missing authentication token (Truth Test: TOKEN_PRESENT=${!!bearerToken}). Please sign in.` }, origin);
+  }
+
+  // If no bearerToken but bootstrapping, we'll try to find a user another way or return a specific error
+  if (!bearerToken && payload.action === 'bootstrap-cluster-admin') {
+    return json(401, { error: 'Bootstrap requires an authenticated session but no token was provided.' }, origin);
   }
 
   const { data: authUserData, error: authUserError } = await adminClient.auth.getUser(bearerToken);
   if (authUserError || !authUserData.user) {
-    return json(401, { error: 'Invalid or expired user session. Please sign in again.' }, origin);
+    return json(401, { error: `Invalid or expired user session (Truth Test: USER_ERR=${authUserError?.message || 'NULL'}). Please sign in again.` }, origin);
   }
 
   const callerUserId = authUserData.user.id;

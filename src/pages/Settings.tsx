@@ -176,10 +176,12 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       return { data: null, error: new Error("Authentication required") };
     }
 
-    // 2. Standardized Invoke (auto-injects JWT)
+    // 2. Standardized Invoke (Explicitly inject JWT to ensure coverage)
+    console.log(`[invokeSafe] Calling ${functionName} with explicit JWT...`);
     return await supabase!.functions.invoke<T>(functionName, {
       body,
       headers: {
+        'Authorization': `Bearer ${session.access_token}`,
         'X-Client-Info': 'flow-ops-admin'
       }
     });
