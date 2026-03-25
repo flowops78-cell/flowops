@@ -146,7 +146,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     const { data: orgs } = await supabase
       .from('organizations')
-      .select('id, name, tag, slug')
+      .select('id, name, tag, slug, cluster_id')
       .in('id', managedOrgIds);
     if (orgs) {
       const orgMap = (orgs as any[]).reduce((acc, org) => ({ ...acc, [org.id]: org }), {} as Record<string, Organization>);
@@ -299,6 +299,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     await fetchData();
   };
 
+  const { refreshAuthority } = useAppRole();
+
   const switchOrg = async (orgId: string) => {
     setActiveOrgId(orgId);
     if (typeof window !== 'undefined') {
@@ -311,8 +313,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const updates: any = { active_org_id: orgId };
       if (selectedOrg?.cluster_id) {
         updates.active_cluster_id = selectedOrg.cluster_id;
+      } else {
+        // Fallback: fetch org cluster_id if not in availableOrgs map yet
+        const { data: orgData } = await supabase!.from('organizations').select('cluster_id').eq('id', orgId).maybeSingle();
+        if (orgData?.cluster_id) updates.active_cluster_id = orgData.cluster_id;
       }
       await supabase!.from('profiles').update(updates).eq('id', user.id);
+      
+      // CRITICAL: Refresh role context after profile update to sync authority
+      await refreshAuthority();
     }
     
     // fetchData will be triggered by useEffect dependency on activeOrgId
