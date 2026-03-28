@@ -340,6 +340,14 @@ AS $$
     WHERE user_id = auth.uid()
       AND org_id = target_org
       AND status = 'active'
+  )
+  OR EXISTS (
+    SELECT 1
+    FROM public.organizations o
+    JOIN public.cluster_memberships cm ON cm.cluster_id = o.cluster_id
+    WHERE o.id = target_org
+      AND cm.user_id = auth.uid()
+      AND cm.role IN ('cluster_admin', 'cluster_operator')
   );
 $$;
 

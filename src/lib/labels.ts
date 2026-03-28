@@ -5,10 +5,10 @@ export const LABELS = {
 	group: 'Group',
 	currentWorkspace: 'Current workspace',
 	roles: {
-		systemAdmin: 'System Admin',
-		groupManager: 'Group Manager',
-		workspaceManager: 'Workspace Manager',
-		operator: 'Operator',
+		groupManager: 'Group admin',
+		groupOperator: 'Group manager',
+		workspaceAdmin: 'Workspace admin',
+		workspaceManager: 'Workspace manager',
 		viewer: 'Viewer',
 	},
 	actions: {
@@ -24,16 +24,14 @@ export const LABELS = {
 
 export const getRoleLabel = (role: string | null | undefined): string => {
 	switch (role) {
-		case 'platform_admin':
-			return LABELS.roles.systemAdmin;
 		case 'cluster_admin':
 			return LABELS.roles.groupManager;
 		case 'cluster_operator':
-			return 'Group Operator';
+			return LABELS.roles.groupOperator;
 		case 'admin':
-			return LABELS.roles.workspaceManager;
+			return LABELS.roles.workspaceAdmin;
 		case 'operator':
-			return LABELS.roles.operator;
+			return LABELS.roles.workspaceManager;
 		case 'viewer':
 			return LABELS.roles.viewer;
 		default:

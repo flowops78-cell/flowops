@@ -31,7 +31,7 @@ Built with React 19, TypeScript, Vite, and Supabase.
    `cp .env.example .env`
 3. Set env vars in `.env`
    - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_PUBLISHABLE_KEY` — the Supabase **anon** (public) key for the browser client. The app reads this variable (see `src/lib/supabase.ts`). Older docs may call it `VITE_SUPABASE_ANON_KEY`; use the publishable key name to match `.env.example`.
+   - `VITE_SUPABASE_PUBLISHABLE_KEY` **or** `VITE_SUPABASE_ANON_KEY` — the Supabase **public** key (publishable `sb_publishable_…` or classic anon JWT). The app accepts either (see `src/lib/supabase.ts`).
 4. Run app
    `npm run dev`
 
@@ -106,7 +106,7 @@ This is a static Vite app. Deploy the `dist/` output from `npm run build`.
 - Output directory: `dist`
 - Environment variables:
   - `VITE_SUPABASE_URL`
-  - `VITE_SUPABASE_ANON_KEY`
+  - `VITE_SUPABASE_PUBLISHABLE_KEY` or `VITE_SUPABASE_ANON_KEY`
 
 ### Netlify
 
@@ -114,7 +114,7 @@ This is a static Vite app. Deploy the `dist/` output from `npm run build`.
 - Publish directory: `dist`
 - Environment variables:
   - `VITE_SUPABASE_URL`
-  - `VITE_SUPABASE_ANON_KEY`
+  - `VITE_SUPABASE_PUBLISHABLE_KEY` or `VITE_SUPABASE_ANON_KEY`
 
 ### Any Static Host (S3/Cloudflare Pages/etc.)
 

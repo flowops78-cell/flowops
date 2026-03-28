@@ -7,7 +7,7 @@
  * token with `auth.getUser` (anon client) before calling admin APIs.
  *
  * POST + Authorization: Bearer <user_access_token>
- * Env: SUPABASE_URL, SUPABASE_ANON_KEY, SB_SERVICE_ROLE_KEY or SUPABASE_SERVICE_ROLE_KEY
+ * Env: SUPABASE_URL, SUPABASE_ANON_KEY (or VITE_SUPABASE_PUBLISHABLE_KEY / VITE_SUPABASE_ANON_KEY), SB_SERVICE_ROLE_KEY or SUPABASE_SERVICE_ROLE_KEY
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
@@ -41,8 +41,11 @@ Deno.serve(async (request: Request) => {
     return rateLimitResponse(rl.retryAfterMs ?? 1000, origin, getCorsHeaders(origin));
   }
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL') || 'https://yudmcgtfqchzcgmcbcrk.supabase.co';
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') || Deno.env.get('VITE_SUPABASE_ANON_KEY');
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
+  const anonKey =
+    Deno.env.get('SUPABASE_ANON_KEY') ||
+    Deno.env.get('VITE_SUPABASE_PUBLISHABLE_KEY') ||
+    Deno.env.get('VITE_SUPABASE_ANON_KEY');
   const serviceRoleKey =
     Deno.env.get('SB_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 

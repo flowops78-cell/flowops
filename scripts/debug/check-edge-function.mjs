@@ -8,7 +8,8 @@ import { loadEnv } from './load-env.mjs';
 loadEnv();
 
 const url = (process.env.VITE_SUPABASE_URL || '').replace(/\/$/, '');
-const anon = process.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+const anon =
+  process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
 
 if (!url || !anon) {
   console.error('❌ debug:functions — missing VITE env.');

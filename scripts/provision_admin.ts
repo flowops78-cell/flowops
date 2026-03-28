@@ -1,7 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const serviceRoleKey = process.env.SB_SERVICE_ROLE_KEY;
+const serviceRoleKey = process.env.SB_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const adminEmail = process.env.FLOW_OPS_ADMIN_EMAIL;
 const adminPassword = process.env.FLOW_OPS_ADMIN_PASSWORD;
 
@@ -18,7 +18,7 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
 });
 
 async function setup() {
-  console.log('Provisioning global admin account...');
+  console.log('Provisioning primary group + workspace admin...');
 
   // 1. Create the Auth User
   const { data: userData, error: userError } = await supabase.auth.admin.createUser({
@@ -52,7 +52,6 @@ async function setup() {
 
   // 3. Assign the Roles
   console.log('Assigning roles and profile...');
-  await supabase.from('platform_roles').upsert({ user_id: userId, role: 'platform_admin' });
   await supabase.from('cluster_memberships').upsert({
     user_id: userId,
     cluster_id: clusterId,
@@ -73,7 +72,7 @@ async function setup() {
     is_default_org: true
   }, { onConflict: 'user_id,org_id' });
 
-  console.log('Global admin provisioned successfully!');
+  console.log('Group and workspace admin provisioned successfully!');
 }
 
 setup().catch(err => {

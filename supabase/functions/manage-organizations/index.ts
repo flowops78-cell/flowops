@@ -102,6 +102,52 @@ function rateLimitResponse(
 
 const RATE_LIMIT: RateLimitConfig = { maxRequests: 30, windowMs: 60_000 };
 
+type SupabaseAdmin = ReturnType<typeof createClient>;
+
+/** Emails for specific auth user IDs only (avoids `listUsers` full-project scans). */
+async function buildEmailMapForUserIds(
+  adminClient: SupabaseAdmin,
+  userIds: string[],
+): Promise<Map<string, string | null>> {
+  const unique = [...new Set(userIds.filter(Boolean))];
+  const map = new Map<string, string | null>();
+  const batchSize = 15;
+  for (let i = 0; i < unique.length; i += batchSize) {
+    const slice = unique.slice(i, i + batchSize);
+    const results = await Promise.all(slice.map((id) => adminClient.auth.admin.getUserById(id)));
+    for (let j = 0; j < slice.length; j++) {
+      map.set(slice[j], results[j].data?.user?.email ?? null);
+    }
+  }
+  return map;
+}
+
+/**
+ * Auth admin has no get-by-email; paginate until match (bounded) instead of loading all users into memory.
+ */
+async function findAuthUserIdByEmail(
+  adminClient: SupabaseAdmin,
+  email: string,
+  maxPages = 100,
+): Promise<string | null> {
+  const target = email.toLowerCase().trim();
+  let page = 1;
+  for (let n = 0; n < maxPages; n++) {
+    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage: 200 });
+    if (error || !data?.users?.length) return null;
+    const hit = data.users.find((u: { email?: string | null; id?: string }) =>
+      u.email?.toLowerCase() === target,
+    );
+    if (hit?.id) return hit.id;
+    if (data.nextPage != null && data.nextPage > page) {
+      page = data.nextPage;
+      continue;
+    }
+    break;
+  }
+  return null;
+}
+
 type DbRole = 'admin' | 'operator' | 'viewer';
 type ClusterRole = 'cluster_admin' | 'cluster_operator' | 'viewer';
 
@@ -117,6 +163,8 @@ type ManageOrganizationsPayload = {
   name?: string;
   tag?: string;
   slug?: string;
+  /** Required when Supabase secret `BOOTSTRAP_CLUSTER_INVITE_CODE` is set. */
+  bootstrap_invite_code?: string;
 };
 
 type ManagedAccount = {
@@ -148,6 +196,13 @@ const normalizeId = (value: unknown): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+function secureStringEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let x = 0;
+  for (let i = 0; i < a.length; i++) x |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return x === 0;
+}
+
 Deno.serve(async (request: Request) => {
   const origin = request.headers.get('Origin');
   if (request.method === 'OPTIONS') return new Response('ok', { headers: getCorsHeaders(origin) });
@@ -159,7 +214,7 @@ Deno.serve(async (request: Request) => {
     return rateLimitResponse(rl.retryAfterMs ?? 1000, origin, getCorsHeaders(origin));
   }
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL') || 'https://yudmcgtfqchzcgmcbcrk.supabase.co';
+  const supabaseUrl = Deno.env.get('SUPABASE_URL');
   const serviceRoleKey = Deno.env.get('SB_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
@@ -202,6 +257,14 @@ Deno.serve(async (request: Request) => {
 
   // Action: bootstrap-cluster-admin (Publicly available to signed-in users with no cluster)
   if (payload.action === 'bootstrap-cluster-admin') {
+    const requiredInvite = Deno.env.get('BOOTSTRAP_CLUSTER_INVITE_CODE')?.trim();
+    if (requiredInvite && requiredInvite.length > 0) {
+      const provided = (payload.bootstrap_invite_code ?? '').trim();
+      if (!secureStringEqual(provided, requiredInvite)) {
+        return json(403, { error: 'Invalid or missing cluster bootstrap code.' }, origin);
+      }
+    }
+
     const { data: existingMemberships, error: membershipError } = await adminClient
       .from('cluster_memberships')
       .select('id, cluster_id')
@@ -267,7 +330,7 @@ Deno.serve(async (request: Request) => {
     return json(403, { error: error instanceof Error ? error.message : 'Unable to resolve authority.' }, origin);
   }
 
-  if (!authority.isAdmin && !authority.isPlatformAdmin) {
+  if (!authority.isAdmin) {
     return json(403, { error: 'Administrative privileges required.' }, origin);
   }
 
@@ -277,16 +340,16 @@ Deno.serve(async (request: Request) => {
     if (!clusterId) return json(400, { error: 'cluster_id is required for provisioning.' }, origin);
 
     // Verify caller has access to target cluster
-    if (!authority.isPlatformAdmin && clusterId !== authority.clusterId) {
-      const { data: isClusterAdmin } = await adminClient
+    if (clusterId !== authority.clusterId) {
+      const { data: isClusterAdminRow } = await adminClient
         .from('cluster_memberships')
         .select('id')
         .eq('user_id', callerUserId)
         .eq('cluster_id', clusterId)
         .eq('role', 'cluster_admin')
         .maybeSingle();
-      
-      if (!isClusterAdmin) return json(403, { error: 'Access denied to target cluster.' }, origin);
+
+      if (!isClusterAdminRow) return json(403, { error: 'Access denied to target cluster.' }, origin);
     }
 
     const orgId = crypto.randomUUID();
@@ -308,7 +371,7 @@ Deno.serve(async (request: Request) => {
     if (!requestedOrgId) return json(400, { error: 'org_id is required.' }, origin);
 
     // Verify access
-    if (!authority.managedOrgIds.includes(requestedOrgId) && !authority.isPlatformAdmin) {
+    if (!authority.managedOrgIds.includes(requestedOrgId)) {
       return json(403, { error: 'No access to target organization.' }, origin);
     }
 
@@ -331,7 +394,7 @@ Deno.serve(async (request: Request) => {
     let clusterId = normalizeId(payload.cluster_id);
     const orgId = normalizeId(payload.org_id);
 
-    if (!clusterId && orgId && (authority.isPlatformAdmin || authority.managedOrgIds.includes(orgId))) {
+    if (!clusterId && orgId && authority.managedOrgIds.includes(orgId)) {
       const { data: orgData } = await adminClient
         .from('organizations')
         .select('cluster_id')
@@ -378,8 +441,10 @@ Deno.serve(async (request: Request) => {
       }
     }
 
-    const { data: { users: authUsers } } = await adminClient.auth.admin.listUsers();
-    const emailMap = new Map(authUsers.map((u: any) => [u.id, u.email]));
+    const idsForEmail = new Set<string>();
+    (admins ?? []).forEach((a: { user_id: string }) => idsForEmail.add(a.user_id));
+    orgAdmins.forEach((o: { user_id: string }) => idsForEmail.add(o.user_id));
+    const emailMap = await buildEmailMapForUserIds(adminClient, [...idsForEmail]);
 
     // Combine and normalize
     const combined = new Map<string, any>();
@@ -498,17 +563,28 @@ Deno.serve(async (request: Request) => {
         return json(400, { error: 'Use personal settings for self-service password updates.' }, origin);
       }
 
-      if (!authority.isPlatformAdmin) {
-        const { data: membership } = await adminClient
-          .from('cluster_memberships')
-          .select('cluster_id')
-          .eq('user_id', targetUserId)
-          .eq('cluster_id', authority.clusterId)
-          .maybeSingle();
-
-        if (!membership) {
-          return json(403, { error: 'Target user is outside of your administrative scope.' }, origin);
-        }
+      const { data: callerAdminClusters } = await adminClient
+        .from('cluster_memberships')
+        .select('cluster_id')
+        .eq('user_id', callerUserId)
+        .eq('role', 'cluster_admin');
+      const adminClusterSet = new Set((callerAdminClusters ?? []).map((r: { cluster_id: string }) => r.cluster_id));
+      const { data: targetClusterRows } = await adminClient
+        .from('cluster_memberships')
+        .select('cluster_id')
+        .eq('user_id', targetUserId);
+      const sharesAdminCluster = (targetClusterRows ?? []).some((r: { cluster_id: string }) =>
+        adminClusterSet.has(r.cluster_id)
+      );
+      const { data: targetOrgRows } = await adminClient
+        .from('organization_memberships')
+        .select('org_id')
+        .eq('user_id', targetUserId);
+      const sharesManagedOrg = (targetOrgRows ?? []).some((r: { org_id: string }) =>
+        authority.managedOrgIds.includes(r.org_id)
+      );
+      if (!sharesAdminCluster && !sharesManagedOrg) {
+        return json(403, { error: 'Target user is outside of your administrative scope.' }, origin);
       }
 
       if (newPassword) {
@@ -548,19 +624,16 @@ Deno.serve(async (request: Request) => {
       
       if (!targetOrg) return json(404, { error: 'Organization not found.' }, origin);
 
-      if (!authority.isPlatformAdmin) {
-        // Must be cluster admin for this org's cluster
-        const { data: clusterMembership } = await adminClient
-          .from('cluster_memberships')
-          .select('id')
-          .eq('user_id', callerUserId)
-          .eq('cluster_id', targetOrg.cluster_id)
-          .eq('role', 'cluster_admin')
-          .maybeSingle();
-        
-        if (!clusterMembership) {
-          return json(403, { error: 'You do not have administrative authority over this organization.' }, origin);
-        }
+      const { data: clusterMembership } = await adminClient
+        .from('cluster_memberships')
+        .select('id')
+        .eq('user_id', callerUserId)
+        .eq('cluster_id', targetOrg.cluster_id)
+        .eq('role', 'cluster_admin')
+        .maybeSingle();
+
+      if (!clusterMembership) {
+        return json(403, { error: 'You do not have administrative authority over this organization.' }, origin);
       }
 
       const updates: Record<string, string | null> = {};
@@ -593,16 +666,15 @@ Deno.serve(async (request: Request) => {
       if (!targetUserId && !targetEmail) return json(400, { error: 'target_user_id or target_email is required.' }, origin);
 
       // Verify access to the organization
-      if (!authority.isPlatformAdmin && !authority.managedOrgIds.includes(orgId)) {
+      if (!authority.managedOrgIds.includes(orgId)) {
         return json(403, { error: 'No administrative access to target organization.' }, origin);
       }
 
       // Resolve user ID if email provided
       if (!targetUserId && targetEmail) {
-        const { data: { users: matchingUsers } } = await adminClient.auth.admin.listUsers();
-        const found = matchingUsers.find((u: any) => u.email?.toLowerCase() === targetEmail.toLowerCase());
-        if (!found) return json(404, { error: `User with email ${targetEmail} not found.` }, origin);
-        targetUserId = found.id;
+        const foundId = await findAuthUserIdByEmail(adminClient, targetEmail);
+        if (!foundId) return json(404, { error: `User with email ${targetEmail} not found.` }, origin);
+        targetUserId = foundId;
       }
 
       if (!targetUserId) return json(400, { error: 'Unable to resolve target user.' }, origin);
@@ -612,31 +684,69 @@ Deno.serve(async (request: Request) => {
       return json(200, { ok: true, message: `User assigned as ${role} to organization.` }, origin);
     }
 
-    // Action: list-all-accounts (Platform Admin Only)
+    // Action: list-all-accounts — group (cluster) admins only; users tied to those clusters
     if (payload.action === 'list-all-accounts') {
-      if (!authority.isPlatformAdmin) return json(403, { error: 'Platform administrative access required.' }, origin);
+      const { data: myAdminClusters } = await adminClient
+        .from('cluster_memberships')
+        .select('cluster_id')
+        .eq('user_id', callerUserId)
+        .eq('role', 'cluster_admin');
+      const adminClusterIds = (myAdminClusters ?? []).map((r: { cluster_id: string }) => r.cluster_id);
+      if (adminClusterIds.length === 0) {
+        return json(403, { error: 'Group admin access required for directory.' }, origin);
+      }
+
+      const userIdSet = new Set<string>();
+
+      const { data: cmRows } = await adminClient
+        .from('cluster_memberships')
+        .select('user_id')
+        .in('cluster_id', adminClusterIds);
+      (cmRows ?? []).forEach((r: { user_id: string }) => userIdSet.add(r.user_id));
+
+      const { data: orgsInClusters } = await adminClient
+        .from('organizations')
+        .select('id')
+        .in('cluster_id', adminClusterIds);
+      const orgIds = (orgsInClusters ?? []).map((o: { id: string }) => o.id);
+      if (orgIds.length > 0) {
+        const { data: omRows } = await adminClient
+          .from('organization_memberships')
+          .select('user_id')
+          .in('org_id', orgIds);
+        (omRows ?? []).forEach((r: { user_id: string }) => userIdSet.add(r.user_id));
+      }
+
+      const { data: profByCluster } = await adminClient
+        .from('profiles')
+        .select('id')
+        .in('active_cluster_id', adminClusterIds);
+      (profByCluster ?? []).forEach((p: { id: string }) => userIdSet.add(p.id));
+
+      const userIds = Array.from(userIdSet);
+      if (userIds.length === 0) {
+        return json(200, { ok: true, accounts: [] }, origin);
+      }
 
       const [
         { data: profiles, error: profileError },
         { data: clusterMems, error: clusterError },
         { data: orgMems, error: orgError },
-        { data: { users: authUsers }, error: authError }
       ] = await Promise.all([
-        adminClient.from('profiles').select('id, active_org_id, active_cluster_id, created_at'),
-        adminClient.from('cluster_memberships').select('user_id, cluster_id, role'),
-        adminClient.from('organization_memberships').select('user_id, org_id, role, status'),
-        adminClient.auth.admin.listUsers()
+        adminClient.from('profiles').select('id, active_org_id, active_cluster_id, created_at').in('id', userIds),
+        adminClient.from('cluster_memberships').select('user_id, cluster_id, role').in('user_id', userIds),
+        adminClient.from('organization_memberships').select('user_id, org_id, role, status').in('user_id', userIds),
       ]);
 
-      if (profileError || clusterError || orgError || authError) {
+      if (profileError || clusterError || orgError) {
         return json(400, { error: 'Aggregated directory fetch failed.' }, origin);
       }
 
-      const emailMap = new Map(authUsers.map((u: any) => [u.id, u.email]));
+      const emailMap = await buildEmailMapForUserIds(adminClient, userIds);
       const accounts = (profiles ?? []).map((p: any) => {
         const userClusterMems = (clusterMems ?? []).filter((cm: any) => cm.user_id === p.id);
         const userOrgMems = (orgMems ?? []).filter((om: any) => om.user_id === p.id);
-        
+
         return {
           user_id: p.id,
           email: emailMap.get(p.id) ?? null,
@@ -659,10 +769,13 @@ Deno.serve(async (request: Request) => {
 
   if (profileError) return json(400, { error: profileError.message }, origin);
 
-  const { data: { users: authUsers } } = await adminClient.auth.admin.listUsers();
-  const emailMap = new Map(authUsers.map((u: any) => [u.id, u.email]));
+  const profileRows = profiles ?? [];
+  const emailMap = await buildEmailMapForUserIds(
+    adminClient,
+    profileRows.map((p: { id: string }) => p.id),
+  );
 
-  const accounts = (profiles ?? []).map((p: any) => ({
+  const accounts = profileRows.map((p: any) => ({
     user_id: p.id,
     login_id: emailMap.get(p.id) ?? null,
     org_id: p.active_org_id,

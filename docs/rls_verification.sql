@@ -1,5 +1,5 @@
 -- Flow Ops Canonical Backend Verification
--- Use this to verify a database created from supabase/migrations/00000000000000_init_canonical_schema.sql.
+-- Use after applying all migrations under supabase/migrations/ (platform_roles removed in 20260329160000).
 
 -- 1) Schema sanity
 select table_name
@@ -8,7 +8,6 @@ where table_schema = 'public'
   and table_name in (
     'clusters',
     'organizations',
-    'platform_roles',
     'cluster_memberships',
     'organization_memberships',
     'profiles',
@@ -172,7 +171,6 @@ where specific_schema = 'public'
   and routine_name in (
     'get_my_role',
     'get_my_org_id',
-    'get_my_platform_role',
     'user_has_org_access',
     'user_has_cluster_access',
     'is_org_in_my_cluster',
@@ -189,7 +187,6 @@ where n.nspname = 'public'
   and c.relname in (
     'clusters',
     'organizations',
-    'platform_roles',
     'cluster_memberships',
     'organization_memberships',
     'profiles',

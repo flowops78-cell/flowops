@@ -265,7 +265,8 @@ export default function Auth() {
                           onChange={e => setRequestRole(e.target.value as Exclude<RequestedRole, 'viewer'>)}
                           className="w-full px-3 py-2.5 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 text-sm focus:ring-2 focus:ring-stone-900 dark:focus:ring-stone-100 outline-none transition-all appearance-none cursor-pointer"
                         >
-                          <option value="operator">{tx('Operator')}</option>
+                          <option value="admin">{LABELS.roles.workspaceAdmin}</option>
+                          <option value="operator">{LABELS.roles.workspaceManager}</option>
                         </select>
                       </div>
 

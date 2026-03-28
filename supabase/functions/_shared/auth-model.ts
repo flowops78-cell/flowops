@@ -17,9 +17,12 @@ export type CallerAuthorityContext = {
   currentOrgId: string | null;
   clusterId: string | null;
   managedOrgIds: string[];
-  isPlatformAdmin: boolean;
   isAdmin: boolean;
   source: 'memberships' | 'none';
+  /** Clusters where the caller is `cluster_admin` (group manager). */
+  administeredClusterIds: string[];
+  /** Workspaces where the caller is org `admin` with `active` membership. */
+  workspaceAdminOrgIds: string[];
 };
 
 const roleRank: Record<DbRole, number> = {
@@ -62,16 +65,10 @@ export const getCallerAuthorityContext = async (
   options?: { requestedOrgId?: string | null },
 ): Promise<CallerAuthorityContext> => {
   const [
-    { data: platformRoleRow, error: platformRoleError },
     { data: membershipRows, error: membershipError },
     { data: profileRow, error: profileError },
     { data: clusterMembershipRows, error: clusterMembershipError }
   ] = await Promise.all([
-    adminClient
-      .from('platform_roles')
-      .select('role')
-      .eq('user_id', userId)
-      .maybeSingle(),
     adminClient
       .from('organization_memberships')
       .select('org_id, role, status, is_default_org, organizations(cluster_id)')
@@ -88,9 +85,6 @@ export const getCallerAuthorityContext = async (
       .eq('user_id', userId),
   ]);
 
-  if (platformRoleError) {
-    throw new Error(`Unable to resolve platform role: ${platformRoleError.message}`);
-  }
   if (membershipError) {
     throw new Error(`Unable to resolve memberships: ${membershipError.message}`);
   }
@@ -115,33 +109,7 @@ export const getCallerAuthorityContext = async (
     ?? typedMembershipRows[0]
     ?? null;
 
-  const platformRole = typeof platformRoleRow?.role === 'string' ? platformRoleRow.role : null;
-  const isPlatformAdmin = platformRole === 'platform_admin';
-
-  // --- Platform Admin Logic ---
-  if (isPlatformAdmin) {
-    const { data: allOrgRows, error: allOrgRowsError } = await adminClient
-      .from('organizations')
-      .select('id, cluster_id');
-
-    if (allOrgRowsError) {
-      throw new Error(`Unable to resolve platform admin org scope: ${allOrgRowsError.message}`);
-    }
-
-    const typedAllOrgRows = (allOrgRows ?? []) as Array<{ id: string; cluster_id: string | null }>;
-    
-    return {
-      role: 'admin',
-      currentOrgId: requestedOrgId ?? profile?.active_org_id ?? typedAllOrgRows[0]?.id ?? null,
-      clusterId: profile?.active_cluster_id ?? typedAllOrgRows[0]?.cluster_id ?? null,
-      managedOrgIds: dedupeStrings(typedAllOrgRows.map((row) => row.id)),
-      isPlatformAdmin: true,
-      isAdmin: true,
-      source: 'memberships',
-    };
-  }
-
-  // --- Cluster & Org Membership Logic ---
+  // --- Cluster & org membership (decentralized: group + workspace scope only) ---
   const administeredClusterIds = dedupeStrings(typedClusterMembershipRows
     .filter((row) => row.role === 'cluster_admin')
     .map((row) => row.cluster_id));
@@ -188,14 +156,21 @@ export const getCallerAuthorityContext = async (
       }
     }
 
+    const workspaceAdminOrgIds = dedupeStrings(
+      typedMembershipRows
+        .filter((row) => row.role === 'admin' && row.status === 'active')
+        .map((row) => row.org_id),
+    );
+
     return {
       role: currentRole,
       currentOrgId,
       clusterId: currentClusterId ?? null,
       managedOrgIds,
-      isPlatformAdmin: false,
       isAdmin: administeredClusterIds.length > 0 || typedMembershipRows.some((row) => row.role === 'admin'),
       source: 'memberships',
+      administeredClusterIds: [...administeredClusterIds],
+      workspaceAdminOrgIds,
     };
   }
 
@@ -205,10 +180,33 @@ export const getCallerAuthorityContext = async (
     currentOrgId: null,
     clusterId: null,
     managedOrgIds: [],
-    isPlatformAdmin: false,
     isAdmin: false,
     source: 'none',
+    administeredClusterIds: [],
+    workspaceAdminOrgIds: [],
   };
+};
+
+/**
+ * True if the caller may administer this workspace: active org admin, or group admin of the org's cluster.
+ * Prefer this over `managedOrgIds.includes(orgId)` when using the service role (RLS bypass).
+ */
+export const callerCanManageOrganization = async (
+  adminClient: AdminClient,
+  orgId: string,
+  authority: CallerAuthorityContext,
+): Promise<boolean> => {
+  if (authority.workspaceAdminOrgIds.includes(orgId)) return true;
+  if (authority.administeredClusterIds.length === 0) return false;
+
+  const { data: orgRow, error } = await adminClient
+    .from('organizations')
+    .select('cluster_id')
+    .eq('id', orgId)
+    .maybeSingle();
+
+  if (error || !orgRow?.cluster_id) return false;
+  return authority.administeredClusterIds.includes(orgRow.cluster_id as string);
 };
 
 export const syncOrgGraph = async (

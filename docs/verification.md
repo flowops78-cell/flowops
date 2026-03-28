@@ -3,7 +3,7 @@
 Based on `supabase/migrations/00000000000000_init_canonical_schema.sql`, this document describes the canonical hard-reset backend structure.
 
 ### 1) Governance and Access
-`clusters`, `organizations`, `cluster_memberships`, `organization_memberships`, `profiles`, and `platform_roles` define tenant structure and access. Row-level security is derived only from organization membership and cluster membership helpers.
+`clusters`, `organizations`, `cluster_memberships`, `organization_memberships`, and `profiles` define tenant structure and access. Row-level security is derived only from organization membership and cluster membership helpers (no global platform role).
 
 ### 2) Activity Domain
 `activities` replace workspaces as the top-level operational container. `records` replace entries and capture directional unit changes against an activity and optionally an entity.

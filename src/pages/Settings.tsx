@@ -131,8 +131,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const { 
     role, 
     clusterRole, 
-    isClusterAdmin, 
-    isPlatformAdmin,
+    isClusterAdmin,
     canAccessAdminUi, 
     clusterId: contextClusterId, 
     refreshAuthority, 
@@ -259,7 +258,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
   const isOrgAdmin = !isClusterAdmin && role === 'admin';
   const activeOrg = activeOrgId ? availableOrgs[activeOrgId] : null;
-  const canEditIdentity = (isPlatformAdmin || isClusterAdmin || role === 'admin') && !!activeOrgId;
+  const canEditIdentity = (isClusterAdmin || role === 'admin') && !!activeOrgId;
 
   // Sync local scopeClusterId with the global contextClusterId when it changes (e.g. after switchOrg)
   React.useEffect(() => {
@@ -366,18 +365,16 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
           }
         };
 
+        // FK-safe order (matches 00000000000000_init_canonical_schema.sql)
+        await clearActivity('channel_records');
         await clearActivity('records');
-        await clearActivity('activity_logs');
-        await clearActivity('outflows');
-        await clearActivity('adjustments');
-        await clearActivity('channel_entries');
-        await clearActivity('collaboration_allocations');
-        await clearActivity('activities');
-        await clearActivity('teamMembers');
-        await clearActivity('audit_events');
         await clearActivity('operator_activities');
-        await clearActivity('collaborations');
+        await clearActivity('activities');
+        await clearActivity('audit_events');
+        await clearActivity('team_members');
         await clearActivity('entities');
+        await clearActivity('collaborations');
+        await clearActivity('channels');
 
         await refreshData();
         notify({ type: 'success', message: 'Cloud operational data cleared.' });
@@ -480,7 +477,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   }, [activeOrgId, canAccessAdminUi]);
 
   const fetchPlatformDirectory = React.useCallback(async () => {
-    if (!isSupabaseConfigured || !supabase || !isPlatformAdmin) return;
+    if (!isSupabaseConfigured || !supabase || !isClusterAdmin) return;
     setPlatformDirectoryLoading(true);
     try {
       const { data, error } = await invokeSafe<{ ok: boolean; accounts: PlatformAccount[] }>('manage-organizations', {
@@ -493,7 +490,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     } finally {
       setPlatformDirectoryLoading(false);
     }
-  }, [isPlatformAdmin, notify]);
+  }, [isClusterAdmin, notify]);
 
   React.useEffect(() => {
     if (authLoading) return; // Prevent premature calls before session is ready
@@ -501,8 +498,8 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     void fetchAccessRequests();
     void fetchAccessInvites();
     void fetchClusterAdmins();
-    if (isPlatformAdmin) void fetchPlatformDirectory();
-  }, [authLoading, fetchAccessInvites, fetchAccessRequests, fetchClusterAdmins, isPlatformAdmin, fetchPlatformDirectory]);
+    if (isClusterAdmin) void fetchPlatformDirectory();
+  }, [authLoading, fetchAccessInvites, fetchAccessRequests, fetchClusterAdmins, isClusterAdmin, fetchPlatformDirectory]);
 
   const reviewAccessRequest = async (request: AccessRequestRow, status: 'approved' | 'rejected') => {
     if (!supabase || !user) return;
@@ -753,11 +750,10 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       : 'Not configured';
   
   const roleLabel = React.useMemo(() => {
-    if (isPlatformAdmin) return getRoleLabel('platform_admin');
     if (isClusterAdmin || clusterRole === 'cluster_admin') return getRoleLabel('cluster_admin');
     if (clusterRole === 'cluster_operator') return getRoleLabel('cluster_operator');
     return getRoleLabel(role);
-  }, [isPlatformAdmin, isClusterAdmin, clusterRole, role]);
+  }, [isClusterAdmin, clusterRole, role]);
   const provisionOrganization = async () => {
     if (!supabase || !activeOrgId || !clusterId) return;
     const okProv = await confirm({
@@ -1078,7 +1074,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               )}
 
               {/* Workspace switcher (admin) */}
-              {(isClusterAdmin || isPlatformAdmin) && (
+              {isClusterAdmin && (
                 <div className="section-card p-6">
                   <div className="flex items-center gap-2 mb-4">
                     <Globe size={16} className="text-stone-400" />
@@ -1229,7 +1225,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                   <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Export config</h3>
                 </div>
                 <div className="grid grid-cols-2 gap-4 max-w-sm">
-                  {(isClusterAdmin || isPlatformAdmin) && (
+                  {isClusterAdmin && (
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Level</label>
                       <div className="flex gap-1 bg-stone-100 dark:bg-stone-800 p-1 rounded-xl">
@@ -1269,8 +1265,8 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                 </button>
               </div>
 
-              {/* System Directory (platform admin only) */}
-              {isPlatformAdmin && (
+              {/* Directory — users in your groups / workspaces */}
+              {isClusterAdmin && (
                 <div className="section-card p-6">
                   <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-2">
@@ -1358,7 +1354,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               )}
 
               {/* Group Administration (cluster admin only) */}
-              {(isClusterAdmin || isPlatformAdmin) && (
+              {isClusterAdmin && (
                 <div className="section-card p-6">
                   <div className="flex items-center gap-2 mb-4">
                     <ShieldCheck size={16} className="text-stone-400" />

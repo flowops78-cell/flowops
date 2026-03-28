@@ -1,5 +1,12 @@
 /// <reference path="../_shared/edge-runtime.d.ts" />
 
+/**
+ * Creates a row in `access_requests` for an org tied to a valid invite token.
+ * There is no separate platform notifier: pending requests are listed in the app by
+ * group/workspace admins under the same org-scoped RLS as other tables (including
+ * cluster_admin / cluster_operator inheritance via `user_has_org_access`).
+ */
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { checkRateLimit, resolveClientIp, rateLimitResponse } from '../_shared/rate-limiter.ts';
 import { getCorsHeaders } from '../_shared/cors.ts';
@@ -66,7 +73,7 @@ Deno.serve(async (request: Request) => {
   }
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const serviceRoleKey = Deno.env.get('SB_SERVICE_ROLE_KEY');
+  const serviceRoleKey = Deno.env.get('SB_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
     return json(500, { error: 'Missing Supabase function environment variables.' }, origin);

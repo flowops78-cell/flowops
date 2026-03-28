@@ -1,8 +1,12 @@
+/// <reference path="../_shared/edge-runtime.d.ts" />
+
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { callerCanManageOrganization, getCallerAuthorityContext } from '../_shared/auth-model.ts';
 import { getCorsHeaders } from '../_shared/cors.ts';
 
-const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
-const SB_SERVICE_ROLE_KEY = Deno.env.get('SB_SERVICE_ROLE_KEY')!;
+const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
+const SB_SERVICE_ROLE_KEY =
+  Deno.env.get('SB_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
 type ExportScope = 'cluster' | 'org';
 type ExportDataset = 'entities' | 'activities' | 'records' | 'team_members' | 'collaborations' | 'channels' | 'audit_events' | 'all';
@@ -57,10 +61,10 @@ async function fetchDataset(
     let query = supabase.from(table).select('*');
 
     if (table === 'audit_events') {
-      // audit_events don't have org_id — skip org scoping, always allowed for cluster admins
-      if (!clusterScope && orgId) {
-        // For org admins — only their own org's events via actor_org_id if available
-        query = query.eq('actor_org_id', orgId);
+      if (clusterScope && clusterOrgIds.length > 0) {
+        query = query.in('org_id', clusterOrgIds);
+      } else if (orgId) {
+        query = query.eq('org_id', orgId);
       }
     } else if (clusterScope && clusterOrgIds.length > 0) {
       query = query.in('org_id', clusterOrgIds);
@@ -88,8 +92,13 @@ Deno.serve(async (req: Request) => {
     return new Response(null, { status: 204, headers: corsHeaders });
   }
 
+  if (!SUPABASE_URL || !SB_SERVICE_ROLE_KEY) {
+    return new Response(JSON.stringify({ error: 'Server misconfiguration.' }), {
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+
   try {
-    // 1. Auth: verify caller JWT
     const authHeader = req.headers.get('authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       return new Response(JSON.stringify({ error: 'Missing authorization header.' }), {
@@ -98,47 +107,35 @@ Deno.serve(async (req: Request) => {
     }
 
     const callerToken = authHeader.slice(7);
-    const callerClient = createClient(SUPABASE_URL, SB_SERVICE_ROLE_KEY, {
+    const serviceClient = createClient(SUPABASE_URL, SB_SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     });
 
-    // Verify and get caller
-    const { data: { user: caller }, error: callerError } = await callerClient.auth.getUser(callerToken);
+    const { data: { user: caller }, error: callerError } = await serviceClient.auth.getUser(callerToken);
     if (callerError || !caller) {
       return new Response(JSON.stringify({ error: 'Invalid or expired session.' }), {
         status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    const serviceClient = callerClient;
+    let authority;
+    try {
+      authority = await getCallerAuthorityContext(serviceClient, caller.id);
+    } catch (err) {
+      console.error('export-data authority:', err);
+      return new Response(JSON.stringify({ error: 'Unable to resolve caller authority.' }), {
+        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
 
-    // 2. Resolve caller authority (memberships + platform roles)
-    const [
-      { data: clusterMemberships },
-      { data: orgMemberships },
-      { data: platformRoles }
-    ] = await Promise.all([
-      serviceClient.from('cluster_memberships').select('cluster_id, role').eq('user_id', caller.id),
-      serviceClient.from('organization_memberships').select('org_id, role, status').eq('user_id', caller.id).in('status', ['active']),
-      serviceClient.from('platform_roles').select('role').eq('user_id', caller.id),
-    ]);
-
-    const isPlatformAdmin = (platformRoles ?? []).some((r: { role: string }) => r.role === 'platform_admin');
-    const isClusterAdmin = isPlatformAdmin || (clusterMemberships ?? []).some((m: { role: string }) => m.role === 'cluster_admin');
-    const isOrgAdmin = !isClusterAdmin && (orgMemberships ?? []).some((m: { role: string }) => m.role === 'admin');
-    
-    const callerOrgIds = (orgMemberships ?? []).map((m: { org_id: string }) => m.org_id);
-    const callerClusterIds = (clusterMemberships ?? [])
-      .filter((m: { role: string; cluster_id: string }) => m.role === 'cluster_admin')
-      .map((m: { role: string; cluster_id: string }) => m.cluster_id);
-
-    if (!isClusterAdmin && !isOrgAdmin) {
-      return new Response(JSON.stringify({ error: 'Export access denied. Global, Cluster, or Org Admin role required.' }), {
+    const isClusterAdmin = authority.administeredClusterIds.length > 0;
+    const canWorkspaceExport = authority.workspaceAdminOrgIds.length > 0;
+    if (!isClusterAdmin && !canWorkspaceExport) {
+      return new Response(JSON.stringify({ error: 'Export access denied. Group or workspace admin role required.' }), {
         status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
-    // 3. Parse and validate payload
     const body: ExportPayload = await req.json();
     const { scope, org_id, cluster_id, dataset } = body;
 
@@ -148,9 +145,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // 4. Permission check: scope enforcement
     let resolvedOrgId: string | null = org_id ?? null;
-    let targetClusterId: string | null = null;
     let resolvedClusterScope = false;
     let clusterOrgIds: string[] = [];
 
@@ -160,13 +155,12 @@ Deno.serve(async (req: Request) => {
           status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      targetClusterId = cluster_id ?? callerClusterIds[0];
-      if (!targetClusterId || (!isPlatformAdmin && !callerClusterIds.includes(targetClusterId))) {
+      const targetClusterId = cluster_id ?? authority.administeredClusterIds[0];
+      if (!targetClusterId || !authority.administeredClusterIds.includes(targetClusterId)) {
         return new Response(JSON.stringify({ error: 'Cluster not in your administrative scope.' }), {
           status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      // Fetch all org IDs in this cluster
       const { data: orgs } = await serviceClient
         .from('organizations')
         .select('id')
@@ -180,55 +174,65 @@ Deno.serve(async (req: Request) => {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
-      // Cluster/Platform admin can export any org. Org admin only their own.
-      if (!isClusterAdmin && !isPlatformAdmin && !callerOrgIds.includes(resolvedOrgId)) {
+      const allowed = await callerCanManageOrganization(serviceClient, resolvedOrgId, authority);
+      if (!allowed) {
         return new Response(JSON.stringify({ error: 'You do not have access to export this organization.' }), {
           status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
       }
     }
 
-    // 5. Collect data
     const exportedAt = new Date().toISOString();
     const exportData = await fetchDataset(serviceClient, dataset, resolvedOrgId, resolvedClusterScope, clusterOrgIds);
 
     const totalRows = Object.values(exportData).reduce((sum, d) => sum + d.count, 0);
 
-    // 6. Audit log entry — always written, even if export is empty
-    await serviceClient.from('audit_events').insert({
-      actor_user_id: caller.id,
-      actor_label: caller.email ?? caller.id,
-      actor_role: isPlatformAdmin ? 'platform_admin' : (isClusterAdmin ? 'cluster_admin' : 'admin'),
-      action: 'bulk_export',
-      entity: scope === 'cluster' ? 'cluster' : 'organization',
-      entity_id: scope === 'cluster' ? (cluster_id ?? targetClusterId ?? null) : resolvedOrgId,
-      amount: totalRows,
-      details: {
-        scope,
-        dataset,
-        org_id: resolvedOrgId,
-        cluster_id: scope === 'cluster' ? (cluster_id ?? callerClusterIds[0]) : null,
-        row_count: totalRows,
-        tables: Object.fromEntries(Object.entries(exportData).map(([t, d]) => [t, d.count])),
-        exported_at: exportedAt,
-      },
-    });
+    const auditOrgId =
+      resolvedOrgId ??
+      (clusterOrgIds.length > 0 ? clusterOrgIds[0] : null) ??
+      authority.workspaceAdminOrgIds[0] ??
+      null;
+    const exportDetails = {
+      scope,
+      dataset,
+      org_id: resolvedOrgId,
+      cluster_id: scope === 'cluster' ? (cluster_id ?? authority.administeredClusterIds[0]) : null,
+      row_count: totalRows,
+      tables: Object.fromEntries(Object.entries(exportData).map(([t, d]) => [t, d.count])),
+      exported_at: exportedAt,
+      cluster_admin_export: isClusterAdmin,
+    };
+    const detailsJson = JSON.stringify(exportDetails);
+    const detailsStr =
+      detailsJson.length > 120 ? `${detailsJson.slice(0, 117)}...` : detailsJson;
 
-    // 7. Return export package
+    if (auditOrgId) {
+      await serviceClient.from('audit_events').insert({
+        org_id: auditOrgId,
+        actor_user_id: caller.id,
+        actor_label: caller.email ?? caller.id,
+        actor_role: 'admin',
+        action: 'bulk_export',
+        entity: scope === 'cluster' ? 'cluster' : 'organization',
+        entity_id: null,
+        amount: totalRows,
+        details: detailsStr,
+      });
+    }
+
     return new Response(JSON.stringify({
       exported_at: exportedAt,
       actor: caller.email ?? caller.id,
       scope,
       dataset,
       org_id: resolvedOrgId,
-      cluster_id: scope === 'cluster' ? (cluster_id ?? callerClusterIds[0]) : null,
+      cluster_id: scope === 'cluster' ? (cluster_id ?? authority.administeredClusterIds[0]) : null,
       total_rows: totalRows,
       data: exportData,
     }), {
       status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-
   } catch (err) {
     console.error('export-data error:', err);
     return new Response(JSON.stringify({ error: 'Internal export error.' }), {

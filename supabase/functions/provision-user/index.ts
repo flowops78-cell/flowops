@@ -2,7 +2,12 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { checkRateLimit, resolveClientIp, rateLimitResponse } from '../_shared/rate-limiter.ts';
-import { ensureOrgMembership, getCallerAuthorityContext, syncOrgGraph } from '../_shared/auth-model.ts';
+import {
+  callerCanManageOrganization,
+  ensureOrgMembership,
+  getCallerAuthorityContext,
+  syncOrgGraph,
+} from '../_shared/auth-model.ts';
 import { getCorsHeaders } from '../_shared/cors.ts';
 
 const RATE_LIMIT = { maxRequests: 20, windowMs: 60_000 };
@@ -35,8 +40,6 @@ const resolveTargetClusterId = async (
   adminClient: any,
   targetOrgId: string,
   callerClusterId: string | null,
-  isGlobalAdmin: boolean,
-  resolvedRole: DbRole,
 ) => {
   const { data: existingOrgRow, error: orgError } = await adminClient
     .from('organizations')
@@ -65,10 +68,6 @@ const resolveTargetClusterId = async (
 
   if (!profileError && existingProfileInOrg?.active_cluster_id) {
     return existingProfileInOrg.active_cluster_id;
-  }
-
-  if (isGlobalAdmin && resolvedRole === 'admin') {
-    return crypto.randomUUID();
   }
 
   return null;
@@ -100,7 +99,7 @@ Deno.serve(async (request: Request) => {
   if (!rl.allowed) return rateLimitResponse(rl.retryAfterMs ?? 1000, origin, getCorsHeaders(origin));
 
   const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const serviceRoleKey = Deno.env.get('SB_SERVICE_ROLE_KEY');
+  const serviceRoleKey = Deno.env.get('SB_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) return json(500, { error: 'Missing environment variables.' }, origin);
 
@@ -142,7 +141,12 @@ Deno.serve(async (request: Request) => {
   const requestRow = requestRowData as AccessRequestRow;
 
   if (requestRow.status === 'rejected') return json(409, { error: 'Request rejected.' }, origin);
-  if (!callerAuthority.managedOrgIds.includes(requestRow.org_id) && !callerAuthority.isPlatformAdmin) {
+  const canManageRequestOrg = await callerCanManageOrganization(
+    adminClient,
+    requestRow.org_id,
+    callerAuthority,
+  );
+  if (!canManageRequestOrg) {
     return json(403, { error: 'Out of scope.' }, origin);
   }
 
@@ -150,7 +154,10 @@ Deno.serve(async (request: Request) => {
   const resolvedRole = normalizeRole(payload.approved_role ?? requestRow.requested_role);
   const targetOrgId = requestRow.org_id;
 
-  const targetClusterId = await resolveTargetClusterId(adminClient, targetOrgId, callerAuthority.clusterId, callerAuthority.isPlatformAdmin, resolvedRole);
+  const targetClusterId = await resolveTargetClusterId(adminClient, targetOrgId, callerAuthority.clusterId);
+  if (!targetClusterId) {
+    return json(400, { error: 'Organization has no group (cluster); assign a cluster before approving access.' }, origin);
+  }
 
   const resolvedPassword = (payload.password ?? '').trim();
   if (resolvedPassword.length < 8) return json(400, { error: 'Password too short.' }, origin);
