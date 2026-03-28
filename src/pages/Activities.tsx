@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useData } from '../context/DataContext';
-import { Plus, Calendar, ChevronRight, Clock, Trash2, Loader2, History } from 'lucide-react';
+import { Plus, Calendar, ChevronRight, Clock, Trash2, Loader2, History, X } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { APP_MIN_DATE, cn, formatValue, formatDate } from '../lib/utils';
 import { useNotification } from '../context/NotificationContext';
@@ -38,6 +38,18 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
   const [startTime, setStartTime] = useState(new Date().toTimeString().slice(0, 5));
   const [activityName, setActivityName] = useState('');
 
+  const resetCreateActivityForm = () => {
+    setDate(new Date().toISOString().split('T')[0]);
+    setStartTime(new Date().toTimeString().slice(0, 5));
+    setActivityName('');
+  };
+
+  const closeCreateOverlay = () => {
+    if (isSavingActivity) return;
+    setIsCreating(false);
+    resetCreateActivityForm();
+  };
+
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -54,6 +66,19 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
     const next = params.toString();
     navigate({ pathname: location.pathname, search: next ? `?${next}` : '' }, { replace: true });
   }, [canOperateLog, location.pathname, location.search, navigate, notify]);
+
+  useEffect(() => {
+    if (!isCreating) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeCreateOverlay();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isCreating, isSavingActivity]);
 
   const buildStartTime = (activityDate: string, activityTime: string) => {
     if (!activityDate || !activityTime) return undefined;
@@ -82,10 +107,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
         activity_category: 'Standard',
         org_code: undefined,
       });
-      // Reset form
-      setDate(new Date().toISOString().split('T')[0]);
-      setStartTime(new Date().toTimeString().slice(0, 5));
-      setActivityName('');
+      resetCreateActivityForm();
       setIsCreating(false);
       notify({ type: 'success', message: 'Activity created successfully.' });
     } catch (error: any) {
@@ -283,69 +305,90 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
       )}
 
       {isCreating && (
-        <form onSubmit={handleCreateActivity} className="section-card p-6 animate-in fade-in slide-in-from-top-4">
-          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">{tx('Create Activity')}</h3>
-          
-          <div className="mb-4 space-y-1">
-            <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Activity Name (Optional)</label>
-            <input 
-              type="text"
-              className="control-input w-full" 
-              placeholder="e.g. Afternoon Session, High Intensity Segment..."
-              value={activityName} 
-              onChange={e => setActivityName(e.target.value)} 
-              maxLength={60}
-            />
-            <p className="text-[10px] text-stone-400 px-1">Optional label for quick identification (max 60 chars)</p>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-            {/* Date */}
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Date</label>
-              <input 
-                type="date"
-                className="control-input" 
-                value={date} 
-                onChange={e => setDate(e.target.value)} 
-                min={APP_MIN_DATE}
-                required 
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Start Time</label>
-              <input
-                type="time"
-                className="control-input"
-                value={startTime}
-                onChange={e => setStartTime(e.target.value)}
-                step={60}
-                required
-              />
-            </div>
-
-          </div>
-
-          <div className="flex justify-end gap-2">
-            <button 
-              type="button" 
-              onClick={() => setIsCreating(false)}
-              disabled={isSavingActivity}
-              className="action-btn-secondary"
+        <div className="fixed inset-0 z-50 bg-stone-950/45 p-4 backdrop-blur-sm animate-in fade-in" onClick={closeCreateOverlay}>
+          <div className="flex min-h-full items-center justify-center">
+            <form
+              onSubmit={handleCreateActivity}
+              onClick={event => event.stopPropagation()}
+              className="section-card w-full max-w-2xl p-6 animate-in zoom-in-95"
             >
-              Cancel
-            </button>
-            <button 
-              type="submit" 
-              disabled={isSavingActivity}
-              className="action-btn-primary"
-            >
-              {isSavingActivity ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-              {isSavingActivity ? tx('Saving...') : tx('Create Activity')}
-            </button>
+              <div className="mb-5 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-medium text-stone-900 dark:text-stone-100">{tx('Create Activity')}</h3>
+                  <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">Name it, set the date, set the start time.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeCreateOverlay}
+                  disabled={isSavingActivity}
+                  className="rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 disabled:opacity-50 dark:hover:bg-stone-800 dark:hover:text-stone-200"
+                  aria-label="Close create activity"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="mb-4 space-y-1">
+                <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Activity Name (Optional)</label>
+                <input 
+                  type="text"
+                  className="control-input w-full" 
+                  placeholder="e.g. Afternoon Session, High Intensity Segment..."
+                  value={activityName} 
+                  onChange={e => setActivityName(e.target.value)} 
+                  maxLength={60}
+                  autoFocus
+                />
+                <p className="text-[10px] text-stone-400 px-1">Optional label for quick identification (max 60 chars)</p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 mb-5">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Date</label>
+                  <input 
+                    type="date"
+                    className="control-input" 
+                    value={date} 
+                    onChange={e => setDate(e.target.value)} 
+                    min={APP_MIN_DATE}
+                    required 
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Start Time</label>
+                  <input
+                    type="time"
+                    className="control-input"
+                    value={startTime}
+                    onChange={e => setStartTime(e.target.value)}
+                    step={60}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button 
+                  type="button" 
+                  onClick={closeCreateOverlay}
+                  disabled={isSavingActivity}
+                  className="action-btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  disabled={isSavingActivity}
+                  className="action-btn-primary"
+                >
+                  {isSavingActivity ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
+                  {isSavingActivity ? tx('Saving...') : tx('Create Activity')}
+                </button>
+              </div>
+            </form>
           </div>
-        </form>
+        </div>
       )}
 
       {(loading || loadingProgress > 0) && (
@@ -442,7 +485,13 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               title="No activities yet"
               description="Create your first activity to start tracking records and outcomes."
               actionLabel="Create Activity"
-              onAction={() => setIsCreating(true)}
+              onAction={() => {
+                if (!canOperateLog) {
+                  notify({ type: 'error', message: 'Only admin/operator can create an activity.' });
+                  return;
+                }
+                setIsCreating(true);
+              }}
               actionIcon={<Plus size={16} />}
             />
           </div>

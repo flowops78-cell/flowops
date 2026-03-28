@@ -239,6 +239,20 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
   }, [isQuickOverlayOpen]);
 
   useEffect(() => {
+    if (!isAdding) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsAdding(false);
+        resetForm();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isAdding]);
+
+  useEffect(() => {
     if (!selectedEntity) return;
 
     const nextEntity = entities.find(entity => entity.id === selectedEntity.id) || null;
@@ -588,75 +602,121 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
       </div>
 
       {isAdding && (
-        <form onSubmit={handleAddEntity} className="section-card p-6 animate-in fade-in slide-in-from-top-4">
-          <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">New Entity</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Name</label>
-              <input
-                className="control-input"
-                placeholder="Name"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                required
-              />
-            </div>
-            <input
-              type="number"
-              step="0.01"
-              className="control-input"
-              placeholder="Starting total (optional)"
-              value={profileTotal}
-              onChange={e => setProfileTotal(e.target.value)}
-            />
-            <select
-              className="control-input"
-              value={attributedCollaborationId}
-              onChange={e => setAttributedCollaborationId(e.target.value)}
+        <div
+          className="fixed inset-0 z-50 bg-stone-950/45 p-4 backdrop-blur-sm animate-in fade-in"
+          onClick={() => { setIsAdding(false); resetForm(); }}
+        >
+          <div className="flex min-h-full items-center justify-center">
+            <form
+              onSubmit={handleAddEntity}
+              onClick={e => e.stopPropagation()}
+              className="section-card w-full max-w-lg p-6 animate-in zoom-in-95"
             >
-              <option value="">Collaboration (optional)</option>
-              {collaborations.map(a => (
-                <option key={a.id} value={a.id}>{a.name} ({a.role})</option>
-              ))}
-            </select>
-            
-            {/* Tags Input */}
-            <div className="md:col-span-2 space-y-2">
-              <div className="flex flex-wrap gap-2 mb-2">
-                {tags.map(tag => (
-                  <span key={tag} className="bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 px-2 py-1 rounded-full text-xs flex items-center gap-1 shadow-sm">
-                    {tag}
-                    <button type="button" onClick={() => removeTag(tag)} className="hover:text-red-500"><X size={12} /></button>
-                  </span>
-                ))}
+              {/* Header */}
+              <div className="mb-5 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-medium text-stone-900 dark:text-stone-100">New Entity</h3>
+                  <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">Add a name, optional starting total, and tags.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setIsAdding(false); resetForm(); }}
+                  className="rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 dark:hover:bg-stone-800 dark:hover:text-stone-200"
+                  aria-label="Close add entity"
+                >
+                  <X size={16} />
+                </button>
               </div>
-              <input 
-                className="control-input" 
-                placeholder="Tags (press Enter)" 
-                value={currentTag} 
-                onChange={e => setCurrentTag(e.target.value)} 
-                onKeyDown={handleAddTag}
-              />
-            </div>
+
+              <div className="space-y-4 mb-5">
+                {/* Name */}
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Name</label>
+                  <input
+                    className="control-input w-full"
+                    placeholder="Entity name"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    autoFocus
+                    required
+                  />
+                </div>
+
+                {/* Starting total */}
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Starting total <span className="font-normal text-stone-400">(optional)</span></label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    className="control-input w-full"
+                    placeholder="0.00"
+                    value={profileTotal}
+                    onChange={e => setProfileTotal(e.target.value)}
+                  />
+                </div>
+
+                {/* Collaboration */}
+                {collaborations.length > 0 && (
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Collaboration <span className="font-normal text-stone-400">(optional)</span></label>
+                    <select
+                      className="control-input w-full"
+                      value={attributedCollaborationId}
+                      onChange={e => setAttributedCollaborationId(e.target.value)}
+                    >
+                      <option value="">None</option>
+                      {collaborations.map(a => (
+                        <option key={a.id} value={a.id}>{a.name} ({a.role})</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Tags */}
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Tags <span className="font-normal text-stone-400">(press Enter to add)</span></label>
+                  {tags.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {tags.map(tag => (
+                        <span key={tag} className="inline-flex items-center gap-1 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 px-2 py-0.5 rounded-full text-xs shadow-sm">
+                          {tag}
+                          <button type="button" onClick={() => removeTag(tag)} className="hover:text-red-500"><X size={11} /></button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <input
+                    className="control-input w-full"
+                    placeholder="e.g. priority, vip…"
+                    value={currentTag}
+                    onChange={e => setCurrentTag(e.target.value)}
+                    onKeyDown={handleAddTag}
+                  />
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setIsAdding(false); resetForm(); }}
+                  className="action-btn-secondary"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="action-btn-primary"
+                >
+                  <Plus size={16} />
+                  {getActionText('addEntity')}
+                </button>
+              </div>
+            </form>
           </div>
-          <div className="flex justify-end gap-2">
-            <button 
-              type="button" 
-              onClick={() => { setIsAdding(false); resetForm(); }}
-              className="action-btn-secondary"
-            >
-              Cancel
-            </button>
-            <button 
-              type="submit" 
-              className="action-btn-primary flex items-center gap-2"
-            >
-              <Plus size={16} />
-              {getActionText('addEntity')}
-            </button>
-          </div>
-        </form>
+        </div>
       )}
+
 
       {isTransferring && (
         <div className="fixed inset-0 z-40 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center p-4">
