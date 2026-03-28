@@ -43,8 +43,6 @@ export interface Entity {
   collaboration_id?: string;
   referred_by_entity_id?: string;
   referring_collaboration_id?: string;
-  total_units: number;
-  total?: number; // Aliased for legacy UI compatibility
   tags?: string[];
   created_at?: string;
   updated_at?: string;

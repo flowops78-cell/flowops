@@ -280,7 +280,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Actions
   const addEntity = async (data: any) => {
     const orgId = requireOrgScope();
-    const parsedTotal = typeof data.total === 'number' && Number.isFinite(data.total) ? data.total : 0;
     const { data: newEntity, error } = await supabase!
       .from('entities')
       .insert([{ 
@@ -289,7 +288,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         collaboration_id: data.collaboration_id,
         referred_by_entity_id: data.referred_by_entity_id,
         referring_collaboration_id: data.referring_collaboration_id,
-        total_units: parsedTotal,
       }])
       .select('id')
       .single();
