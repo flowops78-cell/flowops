@@ -1,10 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Archive, ChevronDown, Handshake, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { ChevronDown, Handshake, Plus, RotateCcw, Trash2 } from 'lucide-react';
 import { useRef } from 'react';
 import OverlaySavingState from '../components/OverlaySavingState';
 import { useData } from '../context/DataContext';
 import { useAppRole } from '../context/AppRoleContext';
 import { useNotification } from '../context/NotificationContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { Collaboration, Entity, Activity } from '../types';
 import { cn, formatValue, parseNonNegativeNumber } from '../lib/utils';
 
@@ -16,6 +17,7 @@ const sortProfilesByName = (profiles: Collaboration[]) => {
 
 export default function CollaborationNetwork({ embedded = false }: { embedded?: boolean }) {
   const { notify } = useNotification();
+  const { confirm } = useConfirm();
   const { canManageImpact } = useAppRole();
   const {
     collaborations: rawCollaborations,
@@ -200,23 +202,6 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
     }
   };
 
-  const handleHideProfile = async (profileId: string) => {
-    if (!canManageImpact) return;
-
-    const profile = collaborations.find(item => item.id === profileId);
-    if (!profile || profile.status === 'inactive') return;
-
-    try {
-      await updateCollaboration({ ...profile, status: 'inactive' });
-      if (selectedProfileId === profileId) {
-        setSelectedProfileId(null);
-      }
-      notify({ type: 'success', message: 'Profile hidden.' });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to hide profile.' });
-    }
-  };
-
   const handleRestoreProfile = async (profileId: string) => {
     if (!canManageImpact) return;
 
@@ -235,8 +220,13 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
   const handleDeleteProfile = async (profileId: string) => {
     if (!canManageImpact || deletingProfileId === profileId) return;
 
-    const confirmed = window.confirm('Remove this profile?');
-    if (!confirmed) return;
+    const ok = await confirm({
+      title: 'Remove network profile?',
+      message: 'Remove this profile permanently? This cannot be undone.',
+      danger: true,
+      confirmLabel: 'Remove',
+    });
+    if (!ok) return;
 
     try {
       setDeletingProfileId(profileId);
@@ -413,7 +403,7 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
                       <h3 className="text-2xl font-semibold text-stone-900 dark:text-stone-100">{getProfileName(selectedProfile.name)}</h3>
                     </div>
                     <div className="flex flex-wrap gap-2">
-                      {selectedProfile.status === 'inactive' ? (
+                      {selectedProfile.status === 'inactive' && (
                         <button
                           type="button"
                           onClick={() => { void handleRestoreProfile(selectedProfile.id); }}
@@ -423,26 +413,18 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
                           <RotateCcw size={14} />
                           Show
                         </button>
-                      ) : (
+                      )}
+                      {canManageImpact && (
                         <button
                           type="button"
-                          onClick={() => { void handleHideProfile(selectedProfile.id); }}
-                          disabled={!canManageImpact}
-                          className="action-btn-secondary disabled:opacity-50"
+                          onClick={() => { void handleDeleteProfile(selectedProfile.id); }}
+                          disabled={deletingProfileId === selectedProfile.id}
+                          className="action-btn-tertiary text-red-600 dark:text-red-400 disabled:opacity-50"
                         >
-                          <Archive size={14} />
-                          Hide
+                          <Trash2 size={14} />
+                          {deletingProfileId === selectedProfile.id ? 'Removing' : 'Remove permanently'}
                         </button>
                       )}
-                      <button
-                        type="button"
-                        onClick={() => { void handleDeleteProfile(selectedProfile.id); }}
-                        disabled={!canManageImpact || deletingProfileId === selectedProfile.id}
-                        className="action-btn-tertiary text-red-600 dark:text-red-400 disabled:opacity-50"
-                      >
-                        <Trash2 size={14} />
-                        {deletingProfileId === selectedProfile.id ? 'Removing' : 'Remove'}
-                      </button>
                     </div>
                   </div>
                 </div>
@@ -474,7 +456,7 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
                   <div className="space-y-2">
                     <h4 className="text-sm font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Basic info</h4>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      <InfoCard label="State" value={selectedProfile.status === 'inactive' ? 'Hidden' : 'Active'} />
+                      <InfoCard label="State" value={selectedProfile.status === 'inactive' ? 'Inactive' : 'Active'} />
                       <InfoCard label="Total" value={formatValue(selectedProfile.total_number ?? 0)} />
                     </div>
                   </div>
@@ -507,7 +489,7 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
                       <div className="mt-4 space-y-4 border-t border-stone-200 pt-4 dark:border-stone-800">
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                           <div className="space-y-1.5">
-                            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Type</label>
+                            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Profile type</label>
                             <select
                               className="control-input"
                               value={selectedProfile.collaboration_type || 'channel'}
@@ -523,8 +505,8 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
                               }}
                               disabled={!canManageImpact}
                             >
-                              <option value="channel">Channel</option>
-                              <option value="collaboration">Profile</option>
+                              <option value="channel">Reserve / flow routing</option>
+                              <option value="collaboration">Partnership</option>
                               <option value="hybrid">Hybrid</option>
                             </select>
                           </div>
@@ -642,10 +624,10 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
                   {isAddAdvancedOpen && (
                     <div className="mt-4 space-y-3 border-t border-stone-200 pt-4 dark:border-stone-800">
                       <div className="space-y-1.5">
-                        <label className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Type</label>
+                        <label className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Profile type</label>
                         <select className="control-input" value={role} onChange={event => setRole(event.target.value as 'collaboration' | 'channel' | 'hybrid')}>
-                          <option value="channel">Channel</option>
-                          <option value="collaboration">Profile</option>
+                          <option value="channel">Reserve / flow routing</option>
+                          <option value="collaboration">Partnership</option>
                           <option value="hybrid">Hybrid</option>
                         </select>
                       </div>

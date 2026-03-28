@@ -15,6 +15,7 @@ import EntitySnapshot from '../components/EntitySnapshot';
 import EntitiesIcon from '../components/icons/EntitiesIcon';
 import OverlaySavingState from '../components/OverlaySavingState';
 import { useLabels } from '../lib/labels';
+import { useConfirm } from '../context/ConfirmContext';
 
 const getEntityDisplayName = (name?: string | null) => {
   const trimmed = name?.trim();
@@ -42,6 +43,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
   } = useData();
   const { canAccessAdminUi, canOperateLog, canManageImpact } = useAppRole();
   const { getActionText, tx } = useLabels();
+  const { confirm } = useConfirm();
   const canActivityRecordDeferred = canOperateLog;
   const [searchTerm, setSearchTerm] = useState('');
   const [isAdding, setIsAdding] = useState(false);
@@ -450,8 +452,13 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
       return;
     }
 
-    const confirmed = window.confirm(`Delete ${getEntityDisplayName(entity.name)} profile? This cannot be undone.`);
-    if (!confirmed) return;
+    const ok = await confirm({
+      title: 'Delete entity?',
+      message: `Delete ${getEntityDisplayName(entity.name)}? This cannot be undone.`,
+      danger: true,
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
 
     try {
       setDeletingEntityId(entity.id);
@@ -616,7 +623,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
 
         {filteredEntitys.length > 0 && (
           <div className="rounded-xl border border-dashed border-stone-200 bg-stone-50/80 px-3 py-2 text-xs text-stone-500 dark:border-stone-800 dark:bg-stone-900/60 dark:text-stone-400">
-            Tap an entity for quick actions.
+            Select a row for quick actions (or open the full profile).
           </div>
         )}
       </div>
@@ -1188,7 +1195,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
               <tr>
                 <th className="sticky-col px-6 py-2.5 w-[270px] text-[11px] font-semibold uppercase tracking-wide">Name</th>
                 <th className="px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Total</th>
-                <th className="px-6 py-2.5 w-[180px] text-[11px] font-semibold uppercase tracking-wide">Performance</th>
+                <th className="px-6 py-2.5 w-[180px] text-[11px] font-semibold uppercase tracking-wide">Activity</th>
                 <th className="px-6 py-2.5 w-[150px] text-[11px] font-semibold uppercase tracking-wide">Last Active</th>
                 <th className="px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Tags</th>
                 <th className="sticky-col-right px-6 py-2.5 w-[140px] text-right text-[11px] font-semibold uppercase tracking-wide">Actions</th>
@@ -1323,9 +1330,9 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                       <tr>
                         <th className="text-left font-medium px-4 py-2.5">Date</th>
                         <th className="text-left font-medium px-4 py-2.5">Activity</th>
-                        <th className="text-right font-medium px-4 py-2.5">Entity Input</th>
-                        <th className="text-right font-medium px-4 py-2.5">Total</th>
-                        <th className="text-right font-medium px-4 py-2.5">Total Units</th>
+                        <th className="text-right font-medium px-4 py-2.5">Entity input</th>
+                        <th className="text-right font-medium px-4 py-2.5">Outflow</th>
+                        <th className="text-right font-medium px-4 py-2.5">Net</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
@@ -1559,18 +1566,20 @@ function EntityRow({ entity, stats, updateEntity, onOpenOverlay, onOpenProfile, 
             {formatValue(stats.net)}
           </span>
         </td>
-        <td className="px-6 py-3" colSpan={2}>
+        <td className="px-6 py-3">
+          <label className="sr-only">Network profile</label>
           <select
-            className="w-full p-1 border border-stone-300 dark:border-stone-600 rounded bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 text-xs mb-1"
+            className="w-full p-1 border border-stone-300 dark:border-stone-600 rounded bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 text-xs"
             value={data.collaboration_id || ''}
             onChange={e => setData({...data, collaboration_id: e.target.value || undefined})}
           >
-            <option value="">Collaboration attribution (optional)</option>
+            <option value="">Network profile (optional)</option>
             {collaborations.map(a => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
           </select>
         </td>
+        <td className="px-6 py-3 text-stone-400 text-xs">—</td>
         <td className="px-6 py-3">
           {/* Simple tag edit - comma separated for now to save space */}
           <input 
@@ -1598,8 +1607,15 @@ function EntityRow({ entity, stats, updateEntity, onOpenOverlay, onOpenProfile, 
     <tr className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors group cursor-pointer" onClick={onOpenOverlay}>
       <td className="sticky-col px-6 py-2.5">
         <div className="font-medium text-stone-900 dark:text-stone-100 flex items-center gap-2">
-          {getEntityDisplayName(entity.name)}
-          <Eye size={14} className="opacity-0 group-hover:opacity-50 transition-opacity" />
+          <span className="min-w-0">
+            {getEntityDisplayName(entity.name)}
+            {entity.collaboration_id ? (
+              <span className="block text-[10px] font-normal text-stone-400 truncate max-w-[200px]">
+                {collaborations.find(c => c.id === entity.collaboration_id)?.name ?? 'Network profile'}
+              </span>
+            ) : null}
+          </span>
+          <Eye size={14} className="opacity-0 group-hover:opacity-50 transition-opacity shrink-0" />
         </div>
       </td>
       <td className="px-6 py-2.5">
@@ -1611,15 +1627,11 @@ function EntityRow({ entity, stats, updateEntity, onOpenOverlay, onOpenProfile, 
         </div>
       </td>
       <td className="px-6 py-2.5">
-        <div className={cn(
-          "font-mono font-medium flex items-center gap-1",
-          stats.net > 0 ? "text-emerald-600 dark:text-emerald-400" : stats.net < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500"
-        )}>
-          {stats.net > 0 ? <TrendingUp size={14} /> : stats.net < 0 ? <TrendingDown size={14} /> : null}
-          {formatValue(stats.net)}
+        <div className="text-sm text-stone-700 dark:text-stone-200">
+          {stats.activitys} {stats.activitys === 1 ? 'activity' : 'activities'}
         </div>
         <div className="text-xs text-stone-400 mt-0.5">
-          {stats.activitys} activities ({stats.surpluses} positive)
+          {stats.surpluses} positive · inflow {formatValue(stats.totalInflow)}
         </div>
       </td>
       <td className="px-6 py-2.5 text-stone-500 dark:text-stone-400">
@@ -1651,83 +1663,70 @@ function EntityRow({ entity, stats, updateEntity, onOpenOverlay, onOpenProfile, 
         </div>
       </td>
       <td className="sticky-col-right px-6 py-2.5 text-right">
-        <div className="flex justify-end gap-2 transition-opacity">
-          {canManageImpact && (
-            <button
-              onClick={event => {
-                event.stopPropagation();
-                onTransferFromEntity();
-              }}
-              className="p-1.5 text-stone-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition-colors"
-              title="Transfer from this entity"
-            >
-              <ArrowRightLeft size={16} />
-            </button>
-          )}
-          {canActivityRecordDeferred && (
-            <button
-              onClick={event => {
-                event.stopPropagation();
-                onActivityRecordDeferred();
-              }}
-              className="p-1.5 text-stone-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 rounded-md transition-colors"
-              title="Add pending record"
-            >
-              <Clock size={16} />
-            </button>
-          )}
-          <button 
-            onClick={event => {
-              event.stopPropagation();
-              onOpenOverlay();
-            }}
+        <div className="flex justify-end items-center gap-2 transition-opacity" onClick={e => e.stopPropagation()}>
+          <button
+            type="button"
+            onClick={onOpenOverlay}
             className="action-btn-secondary text-xs px-2.5 py-1"
-            title="Quick actions"
+            title="Preview actions"
           >
-            Quick
+            Preview
           </button>
-          <button 
-            onClick={event => {
-              event.stopPropagation();
-              onOpenSnapshot();
-            }}
+          <button
+            type="button"
+            onClick={onOpenProfile}
             className="action-btn-secondary text-xs px-2.5 py-1"
-            title="Open quick snapshot"
-          >
-            Quick Snapshot
-          </button>
-          <button 
-            onClick={event => {
-              event.stopPropagation();
-              onOpenProfile();
-            }}
-            className="action-btn-secondary text-xs px-2.5 py-1"
-            title="Open entity page"
+            title="Open full entity page"
           >
             Open
           </button>
-          <button 
-            onClick={event => {
-              event.stopPropagation();
-              setIsEditing(true);
-            }}
-            className="p-1.5 text-stone-400 hover:text-stone-600 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-md transition-colors"
-            title="Edit"
-          >
-            <Edit2 size={16} />
-          </button>
-          {canManageImpact && (
-            <button
-              onClick={event => {
-                event.stopPropagation();
-                onDelete();
-              }}
-              className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-              title="Delete entity"
-            >
-              <Trash2 size={16} />
-            </button>
-          )}
+          <DataActionMenu
+            label="More"
+            items={[
+              ...(canManageImpact
+                ? [
+                    {
+                      key: 'send',
+                      label: 'Send…',
+                      icon: <ArrowRightLeft size={16} />,
+                      onClick: () => onTransferFromEntity(),
+                    },
+                  ]
+                : []),
+              ...(canActivityRecordDeferred
+                ? [
+                    {
+                      key: 'pending',
+                      label: 'Pending…',
+                      icon: <Clock size={16} />,
+                      onClick: () => onActivityRecordDeferred(),
+                    },
+                  ]
+                : []),
+              {
+                key: 'snapshot',
+                label: 'Snapshot',
+                icon: <Eye size={16} />,
+                onClick: () => onOpenSnapshot(),
+              },
+              ...(canManageImpact
+                ? [
+                    {
+                      key: 'edit',
+                      label: 'Edit row',
+                      icon: <Edit2 size={16} />,
+                      onClick: () => setIsEditing(true),
+                    },
+                    {
+                      key: 'delete',
+                      label: 'Delete',
+                      icon: <Trash2 size={16} />,
+                      onClick: () => onDelete(),
+                    },
+                  ]
+                : []),
+            ]}
+          />
         </div>
       </td>
     </tr>

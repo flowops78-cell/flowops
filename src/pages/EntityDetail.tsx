@@ -4,6 +4,7 @@ import { ArrowLeft, Check, X, PlusCircle, ChevronDown } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAppRole } from '../context/AppRoleContext';
 import { useNotification } from '../context/NotificationContext';
+import { useConfirm } from '../context/ConfirmContext';
 import { formatValue, formatDate } from '../lib/utils';
 import { cn } from '../lib/utils';
 import { ActivityRecord } from '../types';
@@ -33,6 +34,7 @@ export default function EntityDetail() {
   const isAdmin = canAccessAdminUi;
   const canManageEntityTx = canManageImpact;
   const { notify } = useNotification();
+  const { confirm } = useConfirm();
 
   const unit = useMemo(() => entities.find(item => item.id === id), [entities, id]);
 
@@ -105,7 +107,7 @@ export default function EntityDetail() {
 
   const operationalWeightRangeTotal = useMemo(() => {
     if (!id || !rangeStart || !rangeEnd || rangeStart > rangeEnd) {
-      return { operationalWeight: 0, activities: 0 };
+      return { surcharge: 0, activities: 0 };
     }
 
     const unitActivityIds = new Set(
@@ -121,10 +123,9 @@ export default function EntityDetail() {
       if (!activity) return;
       if (activity.date < rangeStart || activity.date > rangeEnd) return;
       activitysCount += 1;
-      operationalWeight += activity.operational_weight || 0;
     });
 
-    return { surcharge: operationalWeight, activities: activitysCount };
+    return { surcharge: 0, activities: activitysCount };
   }, [id, records, activities, rangeStart, rangeEnd]);
 
   if (!unit) {
@@ -315,10 +316,12 @@ export default function EntityDetail() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Apply manual override for ${unit.name || 'unit'}?\nCurrent: ${formatValue(computedTotal)}\nTarget: ${formatValue(target)}\nDelta: ${delta >= 0 ? '+' : ''}${formatValue(delta)}`,
-    );
-    if (!confirmed) return;
+    const ok = await confirm({
+      title: 'Apply manual override?',
+      message: `For ${unit.name || 'this entity'}:\nCurrent: ${formatValue(computedTotal)}\nTarget: ${formatValue(target)}\nDelta: ${delta >= 0 ? '+' : ''}${formatValue(delta)}`,
+      confirmLabel: 'Apply',
+    });
+    if (!ok) return;
 
     if (delta > 0) {
       await addRecord({

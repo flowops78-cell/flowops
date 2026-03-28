@@ -1,9 +1,8 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Activity, AlertCircle, Clock3, ExternalLink, Briefcase } from 'lucide-react';
+import { Activity, AlertCircle, Clock3, ExternalLink, Scale } from 'lucide-react';
 import ContextPanel from './ContextPanel';
 import { useData } from '../context/DataContext';
-import { useAppRole } from '../context/AppRoleContext';
 import { formatDate, formatCompactValue } from '../lib/utils';
 import { useLabels } from '../lib/labels';
 
@@ -23,8 +22,7 @@ const formatTime = (value?: string) => {
 
 export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetryPanelProps) {
   const navigate = useNavigate();
-  const { activities, records, systemEvents } = useData();
-  const { canManageImpact } = useAppRole();
+  const { activities, auditActivities, auditChannels, auditOrgs, auditAnomalies, systemEvents } = useData();
   const { getEventLabel, getMetricLabel, getActionText } = useLabels();
 
   const activeActivityIds = useMemo(
@@ -32,43 +30,62 @@ export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetr
     [activities],
   );
 
-  const activeEntries = useMemo(
-    () => records.filter(record => activeActivityIds.has(record.activity_id) && !record.left_at),
-    [activeActivityIds, records],
+  const orgAudit = auditOrgs[0] ?? null;
+
+  const watchActivities = useMemo(
+    () => auditActivities
+      .filter(item => item.status === 'broken' || item.open_record_count > 0)
+      .sort((left, right) => {
+        if (left.status !== right.status) {
+          return left.status === 'broken' ? -1 : 1;
+        }
+        return Math.abs(right.net_amount) - Math.abs(left.net_amount);
+      })
+      .slice(0, 5),
+    [auditActivities],
   );
 
-
-
-  const discrepancyWarnings = useMemo(() => {
-    const warningList: Array<{ activityId: string; date?: string; discrepancy: number }> = [];
-
-    activities.forEach(activity => {
-      if (activity.status !== 'active') return;
-      const activityEntries = records.filter(record => record.activity_id === activity.id);
-      const totalInflow = activityEntries.reduce((sum, record) => sum + record.unit_amount, 0);
-      const totalOutflow = activityEntries.reduce((sum, record) => sum + record.unit_amount, 0);
-      const discrepancy = totalOutflow - totalInflow;
-      if (Math.abs(discrepancy) >= 0.01) {
-        warningList.push({ activityId: activity.id, date: activity.date, discrepancy });
-      }
-    });
-
-    return warningList
-      .sort((a, b) => Math.abs(b.discrepancy) - Math.abs(a.discrepancy))
-      .slice(0, 6);
-  }, [activities, records]);
-
-  const activeTotalTotal = useMemo(
-    () => activeEntries.reduce((sum, record) => sum + (record.unit_amount || 0), 0),
-    [activeEntries],
-  );
-
-  const pendingAlignmentAlerts = useMemo<Array<{ id: string }>>(
-    () => [],
-    [],
+  const channelAlerts = useMemo(
+    () => auditChannels.filter(channel => channel.status === 'broken').slice(0, 3),
+    [auditChannels],
   );
 
   const issueItems = useMemo(() => {
+    const routeForAnomaly = (anomaly: typeof auditAnomalies[number]) => {
+      if (anomaly.activity_id) {
+        return `/activity/${anomaly.activity_id}`;
+      }
+
+      if (anomaly.anomaly_type.includes('channel')) {
+        return '/channels';
+      }
+
+      if (anomaly.entity_id) {
+        return '/entities';
+      }
+
+      return '/activity';
+    };
+
+    const labelForAnomaly = (anomalyType: string) => {
+      switch (anomalyType) {
+        case 'activity_imbalance':
+          return 'Activity imbalance';
+        case 'org_imbalance':
+          return 'Workspace imbalance';
+        case 'channel_imbalance':
+          return 'Channel imbalance';
+        case 'missing_transfer_pair':
+          return 'Transfer pair missing';
+        case 'transfer_missing_target':
+          return 'Transfer target missing';
+        case 'invalid_exit_time':
+          return 'Time anomaly';
+        default:
+          return 'Audit warning';
+      }
+    };
+
     const items: Array<{
       id: string;
       route: string;
@@ -78,33 +95,19 @@ export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetr
       priority: number;
     }> = [];
 
-    if (canManageImpact) {
-      pendingAlignmentAlerts.slice(0, 3).forEach(alert => {
-        items.push({
-          id: `alignment-${alert.id}`,
-          route: '/channels',
-          tone: 'amber',
-          label: 'Pending alignment',
-          detail: 'Alignment request awaiting output.',
-          priority: 0,
-        });
-      });
-    }
-
-    discrepancyWarnings.forEach(item => {
-      const shortId = item.activityId.slice(0, 8).toUpperCase();
+    auditAnomalies.slice(0, 6).forEach(item => {
       items.push({
-        id: `imtotal-${item.activityId}`,
-        route: `/activity/${item.activityId}`,
-        tone: 'red',
-        label: 'Activity variance',
-        detail: `${item.date ? `${formatDate(item.date)} · ` : ''}Activity ${shortId} · ${formatCompactValue(item.discrepancy)}`,
-        priority: 1,
+        id: item.anomaly_id,
+        route: routeForAnomaly(item),
+        tone: item.severity === 'error' ? 'red' : 'amber',
+        label: labelForAnomaly(item.anomaly_type),
+        detail: item.detail,
+        priority: item.severity === 'error' ? 0 : 1,
       });
     });
 
     return items.sort((a, b) => a.priority - b.priority);
-  }, [canManageImpact, discrepancyWarnings, pendingAlignmentAlerts]);
+  }, [auditAnomalies]);
 
   const recentActions = useMemo(
     () => [...systemEvents]
@@ -123,10 +126,10 @@ export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetr
       <div className="flex h-full min-h-0 flex-col">
         <div className="border-b border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-800/50 px-4 py-3">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-stone-900 dark:text-stone-100">
-            <Activity size={16} className="text-emerald-600 dark:text-emerald-400" />
-            Control Panel
+            <Scale size={16} className="text-emerald-600 dark:text-emerald-400" />
+            Audit Panel
           </h3>
-          <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">Issues · Overview · Activity Log</p>
+          <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">Integrity · Balances · Activity Log</p>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-5 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
@@ -147,7 +150,7 @@ export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetr
                   <p className={item.tone === 'amber'
                     ? 'text-xs font-medium text-amber-800 dark:text-amber-400 inline-flex items-center gap-1'
                     : 'text-xs font-medium text-red-800 dark:text-red-400 inline-flex items-center gap-1'}>
-                    {item.tone === 'amber' ? <Briefcase size={12} /> : <AlertCircle size={12} />}
+                    {item.tone === 'amber' ? <Scale size={12} /> : <AlertCircle size={12} />}
                     {item.label}
                   </p>
                   <p className={item.tone === 'amber'
@@ -175,13 +178,76 @@ export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetr
                 <span className="font-mono text-stone-900 dark:text-stone-100">{activeActivityIds.size}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-stone-500 dark:text-stone-400">{getMetricLabel('activeEntities')}</span>
-                <span className="font-mono text-stone-900 dark:text-stone-100">{activeEntries.length}</span>
+                <span className="text-stone-500 dark:text-stone-400">Broken activities</span>
+                <span className="font-mono text-stone-900 dark:text-stone-100">{auditActivities.filter(item => item.status === 'broken').length}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-stone-500 dark:text-stone-400">{getMetricLabel('netTotal')}</span>
-                <span className="font-mono text-stone-900 dark:text-stone-100">{formatCompactValue(activeTotalTotal)}</span>
+                <span className="text-stone-500 dark:text-stone-400">Open anomalies</span>
+                <span className="font-mono text-stone-900 dark:text-stone-100">{auditAnomalies.length}</span>
               </div>
+              <div className="flex justify-between">
+                <span className="text-stone-500 dark:text-stone-400">Workspace net</span>
+                <span className="font-mono text-stone-900 dark:text-stone-100">{formatCompactValue(orgAudit?.net_amount ?? 0)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-stone-500 dark:text-stone-400">Applied records</span>
+                <span className="font-mono text-stone-900 dark:text-stone-100">{orgAudit?.applied_record_count ?? 0}</span>
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-2">
+            <div className="flex items-center justify-between">
+              <p className="text-[11px] uppercase tracking-wide text-stone-400">Watchlist</p>
+              <button
+                type="button"
+                onClick={() => openRoute('/activity')}
+                className="text-[11px] text-emerald-600 hover:text-emerald-700 inline-flex items-center gap-1"
+              >
+                {getActionText('viewAll')}
+                <ExternalLink size={11} />
+              </button>
+            </div>
+            <div className="space-y-1.5">
+              {watchActivities.map(item => (
+                <button
+                  key={item.activity_id}
+                  type="button"
+                  onClick={() => openRoute(`/activity/${item.activity_id}`)}
+                  className="w-full rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-2 text-left"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="truncate text-xs font-medium text-stone-900 dark:text-stone-100">{item.activity_label}</p>
+                    <span className={item.status === 'broken' ? 'text-[11px] font-medium text-red-700 dark:text-red-300' : 'text-[11px] font-medium text-amber-700 dark:text-amber-300'}>
+                      {item.status === 'broken' ? 'Broken' : `${item.open_record_count} open`}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-[11px] text-stone-500 dark:text-stone-400">
+                    {formatDate(item.activity_date)} · Net {formatCompactValue(item.net_amount)}
+                  </p>
+                </button>
+              ))}
+              {watchActivities.length === 0 && channelAlerts.length > 0 && (
+                channelAlerts.map(channel => (
+                  <button
+                    key={channel.channel_label}
+                    type="button"
+                    onClick={() => openRoute('/channels')}
+                    className="w-full rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-2 text-left"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="truncate text-xs font-medium text-stone-900 dark:text-stone-100">{channel.channel_label}</p>
+                      <span className="text-[11px] font-medium text-red-700 dark:text-red-300">Broken</span>
+                    </div>
+                    <p className="mt-0.5 text-[11px] text-stone-500 dark:text-stone-400">Net {formatCompactValue(channel.net_amount)}</p>
+                  </button>
+                ))
+              )}
+              {watchActivities.length === 0 && channelAlerts.length === 0 && (
+                <div className="rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-2 text-xs text-stone-500 dark:text-stone-400">
+                  No watchlist items.
+                </div>
+              )}
             </div>
           </section>
 

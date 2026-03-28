@@ -7,6 +7,7 @@ import { cn } from '../lib/utils';
 import { DbRole, dbRoleToAppRole } from '../lib/roles';
 import { getSupabaseAccessToken, isSupabaseConfigured, SUPABASE_ANON_KEY, supabase } from '../lib/supabase';
 import { useNotification } from '../context/NotificationContext';
+import { useConfirm } from '../context/ConfirmContext';
 import LoadingLine from '../components/LoadingLine';
 import CollapsibleActivitySection from '../components/CollapsibleActivitySection';
 import LiveOperatorsTracker from '../components/LiveOperatorsTracker';
@@ -125,18 +126,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const operatorLogs: any[] = [];
   const recordSystemEvent = async (_data: any) => {};
   const updateProfileOrgId = async (_id: string) => {};
-  const bootstrapClusterAdmin = async () => {
-    if (!supabase) {
-      notify({ type: 'error', message: 'Not ready: client not initialized.' });
-      return;
-    }
-    if (!window.confirm('Create a new group and make yourself the group manager? This is a one-time operation.')) return;
-    const { data, error } = await invokeSafe('manage-organizations', { action: 'bootstrap-cluster-admin' });
-    if (error) { notify({ type: 'error', message: `Bootstrap failed: ${String(error)}` }); return; }
-    notify({ type: 'success', message: (data as any)?.message ?? 'Group created. Reload to activate it.' });
-    await refreshData();
-    await fetchClusterAdmins();
-  };
   // NOTE: these are wired to real state below after useState declarations
   // clusterId and managedOrgIds are declared after the useState block
   const { 
@@ -152,6 +141,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   } = useAppRole();
 
   const { notify } = useNotification();
+  const { confirm } = useConfirm();
   const { user, loading: authLoading, signOut: supabaseSignOut, updatePassword: supabaseUpdatePassword } = useAuth();
   const refreshPromiseRef = React.useRef<Promise<any> | null>(null);
 
@@ -165,10 +155,15 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
   const handleSignOutAll = async () => {
     try {
-      if (window.confirm("This will sign out all sessions on all your devices. Continue?")) {
-        await supabaseSignOut({ scope: 'global' });
-        notify({ type: 'success', message: 'Signed out of all devices.' });
-      }
+      const ok = await confirm({
+        title: 'Sign out everywhere?',
+        message: 'This will sign out all sessions on all your devices.',
+        confirmLabel: 'Sign out',
+        danger: true,
+      });
+      if (!ok) return;
+      await supabaseSignOut({ scope: 'global' });
+      notify({ type: 'success', message: 'Signed out of all devices.' });
     } catch (err: any) {
       notify({ type: 'error', message: err.message || 'Failed to sign out globally.' });
     }
@@ -186,7 +181,9 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     }
 
     // 2. Standardized Invoke (Explicitly inject JWT to ensure coverage)
-    console.log(`[invokeSafe] Calling ${functionName} with explicit JWT...`);
+    if (import.meta.env.DEV) {
+      console.log(`[invokeSafe] Calling ${functionName} with explicit JWT...`);
+    }
     return await supabase!.functions.invoke<T>(functionName, {
       body,
       headers: {
@@ -319,8 +316,14 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     }
     if (isClearingGlobalData) return;
 
-    const confirmed = window.confirm('Clear all operational data? This removes activities, entities, records, teamMember records, teamMember activities, expenses, adjustment requests, collaboration network, and channel movements. This cannot be undone.');
-    if (!confirmed) return;
+    const ok = await confirm({
+      title: 'Clear all operational data?',
+      message:
+        'This removes activities, entities, records, team roster and operator sessions, expenses, adjustment requests, collaboration profiles, and channel movements. This cannot be undone.',
+      danger: true,
+      confirmLabel: 'Clear data',
+    });
+    if (!ok) return;
 
     setIsClearingGlobalData(true);
     try {
@@ -403,7 +406,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         setAccessRequests([]);
         const normalizedErrorMessage = (error.message ?? '').toLowerCase();
         setRequestsNotice(normalizedErrorMessage.includes('access_requests')
-          ? 'access_requests activity not found yet. Run supabase/migrations/20260322230000_flow_ops_schema.sql.'
+          ? 'access_requests table not found. Apply supabase/migrations/00000000000000_init_canonical_schema.sql.'
           : `Unable to load access requests: ${toDisplayError(error.message)}`);
         return;
       }
@@ -431,7 +434,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         setAccessInvites([]);
         const normalizedErrorMessage = (error.message ?? '').toLowerCase();
         setInviteNotice(normalizedErrorMessage.includes('access_invites')
-          ? 'access_invites activity not found yet. Run supabase/migrations/20260322230000_flow_ops_schema.sql.'
+          ? 'access_invites table not found. Apply supabase/migrations/00000000000000_init_canonical_schema.sql.'
           : `Unable to load invite tokens: ${toDisplayError(error.message)}`);
         return;
       }
@@ -636,7 +639,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   };
 
   const resetUserPassword = async (targetUserId: string) => {
-    if (!window.confirm('Send password reset email to this user?')) return;
     setBusyClusterUserId(targetUserId);
     try {
       const { data, error } = await invokeSafe('manage-organizations', { 
@@ -655,7 +657,13 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const deleteClusterAccount = async (account: ManagedClusterAccount) => {
     if (!supabase || !activeOrgId) return;
     await refreshAuthority();
-    if (!window.confirm(`Delete account ${account.email}?`)) return;
+    const okDel = await confirm({
+      title: 'Delete account?',
+      message: `Delete account ${account.email ?? account.user_id}?`,
+      danger: true,
+      confirmLabel: 'Delete',
+    });
+    if (!okDel) return;
 
     setBusyClusterUserId(account.user_id);
     const { error } = await invokeSafe('manage-organizations', {
@@ -752,7 +760,12 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   }, [isPlatformAdmin, isClusterAdmin, clusterRole, role]);
   const provisionOrganization = async () => {
     if (!supabase || !activeOrgId || !clusterId) return;
-    if (!window.confirm('Add a new workspace to this group?')) return;
+    const okProv = await confirm({
+      title: 'Add workspace?',
+      message: 'Add a new workspace to this group?',
+      confirmLabel: 'Add',
+    });
+    if (!okProv) return;
 
     await refreshAuthority();
     setIsProvisioning(true);
@@ -935,7 +948,12 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               disabled={isExporting}
               onClick={() => {
                 const runExport = async () => {
-                  if (!window.confirm('Export workspace data? This action is audit-logged.')) return;
+                  const okEx = await confirm({
+                    title: 'Export workspace data?',
+                    message: 'This action is audit-logged.',
+                    confirmLabel: 'Export',
+                  });
+                  if (!okEx) return;
                   setIsExporting(true);
                   try {
                     const { data, error } = await invokeSafe('export-data', {
@@ -1314,8 +1332,15 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                                   </button>
                                   <button
                                     onClick={() => {
-                                      if (acc.user_id === user?.id) { notify({ type: 'error', message: 'You cannot reset your own password from here.' }); return; }
-                                      if (window.confirm(`Reset password for ${acc.email}?`)) void resetUserPassword(acc.user_id);
+                                      void (async () => {
+                                        if (acc.user_id === user?.id) { notify({ type: 'error', message: 'You cannot reset your own password from here.' }); return; }
+                                        const okReset = await confirm({
+                                          title: 'Reset password?',
+                                          message: `Send reset email to ${acc.email}?`,
+                                          confirmLabel: 'Send',
+                                        });
+                                        if (okReset) void resetUserPassword(acc.user_id);
+                                      })();
                                     }}
                                     className="text-[10px] font-bold text-stone-400 uppercase hover:text-stone-600 transition-colors"
                                   >

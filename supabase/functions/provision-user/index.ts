@@ -104,9 +104,6 @@ Deno.serve(async (request: Request) => {
 
   if (!supabaseUrl || !serviceRoleKey) return json(500, { error: 'Missing environment variables.' }, origin);
 
-  // DEBUG LOGS (Requested)
-  console.log("DEBUG [provision-user]: KEY_PRESENT:", !!serviceRoleKey);
-
   const adminClient = createClient(supabaseUrl, serviceRoleKey);
 
   let payload: ProvisionPayload;
@@ -120,8 +117,6 @@ Deno.serve(async (request: Request) => {
 
   const bearerToken = parseBearerToken(request.headers.get('Authorization')) || (payload.access_token ?? '').trim();
 
-  // DEBUG LOGS (Requested)
-  console.log("DEBUG [provision-user]: TOKEN_PRESENT:", !!bearerToken);
   if (!bearerToken) return json(401, { error: 'Missing bearer token.' }, origin);
 
   const { data: authUserData, error: authUserError } = await adminClient.auth.getUser(bearerToken);

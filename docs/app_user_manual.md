@@ -9,15 +9,18 @@ It explains how to use the app in normal operations.
 
 1. Open Flow Ops.
 2. Sign in with your assigned login ID and password.
-3. Use the left navigation (or mobile dock) to open:
-   - **Dashboard**
-   - **Activity**
-   - **Reserve**
-   - **Contacts**
-   - **Team**
-   - **Config**
+3. Use the left navigation (or mobile dock). **Admins** see the full set; **operators and viewers** typically see **Activities** and **Team** only (other areas redirect to Activities until you have admin access).
+   - **Overview** — workspace dashboard (admin)
+   - **Activities** — activity list and live operations
+   - **Entities** — contacts / counterparties (admin)
+   - **Channels** — reserve accounts and flow tracking (admin)
+   - **Network** — network profiles linked to entities (admin)
+   - **Team** — roster and logs
+   - **Settings** — access and workspace configuration (admin)
 
 If you do not have access yet, use **Request access** on the sign-in page.
+
+For plain-language definitions (activity vs record vs channel), see [glossary.md](glossary.md).
 
 ---
 
@@ -42,12 +45,13 @@ If you do not have access yet, use **Request access** on the sign-in page.
 
 ## 3) Navigation Overview
 
-- **Dashboard**: Operational snapshot and value summary
-- **Activity**: Activity records, Units overview, and live event management
-- **Reserve**: Reserve actions, totals, and pending entry tracking
-- **Contacts**: Profiles and relationship tracking
+- **Overview**: Operational snapshot and value summary (admin)
+- **Activities**: Activity list, detail, and live event management
+- **Channels**: Reserve actions, totals, and pending entry tracking (admin)
+- **Entities**: Entity profiles and relationship tracking (admin)
+- **Network**: Network profiles and linked entities (admin)
 - **Team**: Operating team roster and activity logs
-- **Config**: System preferences and access control
+- **Settings**: System preferences and access control (admin)
 
 ---
 
@@ -60,42 +64,49 @@ If you do not have access yet, use **Request access** on the sign-in page.
 - `Esc` → Exit focus/help
 - `Arrow Up` → Scroll to top
 
-### Global Navigation (G then ...)
+### Global navigation (single key, when not typing in a field)
 
-- `G then D` → Dashboard
-- `G then A` → Activity
-- `G then T` → Reserve
-- `G then M` → Team
-- `G then S` → Config
+Admin routes:
 
-### Global Create (C then ...)
+- `B` → Overview (Dashboard)
+- `A` → Activities
+- `P` → Entities
+- `C` → Network
+- `V` → Channels
+- `T` → Team
+- `S` → Settings
 
-- `C then A` → Create activity
-- `C then E` → Record entry
-- `C then C` → Add account
-- `C then M` → Create member
+Operators and viewers: `B`, `A`, `P`, `C`, `V`, and `S` go to **Activities** (home); `T` still opens **Team**.
 
-### Section Tabs
+### Global create (`N` then …)
 
-- `Arrow Right` / `Arrow Left` → Move between tabs in multi-tab pages
+- `N` then `A` → Create activity
+- `N` then `E` → Add entry (uses active activity when possible)
+- `N` then `V` → Add reserve account (admin; opens Channels)
+- `N` then `P` → Add entity (admin)
+- `N` then `M` → Create team member
+
+### Section tabs
+
+- `Arrow Right` / `Arrow Left` → Move between tabs in multi-tab pages (same as in-app shortcut help)
 
 ---
 
 ## 5) Operations Workflow
 
-## 5.1 Dashboard
+## 5.1 Overview (Dashboard)
 
 Use this for quick business visibility.
 
 Typical use:
 
-1. Open **Dashboard**.
+1. Open **Overview** (Dashboard).
 2. Review totals, active logs, and trend cards/charts.
-3. Move into Reserve/Contacts for detailed actions.
+3. Move into **Channels** or **Entities** for detailed actions.
 
-## 5.2 Reserve
+## 5.2 Channels (reserve accounts)
 
-Use Reserve for flow movement and pending entry tracking.
+Use **Channels** for flow movement and pending entry tracking.
 
 Main actions:
 
@@ -114,9 +125,9 @@ Recommended flow:
 3. Review unresolved total mismatches.
 4. Archive historical entries when fully settled.
 
-## 5.3 Contacts
+## 5.3 Entities
 
-Use this to manage partner details.
+Use **Entities** to manage partner (entity) details.
 
 Main actions:
 
@@ -128,16 +139,16 @@ Main actions:
 
 ---
 
-## 6) Activity Workspace
+## 6) Activities
 
-## 6.1 Overview
+## 6.1 List and lifecycle
 
-Use Activity to create and manage specific blocks.
+Use **Activities** to create and manage specific blocks.
 
 Main actions:
 
 - Create activity (date, platform, details)
-- Open activity details
+- Open activity detail
 - Review active and closed activities
 - Delete activity (if needed)
 
@@ -192,7 +203,7 @@ Recommended flow:
 
 ---
 
-## 8) Settings Workspace
+## 8) Settings
 
 Contains operational security controls.
 
@@ -217,7 +228,7 @@ Main actions:
 
 1. Open active Activity in Detail view.
 2. Record unit entries/flows in real time.
-3. Track reserve activity, pending entries, and entity updates.
+3. Track reserve (**Channels**) activity, pending entries, and entity updates.
 4. Track team member logs.
 
 ## End of activity

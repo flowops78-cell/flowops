@@ -22,8 +22,14 @@ export const isAllowedActivityStatusTransition = (fromStatus: Activity['status']
 };
 
 export const computeActivityRecordsDiscrepancy = (records: ActivityRecord[]) => {
-  const totalInput = records.reduce((sum, record) => sum + (record.unit_amount ?? record.unit_amount ?? 0), 0);
-  const totalOutput = records.reduce((sum, record) => sum + (record.unit_amount ?? record.unit_amount ?? 0), 0);
+  const totalInput = records.reduce(
+    (sum, record) => sum + (record.direction === 'increase' ? (record.unit_amount ?? 0) : 0),
+    0,
+  );
+  const totalOutput = records.reduce(
+    (sum, record) => sum + (record.direction === 'decrease' ? (record.unit_amount ?? 0) : 0),
+    0,
+  );
   return totalOutput - totalInput;
 };
 

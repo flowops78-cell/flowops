@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, UserCog, History, Settings, Sun, Moon, Keyboard, LogOut, Landmark, Activity, BarChart3, Briefcase, Handshake, Circle } from 'lucide-react';
+import { LayoutDashboard, Users, UserCog, History, Settings, Sun, Moon, Keyboard, LogOut, Landmark, Activity, BarChart3, Briefcase, Handshake, Circle, Scale, Zap } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import { useData } from '../context/DataContext';
@@ -11,6 +11,7 @@ import { isSupabaseConfigured } from '../lib/supabase';
 import { SECTION_SHORTCUT_EVENT, SectionShortcutDirection } from '../lib/sectionShortcuts';
 import ShortcutHelpModal from './ShortcutHelpModal';
 import GlobalTelemetryPanel from './GlobalTelemetryPanel';
+import LiveFeedPanel from './LiveFeedPanel';
 import IdentityBadge from './IdentityBadge';
 import { preloadRoute } from '../lib/routePreloaders';
 import { ChevronDown, Globe } from 'lucide-react';
@@ -29,6 +30,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [isFocusFullscreen, setIsFocusFullscreen] = useState(false);
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [isTelemetryOpen, setIsTelemetryOpen] = useState(false);
+  const [isLiveFeedOpen, setIsLiveFeedOpen] = useState(false);
   const [isOrgSwitcherOpen, setIsOrgSwitcherOpen] = useState(false);
   const [shortcutPrefix, setShortcutPrefix] = useState<'n' | null>(null);
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
@@ -50,18 +52,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     },
   ];
 
+  // Match App.tsx: non-admins are redirected away from dashboard, entities, channels, collaborations, settings.
   const operatorNavGroups = [
     {
       label: '',
       items: [
-        { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Overview' },
-        { to: '/activity', icon: <History size={18} />, label: 'Activities' },
-        { to: '/entities', icon: <EntitiesIcon size={18} />, label: 'Entities' },
-        { to: '/channels', icon: <Circle size={18} />, label: 'Channels' },
-        { to: '/collaborations', icon: <Handshake size={18} />, label: 'Network' },
-        { to: '/team', icon: <UserCog size={18} />, label: 'Team' },
+        { to: '/activity', icon: <History size={18} />, label: 'Activities', hint: 'Activity records and management' },
+        { to: '/team', icon: <UserCog size={18} />, label: 'Team', hint: 'Team management and operator coverage' },
       ],
-
     },
   ];
 
@@ -142,15 +140,25 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       }
 
       if (!isTypingTarget && !event.metaKey && !event.ctrlKey && !event.altKey) {
-        const goRouteMap: Record<string, string> = {
-          b: '/dashboard',
-          a: '/activity',
-          c: '/collaborations',
-          v: '/channels',
-          t: '/team',
-          s: canAccessAdminUi ? '/settings' : '/activity',
-
-        };
+        const goRouteMap: Record<string, string> = canAccessAdminUi
+          ? {
+              b: '/dashboard',
+              a: '/activity',
+              p: '/entities',
+              c: '/collaborations',
+              v: '/channels',
+              t: '/team',
+              s: '/settings',
+            }
+          : {
+              b: '/activity',
+              a: '/activity',
+              p: '/activity',
+              c: '/activity',
+              v: '/activity',
+              t: '/team',
+              s: '/activity',
+            };
         const route = goRouteMap[normalizedKey];
         if (route) {
           event.preventDefault();
@@ -196,7 +204,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           if (normalizedKey === 'p') {
             event.preventDefault();
             clearShortcutPrefix();
-            navigate('/entities?action=add-entity');
+            navigate(canAccessAdminUi ? '/entities?action=add-entity' : '/activity');
             return;
           }
 
@@ -269,10 +277,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         'fixed top-0 left-0 right-0 h-0.5 z-[70] pointer-events-none transition-opacity duration-200',
         showSyncProgress ? 'opacity-100' : 'opacity-0'
       )}>
-        <div
-          className="h-full bg-stone-800 dark:bg-stone-200 transition-[width] duration-200 ease-out"
-          style={{ width: `${Math.max(4, Math.min(100, loadingProgress))}%` }}
-        />
+        {loadingProgress > 0 ? (
+          <div
+            className="h-full bg-stone-800 dark:bg-stone-200 transition-[width] duration-300 ease-out"
+            style={{ width: `${Math.max(6, Math.min(100, loadingProgress))}%` }}
+          />
+        ) : (
+          <div className="h-full w-full overflow-hidden bg-stone-300/30 dark:bg-stone-600/30">
+            <div className="h-full w-1/3 bg-stone-800 dark:bg-stone-200 sync-indeterminate-bar" />
+          </div>
+        )}
       </div>
 
       {/* Mobile Top Bar */}
@@ -476,12 +490,20 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <Keyboard size={15} />
             </button>
             <button
+              onClick={() => setIsLiveFeedOpen(true)}
+              className="interactive-3d inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
+              title="Live Feed"
+              aria-label="Live Feed"
+            >
+              <Zap size={15} />
+            </button>
+            <button
               onClick={() => setIsTelemetryOpen(true)}
               className="interactive-3d inline-flex h-8 w-8 items-center justify-center rounded-lg text-stone-500 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800"
               title="Audit Panel"
               aria-label="Audit Panel"
             >
-              <Activity size={15} />
+              <Scale size={15} />
             </button>
             <button
               onClick={toggleTheme}
@@ -549,6 +571,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
       <ShortcutHelpModal isOpen={isShortcutHelpOpen} onClose={() => setIsShortcutHelpOpen(false)} />
       <GlobalTelemetryPanel isOpen={isTelemetryOpen} onClose={() => setIsTelemetryOpen(false)} />
+      <LiveFeedPanel isOpen={isLiveFeedOpen} onClose={() => setIsLiveFeedOpen(false)} />
     </div>
   );
 }

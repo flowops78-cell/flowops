@@ -38,7 +38,7 @@ async function setup() {
 
   const userId = userError?.message.includes('already registered') 
     ? (await supabase.auth.admin.listUsers()).data.users.find(u => u.email === adminEmail)?.id
-    : userData.user.id;
+    : userData?.user?.id;
 
   if (!userId) throw new Error('Unable to resolve user ID.');
 

@@ -17,6 +17,7 @@ import {
   AuditAnomaly,
 } from '../types';
 import { dbRoleToAppRole } from '../lib/roles';
+import { DATA_SELECT } from '../lib/dataFetchSelects';
 import { useAppRole } from './AppRoleContext';
 import { useAuth } from './AuthContext';
 
@@ -259,47 +260,60 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const fetchData = async () => {
     if (!supabase || !activeOrgId || isDemoMode) {
       setLoading(false);
+      setLoadingProgress(0);
       return;
     }
 
+    const orgSnapshot = activeOrgId;
+
     try {
       setLoading(true);
+      setLoadingProgress(8);
+      setAuditActivities([]);
+      setAuditEntities([]);
+      setAuditOrgs([]);
+      setAuditChannels([]);
+      setAuditAnomalies([]);
 
-      const [eRes, aRes, rRes, tRes, cRes, chRes, sRes, lRes, ebRes, aaRes, aeRes, aoRes, acRes, anRes] = await Promise.all([
-        supabase.from('entities').select('*').eq('org_id', activeOrgId).order('name'),
-        supabase.from('activities').select('*').eq('org_id', activeOrgId).order('date', { ascending: false }),
-        supabase.from('records').select('*').eq('org_id', activeOrgId).order('created_at', { ascending: false }),
-        supabase.from('team_members').select('*').eq('org_id', activeOrgId).order('name'),
-        supabase.from('collaborations').select('*').eq('org_id', activeOrgId).order('name'),
-        supabase.from('channels').select('*').eq('org_id', activeOrgId).order('name'),
-        supabase.from('audit_events').select('*').eq('org_id', activeOrgId).order('created_at', { ascending: false }).limit(100),
-        supabase.from('operator_activities').select('*').eq('org_id', activeOrgId).order('started_at', { ascending: false }),
-        supabase.from('entity_balances').select('*').eq('org_id', activeOrgId),
-        supabase.from('audit_activity_integrity').select('*').eq('org_id', activeOrgId).order('status').order('net_amount', { ascending: false }),
-        supabase.from('audit_entity_health').select('*').eq('org_id', activeOrgId).order('net_amount', { ascending: true }),
-        supabase.from('audit_org_integrity').select('*').eq('org_id', activeOrgId),
-        supabase.from('audit_channel_integrity').select('*').eq('org_id', activeOrgId).order('status').order('net_amount', { ascending: false }),
-        supabase.from('audit_record_anomalies').select('*').eq('org_id', activeOrgId).order('severity').order('anomaly_type'),
+      const [eRes, aRes, rRes, tRes, cRes, chRes, sRes, lRes, ebRes] = await Promise.all([
+        supabase.from('entities').select(DATA_SELECT.entities).eq('org_id', orgSnapshot).order('name'),
+        supabase.from('activities').select(DATA_SELECT.activities).eq('org_id', orgSnapshot).order('date', { ascending: false }),
+        supabase.from('records').select(DATA_SELECT.records).eq('org_id', orgSnapshot).order('created_at', { ascending: false }),
+        supabase.from('team_members').select(DATA_SELECT.team_members).eq('org_id', orgSnapshot).order('name'),
+        supabase.from('collaborations').select(DATA_SELECT.collaborations).eq('org_id', orgSnapshot).order('name'),
+        supabase.from('channels').select(DATA_SELECT.channels).eq('org_id', orgSnapshot).order('name'),
+        supabase.from('audit_events').select(DATA_SELECT.audit_events).eq('org_id', orgSnapshot).order('created_at', { ascending: false }).limit(100),
+        supabase.from('operator_activities').select(DATA_SELECT.operator_activities).eq('org_id', orgSnapshot).order('started_at', { ascending: false }),
+        supabase.from('entity_balances').select(DATA_SELECT.entity_balances).eq('org_id', orgSnapshot),
       ]);
 
-      const responses = [eRes, aRes, rRes, tRes, cRes, chRes, sRes, lRes, ebRes, aaRes, aeRes, aoRes, acRes, anRes];
-      const authError = responses.map((response) => response.error).find((error) => isAuthFailure(error));
+      if (orgSnapshot !== activeOrgId) return;
+
+      const phase1All = [eRes, aRes, rRes, tRes, cRes, chRes, sRes, lRes, ebRes];
+      const authError = phase1All.map((r) => r.error).find((error) => isAuthFailure(error));
       if (authError) {
         console.warn('Authentication failed during org fetch. Resetting local session state.', authError);
         await signOut({ scope: 'local' });
         return;
       }
 
-      const firstError = responses.map((response) => response.error).find(Boolean);
-      if (firstError) {
-        throw firstError;
+      const coreResponses = [eRes, aRes, rRes, tRes, cRes, chRes, sRes, lRes];
+      const firstCoreError = coreResponses.map((r) => r.error).find(Boolean);
+      if (firstCoreError) {
+        throw firstCoreError;
       }
+
+      setLoadingProgress(72);
 
       if (eRes.data) setEntities(eRes.data);
       if (aRes.data) setActivities(aRes.data);
       if (rRes.data) setRecords(rRes.data);
       if (tRes.data) setTeamMembers(tRes.data.map((m: any) => ({ ...m, role: m.staff_role })));
-      if (cRes.data) setCollaborations(cRes.data);
+      if (cRes.data) {
+        setCollaborations(
+          cRes.data.map((c: any) => ({ ...c, total_number: c.total_number ?? 0 })),
+        );
+      }
       if (chRes.data) setChannels(chRes.data.map((c: any) => ({ ...c, is_active: c.status === 'active' })));
       if (lRes.data) {
         setActivityLogs(lRes.data.map((item: any) => ({
@@ -311,7 +325,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           status: item.is_active ? 'active' : 'completed',
         })));
       }
-      
+
       if (sRes.data) {
         setSystemEvents(sRes.data.map((item: any) => ({
           id: item.id,
@@ -327,10 +341,64 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         })));
       }
 
+      if (ebRes.error) {
+        const code = (ebRes.error as { code?: string }).code;
+        const msg = String(ebRes.error.message || '');
+        const unitsHint = msg.includes('total_units')
+          ? ' (Stale view definitions may still reference removed columns — re-apply audit views from 00000000000000_init_canonical_schema.sql or run supabase db reset in dev.)'
+          : '';
+        if (code === 'PGRST205') {
+          console.warn(
+            '[flow-ops] entity_balances not exposed to PostgREST (PGRST205). Apply ledger views from 00000000000000_init_canonical_schema.sql, then reload schema.',
+          );
+        } else {
+          console.warn(`Optional dataset entity_balances failed to load. Continuing without it.${unitsHint}`, ebRes.error);
+        }
+      }
       if (ebRes.data) {
         const balanceMap = new Map<string, EntityBalance>();
-        (ebRes.data as EntityBalance[]).forEach(row => balanceMap.set(row.id, row));
+        (ebRes.data as EntityBalance[]).forEach((row) => balanceMap.set(row.id, row));
         setEntityBalances(balanceMap);
+      }
+
+      setLoadingProgress(100);
+      setLoading(false);
+      setLoadingProgress(0);
+
+      const [aaRes, aeRes, aoRes, acRes, anRes] = await Promise.all([
+        supabase.from('audit_activity_integrity').select(DATA_SELECT.audit_activity_integrity).eq('org_id', orgSnapshot).order('status').order('net_amount', { ascending: false }),
+        supabase.from('audit_entity_health').select(DATA_SELECT.audit_entity_health).eq('org_id', orgSnapshot).order('net_amount', { ascending: true }),
+        supabase.from('audit_org_integrity').select(DATA_SELECT.audit_org_integrity).eq('org_id', orgSnapshot),
+        supabase.from('audit_channel_integrity').select(DATA_SELECT.audit_channel_integrity).eq('org_id', orgSnapshot).order('status').order('net_amount', { ascending: false }),
+        supabase.from('audit_record_anomalies').select(DATA_SELECT.audit_record_anomalies).eq('org_id', orgSnapshot).order('severity').order('anomaly_type'),
+      ]);
+
+      if (orgSnapshot !== activeOrgId) return;
+
+      const optionalResponseEntries = [
+        ['audit_activity_integrity', aaRes],
+        ['audit_entity_health', aeRes],
+        ['audit_org_integrity', aoRes],
+        ['audit_channel_integrity', acRes],
+        ['audit_record_anomalies', anRes],
+      ] as const;
+
+      const optionalErrors = optionalResponseEntries.filter(([, r]) => r.error);
+      const schemaCacheMisses = optionalErrors.filter(
+        ([, r]) => (r.error as { code?: string })?.code === 'PGRST205',
+      );
+      if (schemaCacheMisses.length > 0) {
+        console.warn(
+          `[flow-ops] Optional DB views not exposed to PostgREST (${schemaCacheMisses.map(([n]) => n).join(', ')}). Apply supabase/migrations/00000000000000_init_canonical_schema.sql (ledger views) on this project, then reload schema.`,
+        );
+      }
+      for (const [name, response] of optionalErrors) {
+        if ((response.error as { code?: string })?.code === 'PGRST205') continue;
+        const msg = String(response.error?.message || '');
+        const unitsHint = msg.includes('total_units')
+          ? ' (Stale view definitions may still reference removed columns — re-apply audit views from 00000000000000_init_canonical_schema.sql or run supabase db reset in dev.)'
+          : '';
+        console.warn(`Optional dataset ${name} failed to load. Continuing without it.${unitsHint}`, response.error);
       }
 
       if (aaRes.data) setAuditActivities(aaRes.data as AuditActivityIntegrity[]);
@@ -338,18 +406,16 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (aoRes.data) setAuditOrgs(aoRes.data as AuditOrgIntegrity[]);
       if (acRes.data) setAuditChannels(acRes.data as AuditChannelIntegrity[]);
       if (anRes.data) setAuditAnomalies(anRes.data as AuditAnomaly[]);
-
-      // Fetch organization metadata for managedOrgIds is handled in its own effect below
-
     } catch (err) {
       if (isAuthFailure(err)) {
         console.warn('Authentication failed while loading org data. Resetting local session state.', err);
         await signOut({ scope: 'local' });
         return;
       }
-      console.error("Fetch error:", err);
+      console.error('Fetch error:', err);
     } finally {
       setLoading(false);
+      setLoadingProgress(0);
     }
   };
 
@@ -403,7 +469,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     const { data: orgs, error } = await supabase
       .from('organizations')
-      .select('id, name, tag, slug, cluster_id')
+      .select('*')
       .in('id', managedOrgIds);
 
     if (error) {
@@ -438,10 +504,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshRecordsAndBalances = async (orgId: string) => {
     if (!supabase) return;
     const [rRes, ebRes] = await Promise.all([
-      supabase.from('records').select('*').eq('org_id', orgId).order('created_at', { ascending: false }),
-      supabase.from('entity_balances').select('*').eq('org_id', orgId),
+      supabase.from('records').select(DATA_SELECT.records).eq('org_id', orgId).order('created_at', { ascending: false }),
+      supabase.from('entity_balances').select(DATA_SELECT.entity_balances).eq('org_id', orgId),
     ]);
     if (rRes.data) setRecords(rRes.data);
+    if (ebRes.error) {
+      const hint =
+        String(ebRes.error.message || '').includes('total_units')
+          ? ' Stale entity_balances / audit views — re-apply the view section of 00000000000000_init_canonical_schema.sql or refresh the database from the current baseline.'
+          : '';
+      console.warn(`[flow-ops] entity_balances refresh failed:${hint}`, ebRes.error);
+    }
     if (ebRes.data) {
       const map = new Map<string, EntityBalance>();
       (ebRes.data as EntityBalance[]).forEach(r => map.set(r.id, r));
@@ -453,7 +526,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (!supabase) return;
     const { data } = await supabase
       .from('operator_activities')
-      .select('*')
+      .select(DATA_SELECT.operator_activities)
       .eq('org_id', orgId)
       .order('started_at', { ascending: false });
     if (data) {
@@ -535,6 +608,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const deleteEntity = async (id: string) => {
     return withInflight(`deleteEntity:${id}`, async () => {
       const orgId = requireOrgScope();
+      
+      // Clean up records referencing this entity by id or target id
+      const { error: recordsError } = await supabase!.from('records')
+        .delete()
+        .or(`entity_id.eq.${id},target_entity_id.eq.${id}`);
+      if (recordsError) throw recordsError;
+
       const { error } = await supabase!.from('entities').delete().eq('id', id);
       if (error) throw error;
       setEntities(prev => prev.filter(e => e.id !== id));
@@ -545,54 +625,91 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // ─── Activity mutations (optimistic local update) ─────────────────────────
   const addActivity = async (data: any) => {
     const orgId = requireOrgScope();
-    const key = `addActivity:${orgId}:${String(data.label ?? data.name).toLowerCase()}:${data.date}`;
+    const label = String(data.label || data.name || '').trim() || 'Untitled activity';
+    const dateStr = typeof data.date === 'string' ? data.date : '';
+    const timeStr = typeof (data.start_time ?? data.startTime) === 'string' ? (data.start_time ?? data.startTime) : '';
+    let dateIso: string;
+    let startTimeIso: string;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr) && /^\d{2}:\d{2}/.test(timeStr)) {
+      const local = new Date(`${dateStr}T${timeStr.slice(0, 5)}:00`);
+      if (!Number.isNaN(local.getTime())) {
+        startTimeIso = local.toISOString();
+        dateIso = startTimeIso;
+      } else {
+        const now = new Date().toISOString();
+        dateIso = now;
+        startTimeIso = now;
+      }
+    } else if (dateStr) {
+      const parsed = new Date(dateStr);
+      const base = Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+      dateIso = base.toISOString();
+      startTimeIso = dateIso;
+    } else {
+      const now = new Date().toISOString();
+      dateIso = now;
+      startTimeIso = now;
+    }
+
+    const key = `addActivity:${orgId}:${label.toLowerCase()}:${dateIso}`;
     return withInflight(key, async () => {
       const { data: row, error } = await supabase!
         .from('activities')
         .insert([{
           org_id: orgId,
-          label: data.label || data.name,
-          date: data.date,
+          label,
+          date: dateIso,
+          start_time: startTimeIso,
           status: data.status || 'active',
           channel_label: data.channel_label || data.channel,
           assigned_user_id: data.assigned_user_id,
+          activity_mode: data.activity_mode,
         }])
         .select('*')
         .single();
       if (error) throw error;
-      setActivities(prev => [row, ...prev]);
+      setActivities(prev => [{ ...row, date: dateIso }, ...prev]);
       return row.id as string;
     });
   };
 
   const updateActivity = async (activity: any) => {
     return withInflight(`updateActivity:${activity.id}`, async () => {
+      const resolvedDate = activity.date;
       const updates: any = {
         label: activity.label || activity.name,
-        date: activity.date,
+        date: resolvedDate,
+        start_time: activity.start_time || activity.startTime,
         status: activity.status || 'active',
         channel_label: activity.channel_label || activity.channel,
         assigned_user_id: activity.assigned_user_id,
       };
-      if (activity.start_time) updates.start_time = activity.start_time;
-      if (activity.operational_weight !== undefined) updates.operational_weight = activity.operational_weight;
-      if (activity.channel_weight !== undefined) updates.channel_weight = activity.channel_weight;
       if (activity.activity_mode) updates.activity_mode = activity.activity_mode;
 
       const { data: row, error } = await supabase!
         .from('activities').update(updates).eq('id', activity.id).select('*').single();
       if (error) throw error;
-      if (row) setActivities(prev => prev.map(a => a.id === activity.id ? row : a));
+      if (row) {
+        setActivities(prev => prev.map(a => a.id === activity.id ? { ...row, date: resolvedDate } : a));
+      }
     });
   };
 
   const deleteActivity = async (id: string) => {
     return withInflight(`deleteActivity:${id}`, async () => {
       const orgId = requireOrgScope();
+      
+      // First, delete associated records to avoid foreign key violations
+      // Correct table name is 'records'
+      const { error: recordsError } = await supabase!.from('records').delete().eq('activity_id', id);
+      if (recordsError) throw recordsError;
+
+      // Now delete the activity itself
       const { error } = await supabase!.from('activities').delete().eq('id', id);
       if (error) throw error;
+      
       setActivities(prev => prev.filter(a => a.id !== id));
-      // Records referencing this activity still exist — refresh to reflect reality
+      // Refresh balances to reflect the removed records
       await refreshRecordsAndBalances(orgId);
     });
   };
@@ -732,7 +849,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const addChannelRecord = async (data: any) => {
     const orgId = requireOrgScope();
     const activityId = await ensureWorkspaceLedgerActivityId();
-    const key = `channelRecord:${orgId}:${data.type}:${data.amount}:${data.method}`;
+    const amount = Number(data.amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error('Enter a valid amount greater than zero.');
+    }
+    const method = typeof data.method === 'string' ? data.method.trim() : '';
+    if (!method) {
+      throw new Error('Select or enter a channel before saving.');
+    }
+    const key = `channelRecord:${orgId}:${data.type}:${amount}:${method}`;
     return withInflight(key, async () => {
       const { error } = await supabase!
         .from('records')
@@ -741,10 +866,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           activity_id: activityId,
           direction: data.type === 'increment' ? 'increase' : 'decrease',
           status: data.status || 'applied',
-          unit_amount: data.amount,
+          unit_amount: amount,
           transfer_group_id: data.transfer_group_id,
-          channel_label: data.method,
-          notes: data.notes || `Channel entry: ${data.method}`,
+          channel_label: method,
+          notes: data.notes || `Channel entry: ${method}`,
         }]);
       if (error) throw error;
       await refreshRecordsAndBalances(orgId);
@@ -803,6 +928,24 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteTeamMember = async (id: string) => {
     return withInflight(`deleteMember:${id}`, async () => {
+      const orgId = requireOrgScope();
+
+      const { data: row, error: fetchError } = await supabase!
+        .from('team_members')
+        .select('user_id')
+        .eq('id', id)
+        .eq('org_id', orgId)
+        .maybeSingle();
+      if (fetchError) throw fetchError;
+
+      if (row?.user_id) {
+        const { error: logsError } = await supabase!.from('operator_activities')
+          .delete()
+          .eq('org_id', orgId)
+          .eq('actor_user_id', row.user_id);
+        if (logsError) throw logsError;
+      }
+
       const { error } = await supabase!.from('team_members').delete().eq('id', id);
       if (error) throw error;
       setTeamMembers(prev => prev.filter(m => m.id !== id));
@@ -819,6 +962,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .insert([{
           org_id: orgId,
           name: data.name,
+          status: 'active',
           collaboration_type: data.collaboration_type || 'channel',
           participation_factor: data.participation_factor ?? 0,
           overhead_weight_pct: data.overhead_weight_pct ?? 0,
@@ -837,7 +981,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const { data: row, error } = await supabase!
         .from('collaborations')
         .update({ name: collab.name, collaboration_type: collab.collaboration_type,
-          participation_factor: collab.participation_factor, overhead_weight_pct: collab.overhead_weight_pct,
+          status: collab.status || 'active', participation_factor: collab.participation_factor, overhead_weight_pct: collab.overhead_weight_pct,
           rules: collab.rules })
         .eq('id', collab.id)
         .select('*')
@@ -849,9 +993,25 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteCollaboration = async (id: string) => {
     return withInflight(`deleteCollab:${id}`, async () => {
+      const orgId = requireOrgScope();
+
+      // Deleting a collaboration (Profile) should nullify or clean up entities that depend on it
+      // For now, we'll nullify the reference in entities to avoid orphan entities 
+      // but still allow the collaboration to be deleted.
+      const { error: entitiesError } = await supabase!.from('entities')
+        .update({ collaboration_id: null })
+        .eq('collaboration_id', id);
+      if (entitiesError) throw entitiesError;
+
+      const { error: referringError } = await supabase!.from('entities')
+        .update({ referring_collaboration_id: null })
+        .eq('referring_collaboration_id', id);
+      if (referringError) throw referringError;
+
       const { error } = await supabase!.from('collaborations').delete().eq('id', id);
       if (error) throw error;
       setCollaborations(prev => prev.filter(c => c.id !== id));
+      await fetchData();
     });
   };
 
@@ -885,9 +1045,32 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const deleteTransferAccount = async (id: string) => {
     return withInflight(`deleteChannel:${id}`, async () => {
+      const orgId = requireOrgScope();
+      const channel = channels.find(c => c.id === id);
+
+      const { data: links, error: linkErr } = await supabase!
+        .from('channel_records')
+        .select('record_id')
+        .eq('org_id', orgId)
+        .eq('channel_id', id);
+      if (linkErr) throw linkErr;
+
+      const recordIds = [...new Set((links ?? []).map((r: { record_id: string }) => r.record_id).filter(Boolean))];
+      if (recordIds.length > 0) {
+        const { error: recErr } = await supabase!.from('records').delete().in('id', recordIds);
+        if (recErr) throw recErr;
+      } else if (channel?.name) {
+        const { error: recordsError } = await supabase!.from('records')
+          .delete()
+          .eq('org_id', orgId)
+          .eq('channel_label', channel.name);
+        if (recordsError) throw recordsError;
+      }
+
       const { error } = await supabase!.from('channels').delete().eq('id', id);
       if (error) throw error;
       setChannels(prev => prev.filter(c => c.id !== id));
+      await refreshRecordsAndBalances(orgId);
     });
   };
   const { refreshAuthority } = useAppRole();

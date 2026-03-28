@@ -2,10 +2,7 @@ const routePreloaders: Record<string, () => Promise<unknown>> = {
   '/': () => Promise.all([
     import('../pages/Dashboard'),
   ]),
-  '/activity': () => Promise.all([
-    import('../pages/ActivityMonitor'),
-    import('../pages/Activities'),
-  ]),
+  '/activity': () => import('../pages/Activities'),
   '/channels': () => Promise.all([
     import('../pages/ActivityOverview'),
     import('../pages/Channels'),
@@ -31,19 +28,17 @@ export const preloadRoute = (route: string) => {
   return loader().then(() => undefined).catch(() => undefined);
 };
 
+/**
+ * Preload a small set of high-traffic chunks after idle so first navigation is snappy,
+ * without pulling every admin route during the same window as DataContext’s ~14 parallel
+ * Supabase requests (bandwidth / main-thread parse contention on cold load).
+ */
 export const preloadCoreRoutesOnIdle = () => {
   let cancelled = false;
 
   const run = () => {
     if (cancelled) return;
-    void Promise.all([
-      preloadRoute('/'),
-      preloadRoute('/activity'),
-      preloadRoute('/channels'),
-      preloadRoute('/collaborations'),
-      preloadRoute('/team'),
-      preloadRoute('/settings'),
-    ]);
+    void Promise.all([preloadRoute('/'), preloadRoute('/activity')]);
   };
 
   if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {

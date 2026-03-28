@@ -29,7 +29,7 @@ describe('LoadingLine', () => {
 
   it('applies compact styles when requested', () => {
     const { container } = render(<LoadingLine compact />);
-    const bar = container.querySelector('.h-1');
-    expect(bar).toBeInTheDocument();
+    const root = container.firstElementChild;
+    expect(root).toHaveClass('space-y-1');
   });
 });

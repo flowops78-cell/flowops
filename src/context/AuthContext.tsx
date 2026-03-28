@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { AUTH_PERSIST_ACTIVITY_KEY, isSupabaseConfigured, supabase } from '../lib/supabase';
+import { invokeRevokeOtherSessions } from '../lib/revokeOtherSessions';
 
 type AuthContextType = {
   user: User | null;
@@ -105,10 +106,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
 
+    const sb = supabase;
     let mounted = true;
 
     const adoptSession = async (nextSession: Session | null, options?: { persistSessionId?: boolean }) => {
-      const client = supabase;
+      const client = sb;
       if (!client || !mounted) return;
 
       if (!nextSession?.access_token) {
@@ -143,18 +145,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
-    const { data } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
+    const { data } = sb.auth.onAuthStateChange(async (event, nextSession) => {
       if (event === 'SIGNED_OUT') {
         clearClientSessionState();
         return;
       }
 
       await adoptSession(nextSession, { persistSessionId: event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' });
+
+      // New login: revoke other refresh sessions via Edge Function. Defer so the Supabase
+      // client has committed the session before functions.invoke attaches Authorization.
+      if (event === 'SIGNED_IN') {
+        const invoke = () => {
+          void invokeRevokeOtherSessions(sb);
+        };
+        queueMicrotask(invoke);
+      }
     });
 
     // Realtime enforcement for Single Session
     let channel: any;
-    const client = supabase;
+    const client = sb;
     if (activity?.user && client) {
       channel = client
         .channel(`single-session-${activity.user.id}`)

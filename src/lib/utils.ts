@@ -39,6 +39,14 @@ export const formatDate = (date: string | Date) => {
   });
 };
 
+export const formatTime = (date: string | Date) => {
+  return new Date(date).toLocaleTimeString('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  });
+};
+
 export const APP_MIN_DATE = '2000-01-01';
 
 export const isValidIsoDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(new Date(`${value}T00:00:00`).getTime());

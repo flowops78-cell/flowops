@@ -9,7 +9,17 @@ if (!supabaseUrl || !serviceRoleKey) {
 
 const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-async function provision(email, password, role, scopeId, isMetaOrg) {
+async function provision(
+  email: string | undefined,
+  password: string | undefined,
+  role: string,
+  scopeId: string | undefined,
+  isMetaOrg: boolean
+) {
+  if (!email || !password) {
+    throw new Error('Email and password must be provided for provisioning.');
+  }
+
   console.log(`Provisioning ${role} account: ${email}...`);
 
   const { data: userData, error: userError } = await supabase.auth.admin.createUser({
@@ -21,7 +31,7 @@ async function provision(email, password, role, scopeId, isMetaOrg) {
 
   const userId = userError?.message.includes('already registered')
     ? (await supabase.auth.admin.listUsers()).data.users.find(u => u.email === email)?.id
-    : userData.user.id;
+    : userData?.user?.id;
 
   if (!userId) throw new Error(`Unable to resolve user ID for ${email}`);
 

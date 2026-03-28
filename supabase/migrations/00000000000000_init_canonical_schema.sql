@@ -1,7 +1,10 @@
 -- -------------------------------------------------------------
 -- 00000000000000_init_canonical_schema.sql
--- Consolidated Initial Baseline for Flow Ops
--- Combines 14 incremental migrations into a single source of truth.
+-- Single baseline for Flow Ops (schema, RLS, ledger/audit views).
+-- New environments: supabase db reset / push applies this file only.
+-- Existing DBs that already ran older migration filenames: use supabase
+-- migration repair or manual alignment; do not expect CREATE IF NOT EXISTS
+-- to add new columns to pre-existing tables.
 -- -------------------------------------------------------------
 
 BEGIN;
@@ -35,6 +38,8 @@ END $$;
 CREATE TABLE IF NOT EXISTS public.clusters (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name        text NOT NULL,
+  slug        text,
+  tag         text,
   created_by  uuid REFERENCES auth.users(id) ON DELETE SET NULL,
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now()
@@ -44,6 +49,8 @@ CREATE TABLE IF NOT EXISTS public.organizations (
   id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   cluster_id  uuid REFERENCES public.clusters(id) ON DELETE CASCADE,
   name        text NOT NULL,
+  slug        text,
+  tag         text,
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now()
 );
@@ -89,6 +96,7 @@ CREATE TABLE IF NOT EXISTS public.collaborations (
   org_id                uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
   name                  text NOT NULL,
   collaboration_type    collaboration_type NOT NULL DEFAULT 'channel',
+  status                text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'inactive', 'archived')),
   participation_factor  numeric(12, 2) NOT NULL DEFAULT 0,
   overhead_weight_pct   numeric(12, 2) NOT NULL DEFAULT 0,
   rules                 jsonb NOT NULL DEFAULT '{}'::jsonb,
@@ -103,7 +111,6 @@ CREATE TABLE IF NOT EXISTS public.entities (
   collaboration_id           uuid REFERENCES public.collaborations(id) ON DELETE SET NULL,
   referred_by_entity_id      uuid REFERENCES public.entities(id) ON DELETE SET NULL,
   referring_collaboration_id uuid REFERENCES public.collaborations(id) ON DELETE SET NULL,
-  total_units                numeric(12, 2) NOT NULL DEFAULT 0,
   created_at                 timestamptz NOT NULL DEFAULT now(),
   updated_at                 timestamptz NOT NULL DEFAULT now()
 );
@@ -117,8 +124,6 @@ CREATE TABLE IF NOT EXISTS public.activities (
   status            text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'archived')),
   channel_label     text,
   assigned_user_id  uuid REFERENCES auth.users(id) ON DELETE SET NULL,
-  operational_weight numeric(12, 2) DEFAULT 0,
-  channel_weight     numeric(12, 2) DEFAULT 0,
   activity_mode      text DEFAULT 'value' CHECK (activity_mode IN ('value', 'high_intensity')),
   created_at        timestamptz NOT NULL DEFAULT now(),
   updated_at        timestamptz NOT NULL DEFAULT now()
@@ -243,9 +248,13 @@ DECLARE
   table_name text;
 BEGIN
   FOR table_name IN
-    SELECT c.table_name
-    FROM information_schema.columns c
-    WHERE c.table_schema = 'public'
+    SELECT t.table_name
+    FROM information_schema.tables t
+    JOIN information_schema.columns c 
+      ON c.table_name = t.table_name 
+     AND c.table_schema = t.table_schema
+    WHERE t.table_schema = 'public'
+      AND t.table_type = 'BASE TABLE'
       AND c.column_name = 'updated_at'
   LOOP
     EXECUTE format('DROP TRIGGER IF EXISTS set_updated_at ON public.%I', table_name);
@@ -302,7 +311,7 @@ LANGUAGE plpgsql STABLE SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  current_org_id uuid;
+  v_org_id uuid;
   membership_role app_role;
   inherited_role text;
 BEGIN
@@ -311,8 +320,8 @@ BEGIN
     RETURN 'admin'::app_role;
   END IF;
 
-  current_org_id := public.get_my_org_id();
-  IF current_org_id IS NULL THEN
+  v_org_id := public.get_my_org_id();
+  IF v_org_id IS NULL THEN
     RETURN 'viewer'::app_role;
   END IF;
 
@@ -320,7 +329,7 @@ BEGIN
   INTO membership_role
   FROM public.organization_memberships
   WHERE user_id = auth.uid()
-    AND org_id = current_org_id
+    AND org_id = v_org_id
     AND status = 'active'
   LIMIT 1;
 
@@ -337,7 +346,7 @@ BEGIN
   FROM public.cluster_memberships cm
   JOIN public.organizations o ON o.cluster_id = cm.cluster_id
   WHERE cm.user_id = auth.uid()
-    AND o.id = current_org_id
+    AND o.id = v_org_id
   LIMIT 1;
 
   RETURN COALESCE(inherited_role, 'viewer')::app_role;
@@ -400,18 +409,18 @@ LANGUAGE plpgsql SECURITY DEFINER
 SET search_path = public
 AS $$
 DECLARE
-  current_org_id uuid;
-  current_role app_role;
+  v_org_id uuid;
+  v_current_role app_role;
   inserted_event_id uuid;
 BEGIN
   IF auth.uid() IS NULL THEN
     RETURN NULL;
   END IF;
 
-  current_org_id := public.get_my_org_id();
-  current_role := public.get_my_role();
+  v_org_id := public.get_my_org_id();
+  v_current_role := public.get_my_role();
 
-  IF current_org_id IS NULL THEN
+  IF v_org_id IS NULL THEN
     RETURN NULL;
   END IF;
 
@@ -428,11 +437,11 @@ BEGIN
     details
   )
   VALUES (
-    current_org_id,
+    v_org_id,
     p_entity_id,
     auth.uid(),
     NULLIF(trim(COALESCE(p_actor_label, '')), ''),
-    current_role,
+    v_current_role,
     p_action,
     p_entity,
     p_operator_activity_id,
@@ -497,26 +506,32 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Read Access (Profiles/Clusters/Orgs)
+DROP POLICY IF EXISTS clusters_read ON public.clusters;
 CREATE POLICY clusters_read ON public.clusters
   FOR SELECT USING (public.user_has_cluster_access(id));
 
+DROP POLICY IF EXISTS organizations_read ON public.organizations;
 CREATE POLICY organizations_read ON public.organizations
   FOR SELECT USING (public.user_has_org_access(id) OR public.is_org_in_my_cluster(id));
 
+DROP POLICY IF EXISTS cluster_memberships_read ON public.cluster_memberships;
 CREATE POLICY cluster_memberships_read ON public.cluster_memberships
   FOR SELECT USING (user_id = auth.uid() OR public.user_has_cluster_access(cluster_id));
 
+DROP POLICY IF EXISTS organization_memberships_read ON public.organization_memberships;
 CREATE POLICY organization_memberships_read ON public.organization_memberships
   FOR SELECT USING (user_id = auth.uid() OR public.user_has_org_access(org_id) OR public.is_org_in_my_cluster(org_id));
 
+DROP POLICY IF EXISTS profiles_read ON public.profiles;
 CREATE POLICY profiles_read ON public.profiles
   FOR SELECT USING (id = auth.uid() OR public.user_has_cluster_access(active_cluster_id));
 
+DROP POLICY IF EXISTS profiles_update ON public.profiles;
 CREATE POLICY profiles_update ON public.profiles
   FOR UPDATE USING (id = auth.uid())
   WITH CHECK (id = auth.uid());
 
+DROP POLICY IF EXISTS platform_roles_read ON public.platform_roles;
 CREATE POLICY platform_roles_read ON public.platform_roles
   FOR SELECT USING (user_id = auth.uid() OR public.is_platform_admin());
 
@@ -543,12 +558,14 @@ BEGIN
       )
     GROUP BY t.table_name
   LOOP
+    EXECUTE format('DROP POLICY IF EXISTS %I_read ON public.%I', table_name, table_name);
     EXECUTE format(
       'CREATE POLICY %I_read ON public.%I FOR SELECT USING (public.user_has_org_access(org_id) OR public.is_org_in_my_cluster(org_id))',
       table_name,
       table_name
     );
 
+    EXECUTE format('DROP POLICY IF EXISTS %I_write ON public.%I', table_name, table_name);
     EXECUTE format(
       'CREATE POLICY %I_write ON public.%I FOR ALL USING (public.user_has_org_access(org_id) OR public.is_org_in_my_cluster(org_id)) WITH CHECK (public.user_has_org_access(org_id) OR public.is_org_in_my_cluster(org_id))',
       table_name,
@@ -557,6 +574,253 @@ BEGIN
   END LOOP;
 END;
 $$ LANGUAGE plpgsql;
+
+-- 8A. LEDGER AND AUDIT VIEWS
+CREATE OR REPLACE VIEW public.audit_record_ledger
+WITH (security_invoker = true) AS
+SELECT
+  r.id AS record_id,
+  r.org_id,
+  r.activity_id,
+  a.label AS activity_label,
+  a.date AS activity_date,
+  r.entity_id,
+  e.name AS entity_name,
+  COALESCE(NULLIF(r.channel_label, ''), 'Unassigned') AS channel_label,
+  r.direction,
+  r.status,
+  r.unit_amount,
+  CASE
+    WHEN r.direction = 'increase' THEN r.unit_amount
+    WHEN r.direction = 'decrease' THEN -r.unit_amount
+    ELSE 0::numeric
+  END AS signed_amount,
+  CASE
+    WHEN r.status = 'applied' AND r.direction = 'increase' THEN r.unit_amount
+    WHEN r.status = 'applied' AND r.direction = 'decrease' THEN -r.unit_amount
+    ELSE 0::numeric
+  END AS applied_signed_amount,
+  CASE
+    WHEN r.status = 'applied' AND r.direction = 'increase' THEN r.unit_amount
+    ELSE 0::numeric
+  END AS applied_increase_amount,
+  CASE
+    WHEN r.status = 'applied' AND r.direction = 'decrease' THEN r.unit_amount
+    ELSE 0::numeric
+  END AS applied_decrease_amount,
+  r.transfer_group_id,
+  r.target_entity_id,
+  r.left_at,
+  r.created_at,
+  r.updated_at
+FROM public.records r
+LEFT JOIN public.activities a ON a.id = r.activity_id
+LEFT JOIN public.entities e ON e.id = r.entity_id;
+
+CREATE OR REPLACE VIEW public.entity_balances
+WITH (security_invoker = true) AS
+SELECT
+  e.id,
+  e.org_id,
+  e.name,
+  COALESCE(SUM(l.applied_signed_amount), 0)::numeric(12, 2) AS net,
+  COALESCE(SUM(l.applied_increase_amount), 0)::numeric(12, 2) AS total_inflow,
+  COUNT(l.record_id) FILTER (WHERE l.status = 'applied')::integer AS record_count,
+  COUNT(l.record_id) FILTER (WHERE l.status = 'applied' AND l.applied_signed_amount > 0)::integer AS surplus_count,
+  MAX(l.created_at) AS last_active,
+  0::numeric(12, 2) AS avg_duration_hours
+FROM public.entities e
+LEFT JOIN public.audit_record_ledger l ON l.entity_id = e.id
+GROUP BY e.id, e.org_id, e.name;
+
+CREATE OR REPLACE VIEW public.audit_activity_integrity
+WITH (security_invoker = true) AS
+SELECT
+  a.org_id,
+  a.id AS activity_id,
+  a.label AS activity_label,
+  a.date AS activity_date,
+  COUNT(l.record_id)::integer AS total_records,
+  COUNT(l.record_id) FILTER (WHERE l.status = 'applied')::integer AS applied_record_count,
+  COUNT(l.record_id) FILTER (WHERE l.status IN ('pending', 'deferred'))::integer AS open_record_count,
+  COALESCE(SUM(l.applied_increase_amount), 0)::numeric(12, 2) AS total_increase,
+  COALESCE(SUM(l.applied_decrease_amount), 0)::numeric(12, 2) AS total_decrease,
+  COALESCE(SUM(l.applied_signed_amount), 0)::numeric(12, 2) AS net_amount,
+  CASE
+    WHEN ABS(COALESCE(SUM(l.applied_signed_amount), 0)) < 0.01 THEN 'ok'
+    ELSE 'broken'
+  END AS status,
+  MAX(l.created_at) AS last_record_at
+FROM public.activities a
+LEFT JOIN public.audit_record_ledger l ON l.activity_id = a.id
+GROUP BY a.org_id, a.id, a.label, a.date;
+
+CREATE OR REPLACE VIEW public.audit_entity_health
+WITH (security_invoker = true) AS
+SELECT
+  e.org_id,
+  e.id AS entity_id,
+  e.name AS entity_name,
+  COUNT(l.record_id)::integer AS total_records,
+  COUNT(l.record_id) FILTER (WHERE l.status = 'applied')::integer AS applied_record_count,
+  COALESCE(SUM(l.applied_increase_amount), 0)::numeric(12, 2) AS total_increase,
+  COALESCE(SUM(l.applied_decrease_amount), 0)::numeric(12, 2) AS total_decrease,
+  COALESCE(SUM(l.applied_signed_amount), 0)::numeric(12, 2) AS net_amount,
+  CASE
+    WHEN COALESCE(SUM(l.applied_signed_amount), 0) < 0 THEN 'watch'
+    ELSE 'ok'
+  END AS status,
+  MAX(l.created_at) AS last_record_at
+FROM public.entities e
+LEFT JOIN public.audit_record_ledger l ON l.entity_id = e.id
+GROUP BY e.org_id, e.id, e.name;
+
+CREATE OR REPLACE VIEW public.audit_channel_integrity
+WITH (security_invoker = true) AS
+SELECT
+  l.org_id,
+  l.channel_label,
+  COUNT(l.record_id)::integer AS total_records,
+  COUNT(l.record_id) FILTER (WHERE l.status = 'applied')::integer AS applied_record_count,
+  COALESCE(SUM(l.applied_increase_amount), 0)::numeric(12, 2) AS total_increase,
+  COALESCE(SUM(l.applied_decrease_amount), 0)::numeric(12, 2) AS total_decrease,
+  COALESCE(SUM(l.applied_signed_amount), 0)::numeric(12, 2) AS net_amount,
+  CASE
+    WHEN ABS(COALESCE(SUM(l.applied_signed_amount), 0)) < 0.01 THEN 'ok'
+    ELSE 'broken'
+  END AS status
+FROM public.audit_record_ledger l
+GROUP BY l.org_id, l.channel_label;
+
+CREATE OR REPLACE VIEW public.audit_org_integrity
+WITH (security_invoker = true) AS
+SELECT
+  o.id AS org_id,
+  o.name AS org_name,
+  COUNT(l.record_id)::integer AS total_records,
+  COUNT(l.record_id) FILTER (WHERE l.status = 'applied')::integer AS applied_record_count,
+  COALESCE(SUM(l.applied_increase_amount), 0)::numeric(12, 2) AS total_increase,
+  COALESCE(SUM(l.applied_decrease_amount), 0)::numeric(12, 2) AS total_decrease,
+  COALESCE(SUM(l.applied_signed_amount), 0)::numeric(12, 2) AS net_amount,
+  COUNT(a.activity_id) FILTER (WHERE a.status = 'broken')::integer AS broken_activity_count,
+  CASE
+    WHEN ABS(COALESCE(SUM(l.applied_signed_amount), 0)) < 0.01
+      AND COUNT(a.activity_id) FILTER (WHERE a.status = 'broken') = 0 THEN 'ok'
+    ELSE 'broken'
+  END AS status
+FROM public.organizations o
+LEFT JOIN public.audit_record_ledger l ON l.org_id = o.id
+LEFT JOIN public.audit_activity_integrity a ON a.org_id = o.id
+GROUP BY o.id, o.name;
+
+CREATE OR REPLACE VIEW public.audit_record_anomalies
+WITH (security_invoker = true) AS
+SELECT
+  CONCAT('activity-imbalance:', a.activity_id) AS anomaly_id,
+  a.org_id,
+  'activity_imbalance'::text AS anomaly_type,
+  'error'::text AS severity,
+  a.activity_id,
+  NULL::uuid AS entity_id,
+  NULL::text AS channel_label,
+  1::integer AS affected_count,
+  CONCAT('Activity net is ', a.net_amount::text) AS detail
+FROM public.audit_activity_integrity a
+WHERE a.status = 'broken'
+
+UNION ALL
+
+SELECT
+  CONCAT('org-imbalance:', o.org_id) AS anomaly_id,
+  o.org_id,
+  'org_imbalance'::text AS anomaly_type,
+  'error'::text AS severity,
+  NULL::uuid AS activity_id,
+  NULL::uuid AS entity_id,
+  NULL::text AS channel_label,
+  1::integer AS affected_count,
+  CONCAT('Organization net is ', o.net_amount::text) AS detail
+FROM public.audit_org_integrity o
+WHERE o.status = 'broken'
+
+UNION ALL
+
+SELECT
+  CONCAT('channel-imbalance:', c.org_id, ':', c.channel_label) AS anomaly_id,
+  c.org_id,
+  'channel_imbalance'::text AS anomaly_type,
+  'warning'::text AS severity,
+  NULL::uuid AS activity_id,
+  NULL::uuid AS entity_id,
+  c.channel_label,
+  1::integer AS affected_count,
+  CONCAT('Channel net is ', c.net_amount::text) AS detail
+FROM public.audit_channel_integrity c
+WHERE c.status = 'broken'
+
+UNION ALL
+
+SELECT
+  CONCAT('transfer-pair:', r.org_id, ':', r.transfer_group_id::text) AS anomaly_id,
+  r.org_id,
+  'missing_transfer_pair'::text AS anomaly_type,
+  'warning'::text AS severity,
+  NULL::uuid AS activity_id,
+  NULL::uuid AS entity_id,
+  NULL::text AS channel_label,
+  COUNT(*)::integer AS affected_count,
+  'Transfer group does not contain an even number of records.' AS detail
+FROM public.records r
+WHERE r.transfer_group_id IS NOT NULL
+GROUP BY r.org_id, r.transfer_group_id
+HAVING MOD(COUNT(*), 2) <> 0
+
+UNION ALL
+
+SELECT
+  CONCAT('transfer-target:', r.id::text) AS anomaly_id,
+  r.org_id,
+  'transfer_missing_target'::text AS anomaly_type,
+  'warning'::text AS severity,
+  r.activity_id,
+  r.entity_id,
+  COALESCE(NULLIF(r.channel_label, ''), 'Unassigned') AS channel_label,
+  1::integer AS affected_count,
+  'Transfer record is missing a target entity.' AS detail
+FROM public.records r
+WHERE r.direction = 'transfer'
+  AND r.target_entity_id IS NULL
+
+UNION ALL
+
+SELECT
+  CONCAT('time-anomaly:', r.id::text) AS anomaly_id,
+  r.org_id,
+  'invalid_exit_time'::text AS anomaly_type,
+  'error'::text AS severity,
+  r.activity_id,
+  r.entity_id,
+  COALESCE(NULLIF(r.channel_label, ''), 'Unassigned') AS channel_label,
+  1::integer AS affected_count,
+  'Record left_at precedes created_at.' AS detail
+FROM public.records r
+WHERE r.left_at IS NOT NULL
+  AND r.left_at < r.created_at;
+
+GRANT SELECT ON public.audit_record_ledger TO authenticated, service_role;
+GRANT SELECT ON public.entity_balances TO authenticated, service_role;
+GRANT SELECT ON public.audit_activity_integrity TO authenticated, service_role;
+GRANT SELECT ON public.audit_entity_health TO authenticated, service_role;
+GRANT SELECT ON public.audit_channel_integrity TO authenticated, service_role;
+GRANT SELECT ON public.audit_org_integrity TO authenticated, service_role;
+GRANT SELECT ON public.audit_record_anomalies TO authenticated, service_role;
+
+-- 9. GLOBAL PERMISSIONS (ensure API access)
+GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, service_role;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;
+GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO authenticated, service_role;
 
 -- 9. BOOTSTRAP
 INSERT INTO public.profiles (id)

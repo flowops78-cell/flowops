@@ -57,14 +57,11 @@ export interface Activity {
   name?: string;
   label: string;
   date: string;
+  start_time: string;
   status: 'active' | 'completed' | 'archived';
   channel_label?: string;
   location?: string;
   assigned_user_id?: string;
-  start_time?: string;
-  end_time?: string;
-  operational_weight?: number;
-  channel_weight?: number;
   activity_mode?: 'value' | 'high_intensity';
   created_at?: string;
   updated_at?: string;
@@ -73,12 +70,13 @@ export interface Activity {
 export interface ActivityRecord {
   id: string;
   org_id: string;
-  activity_id: string;
-  entity_id: string;
+  activity_id?: string | null;
+  entity_id?: string | null;
   direction: 'increase' | 'decrease' | 'transfer';
   status: 'pending' | 'applied' | 'deferred' | 'voided';
   unit_amount: number;
-  target_entity_id?: string;
+  transfer_group_id?: string | null;
+  target_entity_id?: string | null;
   channel_label?: string;
   position_id?: number;
   sort_order?: number;
@@ -86,6 +84,69 @@ export interface ActivityRecord {
   notes?: string;
   created_at?: string;
   updated_at?: string;
+}
+
+export interface AuditActivityIntegrity {
+  org_id: string;
+  activity_id: string;
+  activity_label: string;
+  activity_date: string;
+  total_records: number;
+  applied_record_count: number;
+  open_record_count: number;
+  total_increase: number;
+  total_decrease: number;
+  net_amount: number;
+  status: 'ok' | 'broken';
+  last_record_at?: string | null;
+}
+
+export interface AuditEntityHealth {
+  org_id: string;
+  entity_id: string;
+  entity_name: string;
+  total_records: number;
+  applied_record_count: number;
+  total_increase: number;
+  total_decrease: number;
+  net_amount: number;
+  status: 'ok' | 'watch';
+  last_record_at?: string | null;
+}
+
+export interface AuditOrgIntegrity {
+  org_id: string;
+  org_name: string;
+  total_records: number;
+  applied_record_count: number;
+  total_increase: number;
+  total_decrease: number;
+  net_amount: number;
+  broken_activity_count: number;
+  status: 'ok' | 'broken';
+}
+
+export interface AuditChannelIntegrity {
+  org_id: string;
+  channel_label: string;
+  total_records: number;
+  applied_record_count: number;
+  total_increase: number;
+  total_decrease: number;
+  net_amount: number;
+  status: 'ok' | 'broken';
+}
+
+export interface AuditAnomaly {
+  anomaly_id: string;
+  org_id: string;
+  anomaly_type: string;
+  severity: 'warning' | 'error';
+  activity_id?: string | null;
+  entity_id?: string | null;
+  channel_label?: string | null;
+  affected_count: number;
+  detail: string;
 }
 
 export interface TeamMember {
@@ -105,16 +166,20 @@ export interface TeamMember {
   updated_at?: string;
 }
 
+/** Network profile row. UI calls this a “network profile”; stored `collaboration_type` values are historic names (`channel` = reserve/flow routing, not the Channels reserve-account list). */
 export interface Collaboration {
   id: string;
   org_id: string;
   name: string;
   collaboration_type: 'channel' | 'collaboration' | 'hybrid';
-  role?: 'channel' | 'collaboration' | 'hybrid'; // Legacy alias
+  /** @deprecated Same meaning as `collaboration_type` on older rows */
+  role?: 'channel' | 'collaboration' | 'hybrid';
   participation_factor: number;
-  allocation_factor?: number; // Legacy alias
+  /** @deprecated Prefer `participation_factor` */
+  allocation_factor?: number;
   overhead_weight_pct: number;
-  overhead_weight?: number; // Legacy alias
+  /** @deprecated Prefer `overhead_weight_pct` */
+  overhead_weight?: number;
   total_number: number;
   status: 'active' | 'inactive' | 'archived';
   rules: any;

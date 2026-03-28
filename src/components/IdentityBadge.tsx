@@ -2,6 +2,7 @@ import React from 'react';
 import { cn } from '../lib/utils';
 import { Copy, Globe } from 'lucide-react';
 import { useNotification } from '../context/NotificationContext';
+import { getUnnamedIdentityLabel } from '../lib/labels';
 
 interface IdentityBadgeProps {
   id: string;
@@ -31,7 +32,7 @@ const IdentityBadge: React.FC<IdentityBadgeProps> = ({
   const { notify } = useNotification();
   
   const shortId = id ? `${type === 'cluster' ? 'clu' : 'org'}_${id.slice(0, 4)}` : '';
-  const displayName = name || tag || slug || (id ? (type === 'cluster' ? 'Unnamed Cluster' : 'Unnamed Organization') : '');
+  const displayName = name || tag || slug || (id ? getUnnamedIdentityLabel(type) : '');
   
   if (!id && !name && !tag && !slug) return null;
   

@@ -9,12 +9,14 @@ Built with React 19, TypeScript, Vite, and Supabase.
 | File | Purpose |
 |------|---------|
 | [docs/app_user_manual.md](docs/app_user_manual.md) | End-user manual |
-| [supabase/migrations/20260322230000_flow_ops_schema.sql](supabase/migrations/20260322230000_flow_ops_schema.sql) | Base schema, roles, RLS |
+| [docs/glossary.md](docs/glossary.md) | Activity vs record vs channel vs network profile |
+| [supabase/migrations/00000000000000_init_canonical_schema.sql](supabase/migrations/00000000000000_init_canonical_schema.sql) | Single baseline: schema, roles, RLS, ledger/audit views |
 | [docs/rls_verification.sql](docs/rls_verification.sql) | Post-migration verification queries |
 | [docs/verification.md](docs/verification.md) | Step-by-step verification runbook |
 
 **SQL run order:**
-- `20260322230000_flow_ops_schema.sql` → verify with `rls_verification.sql`
+- All environments (CLI): `supabase db push` or `supabase db reset` applies `00000000000000_init_canonical_schema.sql`.
+- Manual / hosted SQL editor: run that file once per database; then verify with `docs/rls_verification.sql`.
 
 ## Prerequisites
 
@@ -29,7 +31,7 @@ Built with React 19, TypeScript, Vite, and Supabase.
    `cp .env.example .env`
 3. Set env vars in `.env`
    - `VITE_SUPABASE_URL`
-   - `VITE_SUPABASE_ANON_KEY`
+   - `VITE_SUPABASE_PUBLISHABLE_KEY` — the Supabase **anon** (public) key for the browser client. The app reads this variable (see `src/lib/supabase.ts`). Older docs may call it `VITE_SUPABASE_ANON_KEY`; use the publishable key name to match `.env.example`.
 4. Run app
    `npm run dev`
 
@@ -52,7 +54,7 @@ This performs:
 
 When Supabase env vars are configured, the app now requires sign-in.
 
-1. Run [supabase/migrations/20260322230000_flow_ops_schema.sql](supabase/migrations/20260322230000_flow_ops_schema.sql). It is the single authoritative schema migration and already includes the current auth, invite, audit, and meta-org hardening.
+1. Run [supabase/migrations/00000000000000_init_canonical_schema.sql](supabase/migrations/00000000000000_init_canonical_schema.sql) (via Supabase CLI migrations or SQL editor). Drifted legacy databases may need manual `ALTER TABLE` / view fixes before aligning to this baseline.
 2. Create Supabase Auth accounts for each real person (shared accounts are not allowed).
    - You can have multiple users with the same `app_role` (for example multiple operators and viewers).
    - Use one unique login ID per person.
@@ -72,9 +74,11 @@ Access request signup workflow (optional):
 
 Deploy edge functions:
 - Install and login to Supabase CLI.
-- Run from project root: `supabase functions deploy submit-access-request provision-user`.
-- Set secrets once: `supabase secrets set SUPABASE_SERVICE_ROLE_KEY=your-service-role-key FLOW_OPS_ALLOWED_ORIGINS=https://your-app.example.com,https://your-preview.example.com`.
-- Verify both functions exist in Supabase Dashboard → Edge Functions.
+- Run from project root:  
+  `supabase functions deploy submit-access-request provision-user manage-organizations export-data revoke-other-sessions`
+- Set secrets (names vary by function; at minimum service role as `SB_SERVICE_ROLE_KEY` or `SUPABASE_SERVICE_ROLE_KEY` per function code):  
+  `supabase secrets set SB_SERVICE_ROLE_KEY=your-service-role-key FLOW_OPS_ALLOWED_ORIGINS=https://your-app.example.com`
+- Verify functions in Supabase Dashboard → Edge Functions.
 - `FLOW_OPS_ALLOWED_ORIGINS` must be a comma-separated list of exact browser origins allowed to call the edge functions. Wildcard preview domains are not trusted.
 - If the functions are not deployed, create/invite the account manually in Supabase Auth and set `app_role` plus organization scope id.
 

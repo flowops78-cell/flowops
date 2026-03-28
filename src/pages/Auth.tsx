@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { LogIn, UserPlus, Eye, EyeOff, ShieldCheck, Mail, Info, CheckCircle2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 import { AppRole } from '../lib/roles';
 import { AUTH_PERSIST_ACTIVITY_KEY, isSupabaseConfigured, supabase, SUPABASE_ANON_KEY } from '../lib/supabase';
 import { useNotification } from '../context/NotificationContext';
-import { tx } from '../lib/labels';
+import { LABELS, tx } from '../lib/labels';
 import { cn } from '../lib/utils';
 
 type RequestedRole = AppRole;
@@ -92,7 +92,7 @@ export default function Auth() {
       const rawMessage = authError?.message || 'Request failed.';
       const lowered = String(rawMessage).toLowerCase();
       if (lowered.includes('access_requests') || lowered.includes('access_invites') || lowered.includes('submit-access-request') || lowered.includes('pgrst205') || lowered.includes('schema cache')) {
-        setError('Access request workflow is not enabled yet. Run supabase/migrations/20260322230000_flow_ops_schema.sql and deploy the submit-access-request function.');
+        setError('Access request workflow is not enabled yet. Apply supabase/migrations/00000000000000_init_canonical_schema.sql, deploy the submit-access-request edge function, and set SB_SERVICE_ROLE_KEY (and CORS origins) in function secrets.');
         notify({ type: 'error', message: 'Access workflow not enabled.' });
       } else if (lowered.includes('invalid login credentials')) {
         setError('Invalid credentials. If recently approved, use the initial password set during approval.');
@@ -297,7 +297,7 @@ export default function Auth() {
                           placeholder="Paste the invite token shared by admin"
                           autoCapitalize="none"
                         />
-                        <p className="text-[10px] text-stone-500 dark:text-stone-400 px-1">This token determines which organization receives your request.</p>
+                        <p className="text-[10px] text-stone-500 dark:text-stone-400 px-1">This invite decides which workspace you’re asking to join.</p>
                       </div>
                     </>
                   )}

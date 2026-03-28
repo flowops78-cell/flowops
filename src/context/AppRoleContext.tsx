@@ -28,6 +28,25 @@ type AppRoleContextType = {
 
 const APP_ROLE_STORAGE_KEY = 'flow_ops_role';
 
+const roleRank: Record<AppRole, number> = {
+  viewer: 0,
+  operator: 1,
+  admin: 2,
+};
+
+const pickStrongestRole = (...roles: Array<AppRole | null | undefined>): AppRole | null => {
+  let strongest: AppRole | null = null;
+
+  roles.forEach((candidate) => {
+    if (!candidate) return;
+    if (!strongest || roleRank[candidate] > roleRank[strongest]) {
+      strongest = candidate;
+    }
+  });
+
+  return strongest;
+};
+
 const AppRoleContext = createContext<AppRoleContextType | undefined>(undefined);
 
 export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -46,7 +65,12 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const roleFromMetadata = user?.user_metadata?.app_role;
   const metadataRole = normalizeAppRole(roleFromMetadata);
-  const effectiveServerRole = metadataRole ?? profileRole;
+  const effectiveServerRole = pickStrongestRole(
+    metadataRole,
+    profileRole,
+    isPlatformAdminState ? 'admin' : null,
+    isClusterAdminState ? 'admin' : null,
+  );
   const roleLocked = isSupabaseConfigured && !!user;
   const loading = authLoading || (isSupabaseConfigured && !!user && !metadataRole && profileRoleLoading);
 

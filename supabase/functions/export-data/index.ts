@@ -98,8 +98,6 @@ Deno.serve(async (req: Request) => {
     }
 
     const callerToken = authHeader.slice(7);
-    console.log("DEBUG [export-data]: KEY_PRESENT:", !!SB_SERVICE_ROLE_KEY);
-    console.log("DEBUG [export-data]: TOKEN_PRESENT:", !!callerToken);
     const callerClient = createClient(SUPABASE_URL, SB_SERVICE_ROLE_KEY, {
       auth: { autoRefreshToken: false, persistSession: false },
     });

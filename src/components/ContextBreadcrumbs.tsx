@@ -7,11 +7,11 @@ interface ContextBreadcrumbsProps {
 }
 
 export default function ContextBreadcrumbs({ items, className }: ContextBreadcrumbsProps) {
-  // A single breadcrumb duplicates the page title without adding context.
+  // A single breadcrumb duplicates the page title without adding useful detail.
   if (items.length <= 1) return null;
 
   return (
-    <nav aria-label="Current page context" className={cn('flex flex-wrap items-center gap-1 text-xs text-stone-500 dark:text-stone-400', className)}>
+    <nav aria-label="Current page path" className={cn('flex flex-wrap items-center gap-1 text-xs text-stone-500 dark:text-stone-400', className)}>
       {items.map((item, index) => {
         const isLast = index === items.length - 1;
         return (

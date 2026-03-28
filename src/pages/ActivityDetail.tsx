@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
-import { ArrowLeft, Save, Trash2, Edit2, AlertCircle, Share2, User, Circle, Clock, Users, LayoutGrid, List, Timer, Activity, Award, Play, Square } from 'lucide-react';
+import { ArrowLeft, AlertCircle, User, Users, LayoutGrid, List, Timer, Activity, Award, Play, Square, ChevronDown, SlidersHorizontal, X } from 'lucide-react';
 import { formatValue, formatDate } from '../lib/utils';
 import { ActivityRecord, Entity } from '../types';
 import { cn } from '../lib/utils';
@@ -16,6 +16,7 @@ import { useNotification } from '../context/NotificationContext';
 import LoadingLine from '../components/LoadingLine';
 import EmptyState from '../components/EmptyState';
 import { useLabels } from '../lib/labels';
+import { EntriesRow } from './ActivityDetailEntriesRow';
 
 export default function ActivityDetail() {
   const { id } = useParams<{ id: string }>();
@@ -49,10 +50,11 @@ export default function ActivityDetail() {
   const [quickUnitName, setQuickUnitName] = useState('');
   const [recordValueingType, setRecordValueingType] = useState<'value' | 'deferred'>('value');
   const [recordTransferMethod, setRecordTransferMethod] = useState('');
-  const [showValueingOptions, setShowValueingOptions] = useState(false);
   const [recordValue, setRecordValue] = useState('');
   const [isAddingEntity, setIsAddingEntity] = useState(false);
   const [didAddEntity, setDidAddEntity] = useState(false);
+  const [isAddOptionsOpen, setIsAddOptionsOpen] = useState(false);
+  const [isAdvancedOverlayOpen, setIsAdvancedOverlayOpen] = useState(false);
   const [selectedTeamMemberId, setSelectedTeamMemberId] = useState('');
   const [isUpdatingWorkforce, setIsUpdatingWorkforce] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
@@ -72,15 +74,13 @@ export default function ActivityDetail() {
   const [isActivityTransitioning, setIsActivityTransitioning] = useState(false);
   const [recentTransitionStatus, setRecentTransitionStatus] = useState<'active' | 'completed' | 'archived' | null>(null);
   const addRecordSectionRef = useRef<HTMLDivElement | null>(null);
-  const addUnitSelectRef = useRef<HTMLSelectElement | null>(null);
+  const addUnitSelectRef = useRef<HTMLInputElement | null>(null);
   const recordRecordInputRef = useRef<HTMLInputElement | null>(null);
   const addUnitSuccessTimerRef = useRef<number | null>(null);
   const activityTransitionSuccessTimerRef = useRef<number | null>(null);
 
   // Activity Operations State
   const [assignedOperator, setAssignedOperator] = useState(activity?.assigned_user_id || '');
-  const [operationalWeight, setServiceFee] = useState(activity?.operational_weight?.toString() || '');
-  const [channelChannel, setChannelChannel] = useState(activity?.channel_weight?.toString() || '');
   const [activityMode, setActivityMode] = useState<'value' | 'high_intensity'>(activity?.activity_mode || 'value');
 
   // Timer State
@@ -99,8 +99,6 @@ export default function ActivityDetail() {
   useEffect(() => {
     if (activity) {
       setAssignedOperator(activity.assigned_user_id || '');
-      setServiceFee(activity.operational_weight?.toString() || '');
-      setChannelChannel(activity.channel_weight?.toString() || '');
       setActivityMode(activity.activity_mode || 'value');
     }
   }, [activity]);
@@ -111,12 +109,7 @@ export default function ActivityDetail() {
 
     const interval = setInterval(() => {
       // Elapsed Time
-      const start = activity.start_time ? new Date(activity.start_time) : new Date(activity.date); // Fallback to date if no start time
-      // If date is just YYYY-MM-DD, it defaults to midnight UTC. 
-      // Ideally we should have a precise start time. For now, let's assume if start_time is missing, we use created_at, or just 0 if simulated.
-      // Actually, let's use current time - start time.
-      
-      const startTime = activity.start_time ? new Date(activity.start_time).getTime() : new Date(activity.created_at || activity.date).getTime();
+      const startTime = new Date(activity.created_at || activity.date).getTime();
       const now = new Date().getTime();
       const diff = now - startTime;
 
@@ -187,6 +180,27 @@ export default function ActivityDetail() {
     }, 80);
   };
 
+  const syncEntityEntryValue = (value: string) => {
+    const nextValue = value;
+    const trimmedValue = nextValue.trim();
+
+    if (!trimmedValue) {
+      setSelectedUnitId('');
+      setQuickUnitName('');
+      return;
+    }
+
+    const matchedEntity = availableEntities.find(entity => (entity.name || '').trim().toLowerCase() === trimmedValue.toLowerCase());
+    if (matchedEntity) {
+      setSelectedUnitId(matchedEntity.id);
+      setQuickUnitName('');
+      return;
+    }
+
+    setSelectedUnitId('');
+    setQuickUnitName(nextValue);
+  };
+
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const action = params.get('action');
@@ -247,6 +261,25 @@ export default function ActivityDetail() {
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
   }, [totalRecord, activity?.status, isMobileViewport]);
+
+  useEffect(() => {
+    const handleOverlayEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      if (isTotalActionPending || isAddingEntity || isUpdatingWorkforce || isActivityTransitioning) return;
+
+      if (isAddOptionsOpen) {
+        setIsAddOptionsOpen(false);
+        return;
+      }
+
+      if (isAdvancedOverlayOpen) {
+        setIsAdvancedOverlayOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleOverlayEscape);
+    return () => window.removeEventListener('keydown', handleOverlayEscape);
+  }, [isAddOptionsOpen, isAdvancedOverlayOpen, isTotalActionPending, isAddingEntity, isUpdatingWorkforce, isActivityTransitioning]);
 
   const availableEntities = entities.filter(entity => !activeActivityEntries.some(record => record.entity_id === entity.id));
   const rosterPositionCandidates = availableEntities;
@@ -328,7 +361,7 @@ export default function ActivityDetail() {
     }
 
     if (selectedPositionActivityRecord) {
-      setPositionPanelUnitId(selectedPositionActivityRecord.entity_id);
+      setPositionPanelUnitId(selectedPositionActivityRecord.entity_id || '');
       const selectedUnit = entities.find(unit => unit.id === selectedPositionActivityRecord.entity_id);
       setPositionPanelUnitQuery(selectedUnit?.name || '');
       setPositionPanelRecordValue('');
@@ -378,7 +411,7 @@ export default function ActivityDetail() {
       return;
     }
 
-    if (recordValueingType === 'deferred' && !canManageImpact) {
+    if (recordValueingType === 'deferred' && !canOperateLog) {
       notify({ type: 'error', message: 'Your current permissions do not allow recording deferred entity records.' });
       return;
     }
@@ -433,7 +466,7 @@ export default function ActivityDetail() {
       setQuickUnitName('');
       setRecordValueingType('value');
       setRecordTransferMethod('');
-      setShowValueingOptions(false);
+      setIsAddOptionsOpen(false);
       setRecordValue('');
       setDidAddEntity(true);
       if (addUnitSuccessTimerRef.current !== null) {
@@ -475,8 +508,6 @@ export default function ActivityDetail() {
       await updateActivity({
         ...activity,
         assigned_user_id: assignedOperator,
-        operational_weight: parseFloat(operationalWeight) || 0,
-        channel_weight: parseFloat(channelChannel) || 0,
         activity_mode: activityMode
       });
     } catch (error: any) {
@@ -484,31 +515,7 @@ export default function ActivityDetail() {
     }
   };
 
-  const handleSetStartTimeNow = async () => {
-    if (!canOperateLog) {
-      notify({ type: 'error', message: 'Current role cannot update activity timing.' });
-      return;
-    }
-    const now = new Date();
-    const hours = now.getHours().toString().padStart(2, '0');
-    const minutes = now.getMinutes().toString().padStart(2, '0');
-    const localStart = new Date(`${activity.date}T${hours}:${minutes}:00`);
 
-    if (Number.isNaN(localStart.getTime())) {
-      notify({ type: 'error', message: 'Unable to set start time for this activity date.' });
-      return;
-    }
-
-    try {
-      await updateActivity({
-        ...activity,
-        start_time: localStart.toISOString(),
-      });
-      notify({ type: 'success', message: 'Start time set successfully.' });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to set start time.' });
-    }
-  };
 
   const handleActivityTransition = async (nextStatus: 'active' | 'completed' | 'archived') => {
     if (isActivityTransitioning) return;
@@ -522,7 +529,7 @@ export default function ActivityDetail() {
         return;
       }
       if (!isTotald) {
-        notify({ type: 'error', message: 'Activity must be totald before completion.' });
+        notify({ type: 'error', message: 'Activity must be totaled (inflow matches outflow) before completion.' });
         return;
       }
     }
@@ -647,7 +654,6 @@ export default function ActivityDetail() {
 
     lines.push(`------------------`);
     lines.push(`*Total Inflow:* ${formatValue(totalInflow)}`);
-    if (operationalWeight) lines.push(`*Service Total:* ${formatValue(parseFloat(operationalWeight))}`);
     if (!isTotald) lines.push(`⚠️ *Discrepancy:* ${formatValue(discrepancy)}`);
 
     return lines.join('\n');
@@ -1123,6 +1129,14 @@ export default function ActivityDetail() {
           </button>
 
           <div className="toolbar-surface w-full sm:w-auto justify-end">
+            <button
+              type="button"
+              onClick={() => setIsAdvancedOverlayOpen(true)}
+              className="action-pill action-pill-neutral"
+            >
+              <ChevronDown size={14} />
+              <span>Advanced</span>
+            </button>
             {!isMobileViewport && (
               <button 
                 onClick={() => setIsTelemetryOpen(!isTelemetryOpen)}
@@ -1189,203 +1203,99 @@ export default function ActivityDetail() {
           </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Main Content Area */}
-        <div className="lg:col-span-2 space-y-6">
-          <div ref={addRecordSectionRef} className="section-card p-5 lg:p-6">
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <div>
-                <h3 className="font-medium text-stone-900 dark:text-stone-100">Add Entity</h3>
-                <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">Entities can be added while the activity is active. Select an existing entity or enter a new name.</p>
+      <div className="space-y-6">
+        <div ref={addRecordSectionRef} className="rounded-[28px] border border-stone-200/80 bg-[linear-gradient(135deg,rgba(255,255,255,0.96),rgba(245,245,244,0.92))] p-5 shadow-[0_24px_60px_-40px_rgba(41,37,36,0.45)] dark:border-stone-800 dark:bg-[linear-gradient(135deg,rgba(28,25,23,0.96),rgba(17,24,39,0.92))] lg:p-6">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">Add</h3>
+                <span className={cn(
+                  'inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium',
+                  canAddUnits
+                    ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                    : 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
+                )}>
+                  {canAddUnits ? 'Ready' : 'Locked'}
+                </span>
               </div>
+              <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">Entity, amount, add. Advanced valueing stays available without taking over the page.</p>
             </div>
-
-            {!canAddUnits && (
-              <p className="text-xs mb-4 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 px-2.5 py-2">
-                {activity.status !== 'active'
-                  ? 'This form is locked until the activity is active. Use Activate activity in Operations.'
-                  : (isCompleted || isArchived)
-                    ? 'This form is locked because the activity is completed or archived.'
-                    : 'Your current permissions do not allow adding entities to this activity.'}
-              </p>
-            )}
-
-            <form onSubmit={handleAddUnit} className="space-y-3">
-              <div className="grid grid-cols-1 lg:grid-cols-[1.4fr_0.9fr_auto] gap-3 items-start">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <select
-                    ref={addUnitSelectRef}
-                    className="control-input"
-                    value={selectedUnitId}
-                    onChange={e => {
-                      setSelectedUnitId(e.target.value);
-                      if (e.target.value) setQuickUnitName('');
-                    }}
-                    disabled={!canAddUnits}
-                  >
-                    <option value="">Select Entity or enter a new name</option>
-                    {availableEntities.map(p => (
-                      <option key={p.id} value={p.id}>{p.name || 'Unnamed Entity'}</option>
-                    ))}
-                  </select>
-                  <input
-                    type="text"
-                    className="control-input"
-                    placeholder="username"
-                    value={quickUnitName}
-                    onChange={e => {
-                      setQuickUnitName(e.target.value);
-                      if (e.target.value.trim()) setSelectedUnitId('');
-                    }}
-                    disabled={!canAddUnits}
-                  />
-                </div>
-
-                <div className="flex items-center rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 overflow-hidden focus-within:ring-2 focus-within:ring-stone-500">
-                  <input
-                    ref={recordRecordInputRef}
-                    type="number"
-                    step="0.01"
-                    min="10"
-                    className="w-full bg-transparent border-0 px-3 py-2.5 text-stone-900 dark:text-stone-100 focus:outline-none"
-                    placeholder="Entity Input"
-                    value={recordValue} onChange={e => setRecordValue(e.target.value)} onBlur={() => normalizeValueInput(recordValue, setRecordValue)}
-                    disabled={!canAddUnits}
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  className="action-btn-primary justify-center min-h-[42px] px-6 shadow-glow transition-all hover:scale-[1.02] active:scale-[0.98]"
-                  disabled={isAddingEntity || (!selectedUnitId && !quickUnitName.trim()) || !canAddUnits || !recordValue.trim()}
-                  title="Record Activity (E)"
-                >
-                  {isAddingEntity ? 'Recording…' : didAddEntity ? 'Recorded ✓' : 'Record Input'}
-                </button>
-              </div>
-
-              <div>
-                <button
-                  type="button"
-                  onClick={() => setShowValueingOptions(prev => !prev)}
-                  className="action-btn-tertiary px-2.5 py-1.5 text-xs"
-                  disabled={!canAddUnits || isAddingEntity}
-                >
-                  {showValueingOptions ? 'Hide Valueing Options' : 'Valueing Options'}
-                </button>
-              </div>
-
-              {showValueingOptions && (
-                <div className="space-y-3">
-                  <select
-                    className="control-input max-w-sm"
-                    value={recordValueingType}
-                    onChange={e => setRecordValueingType(e.target.value as 'value' | 'deferred')}
-                    disabled={!canAddUnits}
-                  >
-                    <option value="value">Valueing: Immediate</option>
-                    <option value="deferred">Valueing: Deferred (admin aligns later)</option>
-                  </select>
-                  <div className="max-w-sm">
-                    <label className="block text-xs text-stone-500 dark:text-stone-400 mb-1">
-                      Channel Source <span className="text-stone-400">({recordValueingType === 'value' ? 'required for direct valueing' : 'optional for deferred valueing'})</span>
-                    </label>
-                    <select
-                      className="control-input w-full"
-                      value={recordTransferMethod}
-                      onChange={e => setRecordTransferMethod(e.target.value)}
-                      disabled={!canAddUnits}
-                      required={recordValueingType === 'value'}
-                    >
-                      <option value="">{recordValueingType === 'value' ? 'Select transfer source...' : 'No channel source needed'}</option>
-                      {channels.filter(c => c.is_active).map(c => (
-                        <option key={c.id} value={`${c.category}::${c.name}`}>
-                          {c.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )}
-            </form>
+            <button
+              type="button"
+              onClick={() => setIsAddOptionsOpen(true)}
+              className="action-btn-tertiary self-start px-3 py-2 text-sm"
+              disabled={!canAddUnits || isAddingEntity}
+            >
+              <SlidersHorizontal size={14} />
+              Options
+            </button>
           </div>
 
-          <div className="section-card p-5 lg:p-6">
-            <div className="flex items-start justify-between gap-4 mb-4">
-              <div>
-                <h3 className="font-medium text-stone-900 dark:text-stone-100">Workforce</h3>
-                <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">Activity activityLogs are always tied to this activity.</p>
-              </div>
-              <span className="text-xs px-2 py-1 rounded-full bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300">
-                {activityWorkActivitys.length} activity activityLogs
-              </span>
-            </div>
+          {!canAddUnits && (
+            <p className="mt-4 rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50/80 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+              {activity.status !== 'active'
+                ? 'Add stays locked until the activity is active.'
+                : (isCompleted || isArchived)
+                  ? 'Add is locked because this activity is completed or archived.'
+                  : 'Your current permissions do not allow adding entities to this activity.'}
+            </p>
+          )}
 
-            <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 mb-4">
-              <select
-                className="control-input"
-                value={selectedTeamMemberId}
-                onChange={event => setSelectedTeamMemberId(event.target.value)}
-                disabled={!canManageWorkforce || isUpdatingWorkforce}
-              >
-                <option value="">Select Operator...</option>
-                {availableOperators.map(teamMember => (
-                  <option key={teamMember.id} value={teamMember.id}>{teamMember.name || 'Unnamed Operator'}</option>
-                ))}
-              </select>
+          <form onSubmit={handleAddUnit} className="mt-4 space-y-3">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,0.85fr)_auto] lg:items-center">
+              <div className="rounded-2xl border border-stone-200 bg-white/90 dark:border-stone-700 dark:bg-stone-900/70">
+                <input
+                  ref={addUnitSelectRef}
+                  list="activity-entity-options"
+                  className="w-full rounded-2xl bg-transparent px-4 py-3 text-stone-900 outline-none placeholder:text-stone-400 dark:text-stone-100"
+                  placeholder="Entity"
+                  value={selectedUnitId ? (availableEntities.find(entity => entity.id === selectedUnitId)?.name || '') : quickUnitName}
+                  onChange={event => syncEntityEntryValue(event.target.value)}
+                  disabled={!canAddUnits}
+                />
+                <datalist id="activity-entity-options">
+                  {availableEntities.map(entity => (
+                    <option key={entity.id} value={entity.name || 'Unnamed Entity'} />
+                  ))}
+                </datalist>
+              </div>
+
+              <div className="rounded-2xl border border-stone-200 bg-white/90 dark:border-stone-700 dark:bg-stone-900/70 focus-within:ring-2 focus-within:ring-stone-500">
+                <input
+                  ref={recordRecordInputRef}
+                  type="number"
+                  step="0.01"
+                  min="10"
+                  className="w-full rounded-2xl bg-transparent px-4 py-3 text-stone-900 outline-none placeholder:text-stone-400 dark:text-stone-100"
+                  placeholder="Amount"
+                  value={recordValue}
+                  onChange={e => setRecordValue(e.target.value)}
+                  onBlur={() => normalizeValueInput(recordValue, setRecordValue)}
+                  disabled={!canAddUnits}
+                />
+              </div>
+
               <button
-                type="button"
-                onClick={() => { void openTeamMemberActivity(); }}
-                disabled={!canManageWorkforce || isUpdatingWorkforce || !selectedTeamMemberId}
-                className="action-btn-primary justify-center"
+                type="submit"
+                className="action-btn-primary min-h-[50px] justify-center rounded-2xl px-6 text-sm shadow-glow transition-all hover:scale-[1.01] active:scale-[0.99]"
+                disabled={isAddingEntity || (!selectedUnitId && !quickUnitName.trim()) || !canAddUnits || !recordValue.trim()}
+                title="Add entry (E)"
               >
-                <Play size={14} />
-                {isUpdatingWorkforce ? 'Updating…' : 'Open Activity Log'}
+                {isAddingEntity ? 'Adding…' : didAddEntity ? 'Added ✓' : 'Add'}
               </button>
             </div>
 
-            <div className="space-y-2">
-              {activityWorkActivitys.length === 0 && (
-                <p className="text-sm text-stone-500 dark:text-stone-400">No activity activityLogs yet.</p>
-              )}
-              {activityWorkActivitys.map(activity => {
-                const teamMember = teamMembers.find(item => item.user_id === activity.teamMember_id);
-                const operatorName = teamMember ? (teamMember.name || 'Unnamed Operator') : (activity.actor_label || 'Unknown Operator');
-                const windowLabel = `${(activity.start_time ? new Date(activity.start_time) : new Date()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${activity.end_time ? new Date(activity.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}`;
-                return (
-                  <div key={activity.id} className="rounded-lg border border-stone-200 dark:border-stone-800 px-3 py-2 flex items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[10px] font-semibold text-stone-400 dark:text-stone-500 uppercase tracking-wider mb-1">{operatorName}</p>
-                      <p className="text-xs text-stone-500 dark:text-stone-400">{windowLabel} · {activity.duration_hours ? `${activity.duration_hours.toFixed(2)}h` : tx('in progress')}</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className={cn(
-                        'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium',
-                        activity.status === 'active'
-                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
-                          : 'bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300'
-                      )}>
-                        {activity.status}
-                      </span>
-                      {activity.status === 'active' && (
-                        <button
-                          type="button"
-                          onClick={() => { void closeTeamMemberActivity(activity.id, activity.teamMember_id ?? ''); }}
-                          disabled={!canManageWorkforce || isUpdatingWorkforce}
-                          className="action-btn-secondary text-xs"
-                        >
-                          <Square size={12} />
-                          End
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500 dark:text-stone-400">
+              <span>Type an existing entity name or enter a new one.</span>
+              <span>
+                Mode: {recordValueingType === 'deferred' ? 'Deferred' : 'Immediate'}
+                {recordTransferMethod ? ` • ${recordTransferMethod.split('::')[1] || recordTransferMethod}` : ''}
+              </span>
             </div>
-          </div>
+          </form>
+        </div>
 
-          <div className="bg-white dark:bg-stone-900 rounded-xl shadow-sm border border-stone-200 dark:border-stone-800 overflow-hidden">
+        <div className="bg-white dark:bg-stone-900 rounded-xl shadow-sm border border-stone-200 dark:border-stone-800 overflow-hidden">
             <div className="p-4 border-b border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-800/50 flex justify-between items-center">
               <h3 className="font-medium text-stone-900 dark:text-stone-100">Entries</h3>
               <div className="text-sm text-stone-500 dark:text-stone-400">
@@ -1405,7 +1315,7 @@ export default function ActivityDetail() {
               <EmptyState
                 title="No records yet"
                 description="No entity records have been recorded yet."
-                actionLabel="Add ActivityRecord"
+                actionLabel="Add"
                 onAction={() => addRecordSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
               />
             ) : (
@@ -1458,90 +1368,245 @@ export default function ActivityDetail() {
           </div>
         </div>
 
-        {/* Sidebar Panels */}
-        <div className="space-y-6">
-          {/* Operations Panel */}
-          <div className="bg-white dark:bg-stone-900 p-4 rounded-xl shadow-sm border border-stone-200 dark:border-stone-800 space-y-6">
-            <h3 className="font-medium mb-3 text-stone-900 dark:text-stone-100 flex items-center gap-2">
-              <User size={18} />
-              Operations
-            </h3>
-            <div className="mb-3 rounded-2xl border border-stone-200/80 bg-stone-50/80 p-3 dark:border-stone-800 dark:bg-stone-800/40">
-              <div className="grid grid-cols-1 gap-2">
-                {activity.status === 'active' && (
-                  <button
-                    type="button"
-                    onClick={() => handleActivityTransition('completed')}
-                    className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-red-200 dark:border-red-900/70 bg-white dark:bg-stone-900 px-4 py-3 text-sm font-semibold text-red-700 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
-                    disabled={isActivityTransitioning || !canAlign || !isTotald}
-                    title="Complete Activity (TeamMemberActivity+Enter)"
-                  >
-                    {isActivityTransitioning
-                      ? 'Completing…'
-                      : recentTransitionStatus === 'completed'
-                        ? 'Completed ✓'
-                        : 'Complete activity'}
-                  </button>
-                )}
-                {activity.status === 'completed' && (
-                  <button
-                    type="button"
-                    onClick={() => handleActivityTransition('archived')}
-                    className="action-btn-secondary justify-center min-h-[44px]"
-                    disabled={isActivityTransitioning || !canOperateLog}
-                  >
-                    {isActivityTransitioning
-                      ? 'Archiving…'
-                      : recentTransitionStatus === 'archived'
-                        ? 'Archived ✓'
-                        : 'Archive activity'}
-                  </button>
-                )}
-                {activity.status === 'archived' && (
-                  <button
-                    type="button"
-                    onClick={() => handleActivityTransition('active')}
-                    className="action-btn-secondary justify-center min-h-[44px]"
-                    disabled={isActivityTransitioning || !canOperateLog}
-                  >
-                    {isActivityTransitioning
-                      ? 'Restoring…'
-                      : recentTransitionStatus === 'active'
-                        ? 'Restored ✓'
-                        : 'Restore activity'}
-                  </button>
-                )}
-              </div>
-              {activity.status === 'active' && (
-                <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">
-                  Complete this activity once all records are recorded.
-                </p>
-              )}
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-1 gap-3">
-
+      {isAddOptionsOpen && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm" onClick={() => !isAddingEntity && setIsAddOptionsOpen(false)}>
+          <div className="w-full max-w-lg rounded-[24px] border border-stone-200 bg-white p-5 shadow-2xl dark:border-stone-800 dark:bg-stone-900" onClick={event => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4 border-b border-stone-200 pb-4 dark:border-stone-800">
               <div>
-                <label className="text-xs font-medium text-stone-500 dark:text-stone-400 block mb-1">{tx('Assigned Operator')}</label>
-                <select 
-                  className="w-full px-2 py-1.5 border border-stone-200 dark:border-stone-700 rounded-md bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100 text-sm"
-                  value={assignedOperator}
-                  onChange={e => setAssignedOperator(e.target.value)}
-                  onBlur={handleUpdateOperations}
-                  disabled={!canManageImpact || isCompleted || isArchived}
+                <h3 className="text-base font-semibold text-stone-900 dark:text-stone-100">Add options</h3>
+                <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">Keep direct add simple, but preserve deferred entry and channel source when needed.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAddOptionsOpen(false)}
+                className="rounded-full p-2 text-stone-500 hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-800"
+                disabled={isAddingEntity}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-stone-500 dark:text-stone-400">Valueing mode</label>
+                <select
+                  className="control-input w-full"
+                  value={recordValueingType}
+                  onChange={e => setRecordValueingType(e.target.value as 'value' | 'deferred')}
+                  disabled={!canAddUnits}
                 >
-                  <option value="">{tx('Select Operator...')}</option>
-                  {operators.map(m => (
-                    <option key={m.id} value={m.id}>{m.name}</option>
-                  ))}
+                  <option value="value">Immediate</option>
+                  <option value="deferred">Deferred</option>
                 </select>
               </div>
 
+              <div>
+                <label className="mb-1 block text-xs font-medium text-stone-500 dark:text-stone-400">
+                  Channel source <span className="text-stone-400">({recordValueingType === 'value' ? 'required for immediate' : 'optional for deferred'})</span>
+                </label>
+                <select
+                  className="control-input w-full"
+                  value={recordTransferMethod}
+                  onChange={e => setRecordTransferMethod(e.target.value)}
+                  disabled={!canAddUnits}
+                  required={recordValueingType === 'value'}
+                >
+                  <option value="">{recordValueingType === 'value' ? 'Select transfer source...' : 'No channel source needed'}</option>
+                  {channels.filter(c => c.is_active).map(channel => (
+                    <option key={channel.id} value={`${channel.category}::${channel.name}`}>
+                      {channel.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsAddOptionsOpen(false)}
+                className="action-btn-primary justify-center"
+              >
+                Done
+              </button>
             </div>
           </div>
-
-
         </div>
-      </div>
+      )}
+
+      {isAdvancedOverlayOpen && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" onClick={() => !isUpdatingWorkforce && !isActivityTransitioning && setIsAdvancedOverlayOpen(false)}>
+          <div className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-[28px] border border-stone-200 bg-white p-5 shadow-2xl dark:border-stone-800 dark:bg-stone-900 lg:p-6" onClick={event => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4 border-b border-stone-200 pb-4 dark:border-stone-800">
+              <div>
+                <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">Advanced</h3>
+                <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">Workforce, operator assignment, and state changes stay available without living in the main column.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsAdvancedOverlayOpen(false)}
+                className="rounded-full p-2 text-stone-500 hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-800"
+                disabled={isUpdatingWorkforce || isActivityTransitioning}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="mt-5 grid gap-5 lg:grid-cols-[0.92fr_1.08fr]">
+              <div className="space-y-5">
+                <div className="rounded-2xl border border-stone-200 bg-stone-50/80 p-4 dark:border-stone-800 dark:bg-stone-800/40">
+                  <h4 className="flex items-center gap-2 text-sm font-semibold text-stone-900 dark:text-stone-100">
+                    <User size={16} />
+                    Activity state
+                  </h4>
+                  <div className="mt-3 grid gap-2">
+                    {activity.status === 'active' && (
+                      <button
+                        type="button"
+                        onClick={() => void handleActivityTransition('completed')}
+                        className="inline-flex min-h-[44px] items-center justify-center rounded-xl border border-red-200 bg-white px-4 py-3 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:opacity-50 dark:border-red-900/70 dark:bg-stone-900 dark:text-red-400 dark:hover:bg-red-900/20"
+                        disabled={isActivityTransitioning || !canAlign || !isTotald}
+                        title="Complete activity"
+                      >
+                        {isActivityTransitioning
+                          ? 'Completing…'
+                          : recentTransitionStatus === 'completed'
+                            ? 'Completed ✓'
+                            : 'Complete activity'}
+                      </button>
+                    )}
+                    {activity.status === 'completed' && (
+                      <button
+                        type="button"
+                        onClick={() => void handleActivityTransition('archived')}
+                        className="action-btn-secondary justify-center min-h-[44px]"
+                        disabled={isActivityTransitioning || !canOperateLog}
+                      >
+                        {isActivityTransitioning
+                          ? 'Archiving…'
+                          : recentTransitionStatus === 'archived'
+                            ? 'Archived ✓'
+                            : 'Archive activity'}
+                      </button>
+                    )}
+                    {activity.status === 'archived' && (
+                      <button
+                        type="button"
+                        onClick={() => void handleActivityTransition('active')}
+                        className="action-btn-secondary justify-center min-h-[44px]"
+                        disabled={isActivityTransitioning || !canOperateLog}
+                      >
+                        {isActivityTransitioning
+                          ? 'Restoring…'
+                          : recentTransitionStatus === 'active'
+                            ? 'Restored ✓'
+                            : 'Restore activity'}
+                      </button>
+                    )}
+                  </div>
+                  <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">
+                    {activity.status === 'active'
+                      ? 'Complete once every active entry has been recorded and totaled.'
+                      : 'Use this panel to move the activity forward or reopen it.'}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-stone-200 bg-stone-50/80 p-4 dark:border-stone-800 dark:bg-stone-800/40">
+                  <label className="mb-1 block text-xs font-medium text-stone-500 dark:text-stone-400">{tx('Assigned Operator')}</label>
+                  <select
+                    className="control-input w-full"
+                    value={assignedOperator}
+                    onChange={e => setAssignedOperator(e.target.value)}
+                    onBlur={handleUpdateOperations}
+                    disabled={!canManageImpact || isCompleted || isArchived}
+                  >
+                    <option value="">{tx('Select Operator...')}</option>
+                    {operators.map(member => (
+                      <option key={member.id} value={member.id}>{member.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-stone-200 p-4 dark:border-stone-800">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h4 className="text-sm font-semibold text-stone-900 dark:text-stone-100">Workforce</h4>
+                    <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">Open logs, close active shifts, and review who touched this activity.</p>
+                  </div>
+                  <span className="rounded-full bg-stone-100 px-2 py-1 text-[11px] text-stone-700 dark:bg-stone-800 dark:text-stone-300">
+                    {activityWorkActivitys.length} logs
+                  </span>
+                </div>
+
+                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
+                  <select
+                    className="control-input"
+                    value={selectedTeamMemberId}
+                    onChange={event => setSelectedTeamMemberId(event.target.value)}
+                    disabled={!canManageWorkforce || isUpdatingWorkforce}
+                  >
+                    <option value="">Select Operator...</option>
+                    {availableOperators.map(teamMember => (
+                      <option key={teamMember.id} value={teamMember.id}>{teamMember.name || 'Unnamed Operator'}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => { void openTeamMemberActivity(); }}
+                    disabled={!canManageWorkforce || isUpdatingWorkforce || !selectedTeamMemberId}
+                    className="action-btn-primary justify-center"
+                  >
+                    <Play size={14} />
+                    {isUpdatingWorkforce ? 'Updating…' : 'Open Activity Log'}
+                  </button>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  {activityWorkActivitys.length === 0 && (
+                    <p className="text-sm text-stone-500 dark:text-stone-400">No activity logs yet.</p>
+                  )}
+                  {activityWorkActivitys.map(activityLog => {
+                    const teamMember = teamMembers.find(item => item.user_id === activityLog.teamMember_id);
+                    const operatorName = teamMember ? (teamMember.name || 'Unnamed Operator') : (activityLog.actor_label || 'Unknown Operator');
+                    const windowLabel = `${(activityLog.start_time ? new Date(activityLog.start_time) : new Date()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${activityLog.end_time ? new Date(activityLog.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}`;
+
+                    return (
+                      <div key={activityLog.id} className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 px-3 py-2 dark:border-stone-800">
+                        <div>
+                          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400 dark:text-stone-500">{operatorName}</p>
+                          <p className="text-xs text-stone-500 dark:text-stone-400">{windowLabel} · {activityLog.duration_hours ? `${activityLog.duration_hours.toFixed(2)}h` : tx('in progress')}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={cn(
+                            'inline-flex items-center rounded-full px-2 py-1 text-xs font-medium',
+                            activityLog.status === 'active'
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                              : 'bg-stone-100 text-stone-700 dark:bg-stone-800 dark:text-stone-300'
+                          )}>
+                            {activityLog.status}
+                          </span>
+                          {activityLog.status === 'active' && (
+                            <button
+                              type="button"
+                              onClick={() => { void closeTeamMemberActivity(activityLog.id, activityLog.teamMember_id ?? ''); }}
+                              disabled={!canManageWorkforce || isUpdatingWorkforce}
+                              className="action-btn-secondary text-xs"
+                            >
+                              <Square size={12} />
+                              End
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {totalRecord && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
@@ -1621,193 +1686,5 @@ export default function ActivityDetail() {
         </div>
       )}
     </div>
-  );
-}
-
-function EntriesRow({ record, entity, updateRecord, deleteRecord, isHighIntensity, onViewEntity, onTotalUpdate, onSitOut, onLeave, canManageImpact, isTotalActionPending, onNotify }: { 
-  record: ActivityRecord, 
-  entity: Entity, 
-  updateRecord: (e: ActivityRecord) => Promise<void>,
-  deleteRecord: (id: string) => Promise<void>,
-  isHighIntensity: boolean,
-  onViewEntity: (id: string) => void,
-  onTotalUpdate: (record: ActivityRecord) => void,
-  onSitOut: (record: ActivityRecord) => void,
-  onLeave: (record: ActivityRecord) => void,
-  canManageImpact: boolean,
-  isTotalActionPending: boolean,
-  onNotify: (input: { type: 'success' | 'error' | 'info'; message: string }) => void
-}) {
-  const [isEditing, setIsEditing] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [initialValue, setInitialValue] = useState(record.unit_amount.toString());
-  const [total, setTotal] = useState(record.unit_amount.toString());
-
-  const handleSave = async () => {
-    const parsedActivityRecordVal = parseFloat(initialValue);
-    const parsedTotal = parseFloat(total);
-    if (!Number.isFinite(parsedActivityRecordVal) || parsedActivityRecordVal < 10) {
-      onNotify({ type: 'error', message: 'ActivityRecord value must be at least 10.' });
-      return;
-    }
-    if (!Number.isFinite(parsedTotal) || parsedTotal < 0) {
-      onNotify({ type: 'error', message: 'Total must be a valid non-negative number.' });
-      return;
-    }
-    await updateRecord({
-      ...record,
-      unit_amount: parsedTotal
-    });
-    setIsEditing(false);
-  };
-
-  const normalizeValueInput = (value: string, setValue: (next: string) => void) => {
-    const trimmed = value.trim();
-    if (!trimmed) return;
-    const parsed = Number(trimmed);
-    if (!Number.isFinite(parsed)) return;
-    setValue(parsed.toFixed(2));
-  };
-
-  const generateReceipt = () => {
-    const net = (parseFloat(total) || 0) - (parseFloat(initialValue) || 0);
-    return `🧾 *Activity Total Snapshot*\nEntity: ${entity.name}\nUnit Input: ${formatValue(parseFloat(initialValue))}\nCurrent Total: ${formatValue(parseFloat(total))}\nDelta: ${net > 0 ? '+' : ''}${formatValue(net)}`;
-  };
-
-  const shareReceipt = () => {
-    const text = encodeURIComponent(generateReceipt());
-    window.open(`https://wa.me/?text=${text}`, '_blank');
-  };
-
-  const handleRemoveActivityRecord = async () => {
-    if (isDeleting) return;
-    const confirmed = window.confirm('Confirm remove this record?');
-    if (!confirmed) return;
-    try {
-      setIsDeleting(true);
-      await deleteRecord(record.id);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  if (isEditing) {
-    const editDelta = (parseFloat(total) || 0) - (parseFloat(initialValue) || 0);
-
-    return (
-      <tr className="bg-stone-50 dark:bg-stone-800">
-        <td className="px-6 py-3 font-medium text-stone-900 dark:text-stone-100">{entity.name}</td>
-        <td className="px-6 py-3 text-right">
-          <input 
-            type="number" 
-            step="0.01"
-            min="10"
-            className="w-24 p-1 border border-stone-300 dark:border-stone-600 rounded text-right bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100"
-            value={initialValue}
-            onChange={e => setInitialValue(e.target.value)}
-            onBlur={() => normalizeValueInput(initialValue, setInitialValue)}
-          />
-        </td>
-        <td className="px-6 py-3 text-right">
-          <input 
-            type="number" 
-            className="w-24 p-1 border border-stone-300 dark:border-stone-600 rounded text-right bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100"
-            value={total}
-            onChange={e => setTotal(e.target.value)}
-          />
-        </td>
-        <td className="px-6 py-3 text-right font-mono text-stone-400">
-          <span className={cn(
-            "font-medium",
-            editDelta > 0 ? "text-emerald-600 dark:text-emerald-400" : editDelta < 0 ? "text-red-600 dark:text-red-400" : "text-stone-400"
-          )}>
-            {editDelta > 0 ? '+' : ''}{formatValue(editDelta)}
-          </span>
-        </td>
-        <td className="px-6 py-3 text-right flex justify-end gap-2">
-          <button onClick={() => { void handleSave(); }} className="text-emerald-600 hover:text-emerald-700 dark:text-emerald-400 dark:hover:text-emerald-300">
-            <Save size={18} />
-          </button>
-        </td>
-      </tr>
-    );
-  }
-
-  return (
-    <tr className="hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors group">
-      <td 
-        className="px-6 py-3 font-medium text-stone-900 dark:text-stone-100 cursor-pointer hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-        onClick={() => onViewEntity(entity.id)}
-      >
-        {entity?.name || 'Unknown'}
-        {record.left_at && (
-          <div className="mt-1 inline-flex items-center gap-1 rounded-full border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-400">
-            Left {new Date(record.left_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </div>
-        )}
-        {entity?.tags && entity.tags.length > 0 && (
-          <div className="flex gap-1 mt-1">
-            {entity.tags.slice(0, 2).map((tag: string) => (
-              <span key={tag} className="text-[10px] bg-stone-100 dark:bg-stone-700 px-1 rounded text-stone-500 dark:text-stone-400">{tag}</span>
-            ))}
-          </div>
-        )}
-      </td>
-      <td className="px-6 py-3 text-right font-mono text-stone-600 dark:text-stone-300">{formatValue(record.unit_amount)}</td>
-      <td className="px-6 py-3 text-right font-mono text-stone-600 dark:text-stone-300">{formatValue(record.unit_amount)}</td>
-      <td className={cn(
-        "px-6 py-3 text-right font-mono font-medium",
-        (record.direction === 'increase' ? record.unit_amount : -record.unit_amount) > 0 ? "text-emerald-600 dark:text-emerald-400" : (record.direction === 'increase' ? record.unit_amount : -record.unit_amount) < 0 ? "text-red-600 dark:text-red-400" : "text-stone-400"
-      )}>
-        {(record.direction === 'increase' ? record.unit_amount : -record.unit_amount) > 0 ? '+' : ''}{formatValue((record.direction === 'increase' ? record.unit_amount : -record.unit_amount))}
-      </td>
-      <td className="px-6 py-3 text-right">
-        <div className="toolbar-surface justify-end">
-        <button onClick={shareReceipt} aria-label="Share receipt" className="action-pill action-pill-success action-pill-sm" title="Share Receipt">
-          <Share2 size={14} />
-          <span className="hidden sm:inline">Share</span>
-        </button>
-        {canManageImpact && (
-          <>
-            <button
-              onClick={() => onTotalUpdate(record)}
-              disabled={isTotalActionPending}
-              aria-label="Update total"
-              className="action-pill action-pill-neutral action-pill-sm"
-              title="Update Total"
-            >
-              <Circle size={14} />
-              <span className="hidden sm:inline">Total</span>
-            </button>
-            {!record.left_at && (
-              <button
-                onClick={() => onLeave(record)}
-                disabled={isTotalActionPending}
-                aria-label="Mark inactive"
-                className="action-pill action-pill-danger action-pill-sm"
-                title="Mark inactive"
-              >
-                <Clock size={14} />
-                <span className="hidden sm:inline">Inactive</span>
-              </button>
-            )}
-            <button onClick={() => setIsEditing(true)} aria-label="Edit record" className="action-pill action-pill-neutral action-pill-sm" title="Edit ActivityRecord">
-              <Edit2 size={14} />
-              <span className="hidden sm:inline">Edit</span>
-            </button>
-            <button
-              onClick={() => { void handleRemoveActivityRecord(); }}
-              disabled={isDeleting}
-              aria-label="Remove record"
-              className="action-pill action-pill-danger action-pill-sm disabled:opacity-60"
-            >
-              <Trash2 size={14} />
-              <span className="hidden sm:inline">{isDeleting ? 'Removing…' : 'Remove'}</span>
-            </button>
-          </>
-        )}
-        </div>
-      </td>
-    </tr>
   );
 }

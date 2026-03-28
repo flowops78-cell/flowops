@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useData } from '../context/DataContext';
-import { Plus, ArrowUpRight, ArrowDownLeft, Circle, SquareStack, AlertCircle, Trash2, Pencil } from 'lucide-react';
+import { Plus, ArrowUpRight, ArrowDownLeft, Circle, SquareStack, AlertCircle, Trash2, Pencil, X, Radio, Clock, Archive, ChevronDown, ChevronUp, MoreVertical, Minus, ArrowRight, ExternalLink } from 'lucide-react';
 import { formatCompactValue, formatValue, formatDate } from '../lib/utils';
 import ChannelCharts from '../components/charts/ChannelCharts';
 import { useTheme } from '../context/ThemeContext';
@@ -11,11 +11,15 @@ import { useAppRole } from '../context/AppRoleContext';
 import { ActivityRecord } from '../types';
 import LoadingLine from '../components/LoadingLine';
 import { useNotification } from '../context/NotificationContext';
+import { useConfirm } from '../context/ConfirmContext';
 import CollapsibleActivitySection from '../components/CollapsibleActivitySection';
 import DataActionMenu from '../components/DataActionMenu';
 import { useLabels } from '../lib/labels';
 import { useLocation, useNavigate } from 'react-router-dom';
 import EmptyState from '../components/EmptyState';
+import OverlaySavingState from '../components/OverlaySavingState';
+
+type LoadingState = 'idle' | 'saving' | 'success' | 'error';
 
 export default function Channels({ embedded = false }: { embedded?: boolean }) {
   // Pull only canonical DataContext properties
@@ -136,31 +140,28 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   const recordSystemEvent = async (_data: any) => {};
   const location = useLocation();
   const navigate = useNavigate();
-  const { canAccessAdminUi } = useAppRole();
+  const { canAccessAdminUi, canManageImpact } = useAppRole();
   const { tx } = useLabels();
-  const canOperateValue = canAccessAdminUi;
+  const canOperateValue = canManageImpact;
   const { notify } = useNotification();
+  const { confirm } = useConfirm();
 
   // Account Management State
   const [isAddingAccount, setIsAddingAccount] = useState(false);
   const [editingAccount, setEditingAccount] = useState<any | null>(null);
   const [acctName, setAcctName] = useState('');
   const [acctCategory, setAcctCategory] = useState('');
-  const [isSavingAccount, setIsSavingAccount] = useState(false);
   const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
-  const [accountSaveState, setAccountSaveState] = useState<'idle' | 'saved'>('idle');
+  const [accountState, setAccountState] = useState<LoadingState>('idle');
 
   // Channel State
   const [isAddingActivityRecord, setIsAddingActivityRecord] = useState(false);
   const [isTransferringToChannel, setIsTransferringToChannel] = useState(false);
   const [transType, setTransType] = useState<'increment' | 'decrement'>('increment');
   const [transAmount, setTransAmount] = useState('');
-  const [transMethodBase, setTransMethodBase] = useState('channel_account');
-  const [transMethodCustom, setTransMethodCustom] = useState('');
+  const [transMethodBase, setTransMethodBase] = useState('');
   const [transAccountLabel, setTransAccountLabel] = useState('');
-  const [isSavingActivityRecord, setIsSavingActivityRecord] = useState(false);
-  const [saveActivityRecordProgress, setSaveActivityRecordProgress] = useState(0);
-  const [recordSaveState, setRecordSaveState] = useState<'idle' | 'saved'>('idle');
+  const [activityRecordState, setActivityRecordState] = useState<LoadingState>('idle');
   const [deletingChannelActivityRecordId, setDeletingChannelActivityRecordId] = useState<string | null>(null);
   const [archivedChannelActivityRecordIds, setArchivedChannelActivityRecordIds] = useState<string[]>(() => {
     if (typeof window === 'undefined') return [];
@@ -177,9 +178,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   const [transferFromQuery, setTransferFromQuery] = useState('');
   const [transferToChannelLabel, setTransferToChannelLabel] = useState('');
   const [transferAmount, settransferAmount] = useState('');
-  const [isSavingTransfer, setIsSavingTransfer] = useState(false);
-  const [saveTransferProgress, setSaveTransferProgress] = useState(0);
-  const [transferSaveState, setTransferSaveState] = useState<'idle' | 'saved'>('idle');
+  const [transferState, setTransferState] = useState<LoadingState>('idle');
 
   const parseMethod = (method: string) => {
     const [base, ...rest] = method.split('::');
@@ -290,13 +289,10 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   const [adjustmentUnitId, setAdjustmentUnitId] = useState('');
   const [adjustmentAmount, setAdjustmentAmount] = useState('');
   const [adjustmentType, setAdjustmentType] = useState<'input' | 'output'>('input');
-  const [isSavingAdjustment, setIsSavingAdjustment] = useState(false);
-  const [saveAdjustmentProgress, setSaveAdjustmentProgress] = useState(0);
-  const [adjustmentSaveState, setAdjustmentSaveState] = useState<'idle' | 'saved'>('idle');
+  const [adjustmentState, setAdjustmentState] = useState<LoadingState>('idle');
   const [deletingAdjustmentId, setDeletingAdjustmentId] = useState<string | null>(null);
   const [settlingActivityRecordId, setSettlingActivityRecordId] = useState<string | null>(null);
-  const [settleAccountBase, setSettleAccountBase] = useState('channel_account');
-  const [settleAccountCustom, setSettleAccountCustom] = useState('');
+  const [settleAccountBase, setSettleAccountBase] = useState('');
   const [settleAccountLabel, setSettleAccountLabel] = useState('');
   const [isSettlingActivityRecord, setIsSettlingActivityRecord] = useState(false);
   const [archivedAdjustmentIds, setArchivedAdjustmentIds] = useState<string[]>(() => {
@@ -326,71 +322,10 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('channel.autoArchiveEnabled') === 'true';
   });
-  const saveActivityRecordProgressTimerRef = useRef<number | null>(null);
-  const saveActivityRecordProgressResetTimerRef = useRef<number | null>(null);
-  const saveActivityRecordSuccessResetTimerRef = useRef<number | null>(null);
-  const saveTransferProgressTimerRef = useRef<number | null>(null);
-  const saveTransferProgressResetTimerRef = useRef<number | null>(null);
-  const saveTransferSuccessResetTimerRef = useRef<number | null>(null);
-  const saveAdjustmentProgressTimerRef = useRef<number | null>(null);
-  const saveAdjustmentProgressResetTimerRef = useRef<number | null>(null);
-  const saveAdjustmentSuccessResetTimerRef = useRef<number | null>(null);
-  const saveAccountSuccessResetTimerRef = useRef<number | null>(null);
   const recordHistoryRef = useRef<HTMLDivElement>(null);
 
-  const clearSaveActivityRecordTimers = () => {
-    if (saveActivityRecordProgressTimerRef.current !== null) {
-      window.clearInterval(saveActivityRecordProgressTimerRef.current);
-      saveActivityRecordProgressTimerRef.current = null;
-    }
-    if (saveActivityRecordProgressResetTimerRef.current !== null) {
-      window.clearTimeout(saveActivityRecordProgressResetTimerRef.current);
-      saveActivityRecordProgressResetTimerRef.current = null;
-    }
-  };
-
-  const clearSaveAdjustmentTimers = () => {
-    if (saveAdjustmentProgressTimerRef.current !== null) {
-      window.clearInterval(saveAdjustmentProgressTimerRef.current);
-      saveAdjustmentProgressTimerRef.current = null;
-    }
-    if (saveAdjustmentProgressResetTimerRef.current !== null) {
-      window.clearTimeout(saveAdjustmentProgressResetTimerRef.current);
-      saveAdjustmentProgressResetTimerRef.current = null;
-    }
-  };
-
-  const clearSaveTransferTimers = () => {
-    if (saveTransferProgressTimerRef.current !== null) {
-      window.clearInterval(saveTransferProgressTimerRef.current);
-      saveTransferProgressTimerRef.current = null;
-    }
-    if (saveTransferProgressResetTimerRef.current !== null) {
-      window.clearTimeout(saveTransferProgressResetTimerRef.current);
-      saveTransferProgressResetTimerRef.current = null;
-    }
-  };
-
   useEffect(() => () => {
-    clearSaveActivityRecordTimers();
-    clearSaveTransferTimers();
-    clearSaveAdjustmentTimers();
-    if (saveActivityRecordSuccessResetTimerRef.current !== null) {
-      window.clearTimeout(saveActivityRecordSuccessResetTimerRef.current);
-      saveActivityRecordSuccessResetTimerRef.current = null;
-    }
-    if (saveTransferSuccessResetTimerRef.current !== null) {
-      window.clearTimeout(saveTransferSuccessResetTimerRef.current);
-      saveTransferSuccessResetTimerRef.current = null;
-    }
-    if (saveAdjustmentSuccessResetTimerRef.current !== null) {
-      window.clearTimeout(saveAdjustmentSuccessResetTimerRef.current);
-      saveAdjustmentSuccessResetTimerRef.current = null;
-    }
-    if (saveAccountSuccessResetTimerRef.current !== null) {
-      window.clearTimeout(saveAccountSuccessResetTimerRef.current);
-      saveAccountSuccessResetTimerRef.current = null;
-    }
+    // Cleanup any lingering timeouts if needed in the future
   }, []);
 
   useEffect(() => {
@@ -690,14 +625,14 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
     setIsAddingActivityRecord(true);
     setTransType('increment');
-    setTransMethodCustom('');
 
-    if (base === 'value') {
-      setTransMethodBase('channel_account');
+    const hasMatchingCategory = availableChannelCategories.some(category => category.value === base);
+    if (base === 'value' || !hasMatchingCategory) {
+      setTransMethodBase(defaultChannelCategory);
       return;
     }
 
-    setTransMethodBase(base || 'channel_account');
+    setTransMethodBase(base);
   };
 
   // --- Chart Data Preparation ---
@@ -730,45 +665,54 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
   const p2pOptionDisplay = (method: string, amount: number) => `${formatMethodLabel(method)} (${formatValue(amount)})`;
 
-  const CHANNEL_CATEGORY_CHOICES = [
-    { value: 'channel_account', label: 'Channel' },
-    { value: 'value', label: 'Value' },
-    { value: 'asset', label: 'Asset' },
-    { value: 'other', label: 'Other' },
-    { value: '__custom__', label: '+ New channel label…' },
-  ];
-
   const availableChannelCategories = useMemo(() => {
     const options = new Map<string, { value: string; label: string }>();
 
-    for (const choice of CHANNEL_CATEGORY_CHOICES) {
-      if (choice.value === '__custom__') continue;
-      options.set(normalizeChannelKey(choice.value), choice);
-    }
+    const blockedBases = new Set(['channel_account', 'value', 'asset', 'other']);
 
     for (const account of transferAccounts) {
       const key = normalizeChannelKey(account.category);
       if (!key) continue;
+      if (blockedBases.has(key)) continue;
       options.set(key, { value: account.category, label: baseMethodLabel(account.category) });
     }
 
     for (const item of channelCardData) {
       const key = normalizeChannelKey(item.base);
       if (!key) continue;
+      if (blockedBases.has(key)) continue;
       options.set(key, { value: item.base, label: baseMethodLabel(item.base) });
     }
 
     return Array.from(options.values()).sort((a, b) => a.label.localeCompare(b.label));
   }, [baseMethodLabel, channelCardData, transferAccounts]);
 
-  const openAddAccount = () => {
+  const defaultChannelCategory = availableChannelCategories[0]?.value || '';
+
+  const resetAccountForm = () => {
     setEditingAccount(null);
     setAcctName('');
     setAcctCategory('');
+    setAccountState('idle');
+  };
+
+  const finishAccountOverlay = () => {
+    setIsAddingAccount(false);
+    resetAccountForm();
+  };
+
+  const closeAccountOverlay = () => {
+    if (accountState === 'saving') return;
+    finishAccountOverlay();
+  };
+
+  const openAddAccount = () => {
+    resetAccountForm();
     setIsAddingAccount(true);
   };
 
   const openEditAccount = (account: any) => {
+    setAccountState('idle');
     setEditingAccount(account);
     setAcctCategory(account.category);
     setAcctName(account.name);
@@ -821,55 +765,69 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     return () => window.removeEventListener('keydown', handleShortcut);
   }, [canOperateValue]);
 
+  useEffect(() => {
+    if (!isAddingAccount) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeAccountOverlay();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isAddingAccount, accountState]);
+
   const handleSaveAccount = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canOperateValue || isSavingAccount) return;
-    setIsSavingAccount(true);
+    if (!canOperateValue || accountState === 'saving') return;
+    const resolvedName = acctName.trim();
     const resolvedCategory = acctCategory.trim();
+    if (!resolvedName) {
+      notify({ type: 'error', message: 'Enter an account name.' });
+      return;
+    }
     if (!resolvedCategory) {
-      setIsSavingAccount(false);
       notify({ type: 'error', message: 'Enter a channel label.' });
       return;
     }
+    setAccountState('saving');
     try {
       if (editingAccount) {
         await updateTransferAccount({
           ...editingAccount,
-          name: acctName.trim(),
+          name: resolvedName,
           category: resolvedCategory
         });
         notify({ type: 'success', message: 'Account updated.' });
       } else {
         await addTransferAccount({
-          name: acctName.trim(),
+          name: resolvedName,
           category: resolvedCategory,
           is_active: true
         });
         notify({ type: 'success', message: 'Account saved.' });
       }
-      setAccountSaveState('saved');
-      if (saveAccountSuccessResetTimerRef.current !== null) {
-        window.clearTimeout(saveAccountSuccessResetTimerRef.current);
-      }
-      saveAccountSuccessResetTimerRef.current = window.setTimeout(() => {
-        setAccountSaveState('idle');
-        saveAccountSuccessResetTimerRef.current = null;
-      }, 2000);
-      setIsAddingAccount(false);
-      setEditingAccount(null);
-      setAcctName('');
-      setAcctCategory('');
+      setAccountState('success');
+      setTimeout(() => {
+        setAccountState('idle');
+        finishAccountOverlay();
+      }, 1500);
     } catch (err: any) {
+      setAccountState('error');
       notify({ type: 'error', message: err?.message || 'Unable to save account.' });
-    } finally {
-      setIsSavingAccount(false);
     }
   };
 
   const handleDeleteAccount = async (id: string) => {
     if (!canOperateValue || deletingAccountId) return;
-    const confirmed = window.confirm('Confirm remove this account?');
-    if (!confirmed) return;
+    const ok = await confirm({
+      title: 'Remove account?',
+      message: 'Remove this reserve account? Linked history may be removed.',
+      danger: true,
+      confirmLabel: 'Remove',
+    });
+    if (!ok) return;
     setDeletingAccountId(id);
     try {
       await deleteTransferAccount(id);
@@ -883,21 +841,14 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
   const handleAddActivityRecord = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canOperateValue || isSavingActivityRecord) return;
-    const resolvedMethodBase = transMethodBase === '__custom__' ? transMethodCustom.trim() : transMethodBase;
+    if (!canOperateValue || activityRecordState === 'saving') return;
+    const resolvedMethodBase = transMethodBase.trim();
     if (!resolvedMethodBase) {
-      notify({ type: 'error', message: 'Enter a channel label before saving.' });
+      notify({ type: 'error', message: 'Select a channel before saving.' });
       return;
     }
-    clearSaveActivityRecordTimers();
-    setIsSavingActivityRecord(true);
-    let progress = 8;
-    setSaveActivityRecordProgress(progress);
-    saveActivityRecordProgressTimerRef.current = window.setInterval(() => {
-      progress = Math.min(progress + (progress < 70 ? 10 : progress < 90 ? 4 : 1), 92);
-      setSaveActivityRecordProgress(progress);
-    }, 120);
 
+    setActivityRecordState('saving');
     const today = new Date().toISOString().split('T')[0];
     try {
       await addChannelRecord({
@@ -906,44 +857,25 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
         method: composeMethod(resolvedMethodBase, transAccountLabel),
         date: today
       });
-      clearSaveActivityRecordTimers();
-      setSaveActivityRecordProgress(100);
-      setIsAddingActivityRecord(false);
-      setTransAmount('');
-      setTransMethodBase('channel_account');
-      setTransMethodCustom('');
-      setTransAccountLabel('');
-      setRecordSaveState('saved');
-      if (saveActivityRecordSuccessResetTimerRef.current !== null) {
-        window.clearTimeout(saveActivityRecordSuccessResetTimerRef.current);
-      }
-      saveActivityRecordSuccessResetTimerRef.current = window.setTimeout(() => {
-        setRecordSaveState('idle');
-        saveActivityRecordSuccessResetTimerRef.current = null;
-      }, 2000);
+      setActivityRecordState('success');
+      setTimeout(() => {
+        setIsAddingActivityRecord(false);
+        setActivityRecordState('idle');
+        setTransAmount('');
+        setTransMethodBase(defaultChannelCategory);
+        setTransAccountLabel('');
+      }, 1500);
       notify({ type: 'success', message: 'Record saved.' });
     } catch (error: any) {
+      setActivityRecordState('error');
       notify({ type: 'error', message: error?.message || 'Unable to save record.' });
-    } finally {
-      saveActivityRecordProgressResetTimerRef.current = window.setTimeout(() => {
-        setIsSavingActivityRecord(false);
-        setSaveActivityRecordProgress(0);
-        saveActivityRecordProgressResetTimerRef.current = null;
-      }, 360);
     }
   };
 
   const handleAddAdjustment = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canOperateValue || isSavingAdjustment) return;
-    clearSaveAdjustmentTimers();
-    setIsSavingAdjustment(true);
-    let progress = 8;
-    setSaveAdjustmentProgress(progress);
-    saveAdjustmentProgressTimerRef.current = window.setInterval(() => {
-      progress = Math.min(progress + (progress < 70 ? 10 : progress < 90 ? 4 : 1), 92);
-      setSaveAdjustmentProgress(progress);
-    }, 120);
+    if (!canOperateValue || adjustmentState === 'saving') return;
+    setAdjustmentState('saving');
 
     const today = new Date().toISOString().split('T')[0];
     try {
@@ -953,28 +885,17 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
         type: adjustmentType,
         date: today
       });
-      clearSaveAdjustmentTimers();
-      setSaveAdjustmentProgress(100);
-      setIsAddingAdjustment(false);
-      setAdjustmentUnitId('');
-      setAdjustmentAmount('');
-      setAdjustmentSaveState('saved');
-      if (saveAdjustmentSuccessResetTimerRef.current !== null) {
-        window.clearTimeout(saveAdjustmentSuccessResetTimerRef.current);
-      }
-      saveAdjustmentSuccessResetTimerRef.current = window.setTimeout(() => {
-        setAdjustmentSaveState('idle');
-        saveAdjustmentSuccessResetTimerRef.current = null;
-      }, 2000);
+      setAdjustmentState('success');
+      setTimeout(() => {
+        setIsAddingAdjustment(false);
+        setAdjustmentState('idle');
+        setAdjustmentUnitId('');
+        setAdjustmentAmount('');
+      }, 1500);
       notify({ type: 'success', message: 'Live deferred record recorded.' });
     } catch (error: any) {
+      setAdjustmentState('error');
       notify({ type: 'error', message: error?.message || 'Unable to add live deferred record.' });
-    } finally {
-      saveAdjustmentProgressResetTimerRef.current = window.setTimeout(() => {
-        setIsSavingAdjustment(false);
-        setSaveAdjustmentProgress(0);
-        saveAdjustmentProgressResetTimerRef.current = null;
-      }, 360);
     }
   };
 
@@ -993,7 +914,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
   const handleTransferInternalToChannel = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canOperateValue || isSavingTransfer) return;
+    if (!canOperateValue || transferState === 'saving') return;
 
     if (!transferFromMethod) {
       notify({ type: 'error', message: 'Select a source P2P account.' });
@@ -1018,15 +939,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       return;
     }
 
-    clearSaveTransferTimers();
-    setIsSavingTransfer(true);
-    let progress = 8;
-    setSaveTransferProgress(progress);
-    saveTransferProgressTimerRef.current = window.setInterval(() => {
-      progress = Math.min(progress + (progress < 70 ? 10 : progress < 90 ? 4 : 1), 92);
-      setSaveTransferProgress(progress);
-    }, 120);
-
+    setTransferState('saving');
     const today = new Date().toISOString().split('T')[0];
     try {
       await transferChannelValues({
@@ -1036,37 +949,31 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
         date: today,
       });
 
-      clearSaveTransferTimers();
-      setSaveTransferProgress(100);
-      setIsTransferringToChannel(false);
-      setTransferFromMethod('');
-      setTransferFromQuery('');
-      setTransferToChannelLabel('');
-      settransferAmount('');
-      setTransferSaveState('saved');
-      if (saveTransferSuccessResetTimerRef.current !== null) {
-        window.clearTimeout(saveTransferSuccessResetTimerRef.current);
-      }
-      saveTransferSuccessResetTimerRef.current = window.setTimeout(() => {
-        setTransferSaveState('idle');
-        saveTransferSuccessResetTimerRef.current = null;
-      }, 2000);
+      setTransferState('success');
+      setTimeout(() => {
+        setIsTransferringToChannel(false);
+        setTransferState('idle');
+        setTransferFromMethod('');
+        setTransferFromQuery('');
+        setTransferToChannelLabel('');
+        settransferAmount('');
+      }, 1500);
       notify({ type: 'success', message: 'TransferAmount completed successfully.' });
     } catch (error: any) {
+      setTransferState('error');
       notify({ type: 'error', message: error?.message || 'Unable to complete transfer.' });
-    } finally {
-      saveTransferProgressResetTimerRef.current = window.setTimeout(() => {
-        setIsSavingTransfer(false);
-        setSaveTransferProgress(0);
-        saveTransferProgressResetTimerRef.current = null;
-      }, 360);
     }
   };
 
   const handleDeleteChannelActivityRecord = async (id: string) => {
     if (!canOperateValue || deletingChannelActivityRecordId === id) return;
-    const confirmed = window.confirm('Delete this channel record? This will adjust current channel totals and cannot be undone.');
-    if (!confirmed) return;
+    const ok = await confirm({
+      title: 'Delete channel record?',
+      message: 'This will adjust current channel totals and cannot be undone.',
+      danger: true,
+      confirmLabel: 'Delete',
+    });
+    if (!ok) return;
 
     try {
       setDeletingChannelActivityRecordId(id);
@@ -1162,8 +1069,13 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
   const handleDeleteAdjustment = async (id: string) => {
     if (!canOperateValue || deletingAdjustmentId === id) return;
-    const confirmed = window.confirm('Remove this deferred record? This action cannot be undone.');
-    if (!confirmed) return;
+    const ok = await confirm({
+      title: 'Remove deferred record?',
+      message: 'This action cannot be undone.',
+      danger: true,
+      confirmLabel: 'Remove',
+    });
+    if (!ok) return;
 
     try {
       setDeletingAdjustmentId(id);
@@ -1180,9 +1092,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     if (!canOperateValue || isSettlingActivityRecord) return;
     const record = adjustments.find(l => l.id === id);
     if (!record) return;
-    const resolvedSettleBase = settleAccountBase === '__custom__' ? settleAccountCustom.trim() : settleAccountBase;
+    const resolvedSettleBase = settleAccountBase.trim();
     if (!resolvedSettleBase) {
-      notify({ type: 'error', message: 'Enter a settlement channel label.' });
+      notify({ type: 'error', message: 'Select a settlement channel.' });
       return;
     }
     setIsSettlingActivityRecord(true);
@@ -1199,8 +1111,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       });
       setArchivedAdjustmentIds(current => (current.includes(id) ? current : [...current, id]));
       setSettlingActivityRecordId(null);
-      setSettleAccountBase('channel_account');
-      setSettleAccountCustom('');
+      setSettleAccountBase(defaultChannelCategory);
       setSettleAccountLabel('');
       notify({ type: 'success', message: 'Entry settled.' });
     } catch (error: any) {
@@ -1271,7 +1182,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       <div className={cn(embedded ? 'space-y-6' : 'page-shell', 'w-full min-w-0 overflow-x-hidden')}>
         <div className="section-card p-4">
           <LoadingLine
-            progress={Math.max(8, Math.min(100, loadingProgress || 8))}
+            progress={loadingProgress > 0 ? Math.max(8, Math.min(100, loadingProgress)) : undefined}
             label="Loading channels..."
           />
         </div>
@@ -1367,48 +1278,18 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                   onClick={openAddAccount}
                   disabled={!canOperateValue}
                   className="action-btn-secondary text-xs disabled:opacity-50"
-                  title="Add Account (A)"
+                  title="Add channel (A)"
                 >
                   <Plus size={13} />
-                  Add Account
+                  Add channel
                 </button>
               </div>
 
-              {isAddingAccount && (
-                <form onSubmit={handleSaveAccount} className="mb-4 bg-stone-50 dark:bg-stone-800/50 p-4 rounded-lg border border-stone-200 dark:border-stone-700 space-y-3">
-                  <p className="text-xs font-semibold text-stone-700 dark:text-stone-300">{editingAccount ? 'Edit Account' : 'New Account'}</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                    <input
-                      className="control-input"
-                      placeholder="Account name (e.g. Main channel account)"
-                      value={acctName}
-                      onChange={e => setAcctName(e.target.value)}
-                      disabled={isSavingAccount}
-                      required
-                    />
-                    <input
-                      className="control-input"
-                      placeholder="Channel label (e.g. Alpha, Beta, Internal TransferAmount)"
-                      value={acctCategory}
-                      onChange={e => setAcctCategory(e.target.value)}
-                      disabled={isSavingAccount}
-                      required
-                    />
-                  </div>
-                  <div className="flex justify-end gap-2">
-                    <button type="button" onClick={() => { setIsAddingAccount(false); setEditingAccount(null); }} disabled={isSavingAccount} className="action-btn-tertiary px-3 py-1.5 text-xs">Cancel</button>
-                    <button type="submit" disabled={!canOperateValue || isSavingAccount} className="px-3 py-1.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-md text-xs hover:bg-stone-800 dark:hover:bg-stone-200 disabled:opacity-70">
-                      {isSavingAccount ? 'Saving…' : accountSaveState === 'saved' ? 'Saved ✓' : editingAccount ? 'Update' : 'Save'}
-                    </button>
-                  </div>
-                </form>
-              )}
-
               {transferAccounts.length === 0 && channelCardData.length === 0 && !isAddingAccount ? (
                 <EmptyState
-                  title="No accounts yet"
-                  description="Add your first account to start tracking records."
-                  actionLabel="Add Account"
+                  title="No channels yet"
+                  description="Add your first channel to start tracking records."
+                  actionLabel="Add channel"
                   onAction={openAddAccount}
                   className="py-6"
                 />
@@ -1447,15 +1328,17 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                         >
                           <Pencil size={12} />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => void handleDeleteAccount(acct.id)}
-                          disabled={!canOperateValue || deletingAccountId === acct.id}
-                          className="p-1 rounded text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
-                          title="Delete"
-                        >
-                          <Trash2 size={12} />
-                        </button>
+                        {canManageImpact && (
+                          <button
+                            type="button"
+                            onClick={() => void handleDeleteAccount(acct.id)}
+                            disabled={deletingAccountId === acct.id}
+                            className="p-1 rounded text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50"
+                            title="Delete"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1464,12 +1347,112 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
             </div>
           </div>
 
+          {isAddingAccount && (
+            <div className="overlay-backdrop" onClick={() => accountState === 'idle' && closeAccountOverlay()}>
+              <div 
+                className="overlay-card" 
+                onClick={(e) => e.stopPropagation()}
+                style={{ maxWidth: '480px', position: 'relative' }}
+              >
+                {accountState !== 'idle' && (
+                  <OverlaySavingState
+                    state={accountState === 'error' ? 'error' : accountState}
+                    label={
+                      accountState === 'saving'
+                        ? editingAccount
+                          ? 'Updating channel...'
+                          : 'Creating channel...'
+                        : editingAccount
+                          ? 'Channel updated'
+                          : 'Channel created'
+                    }
+                  />
+                )}
+
+                <div
+                  style={{
+                    opacity: accountState === 'idle' || accountState === 'error' ? 1 : 0,
+                    visibility: accountState === 'idle' || accountState === 'error' ? 'visible' : 'hidden',
+                    transition: 'opacity 0.2s',
+                    pointerEvents: accountState === 'idle' || accountState === 'error' ? 'auto' : 'none',
+                  }}
+                >
+                  <div className="overlay-header">
+                    <div>
+                      <h3 className="font-medium text-stone-900 dark:text-stone-100">
+                        {editingAccount ? 'Edit Channel' : 'Add Channel'}
+                      </h3>
+                      <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                        Name the account and assign the channel label used for records.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={closeAccountOverlay}
+                      className="close-btn"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleSaveAccount}>
+                    <div className="grid grid-cols-1 gap-4 mb-5">
+                      <div className="form-group">
+                        <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Account Name</label>
+                        <input
+                          className="control-input"
+                          placeholder="e.g. Main channel account"
+                          value={acctName}
+                          onChange={e => setAcctName(e.target.value)}
+                          disabled={accountState !== 'idle'}
+                          autoFocus
+                          required
+                        />
+                      </div>
+
+                      <div className="form-group">
+                        <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Channel Label</label>
+                        <input
+                          className="control-input"
+                          placeholder="e.g. Alpha, Beta, Internal"
+                          value={acctCategory}
+                          onChange={e => setAcctCategory(e.target.value)}
+                          disabled={accountState !== 'idle'}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="overlay-footer">
+                      <button
+                        type="button"
+                        onClick={closeAccountOverlay}
+                        className="action-btn-secondary"
+                        disabled={accountState !== 'idle'}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={!canOperateValue || accountState !== 'idle'}
+                        className="action-btn-primary"
+                      >
+                        <Plus size={16} className="shrink-0" aria-hidden />
+                        {editingAccount ? 'Update Channel' : 'Save Channel'}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div ref={recordHistoryRef} className="section-card p-4">
             <div className="flex justify-between items-center mb-4">
               <div>
-                <h3 className="font-medium text-stone-900 dark:text-stone-100">Activity</h3>
+                <h3 className="font-medium text-stone-900 dark:text-stone-100">Live Feed</h3>
                 <p className="hidden md:block text-xs text-stone-500 dark:text-stone-400 mt-1">
-                  <span className="font-mono text-stone-900 dark:text-stone-100">{formatValue(totalChannel)}</span> · {filteredActiveChannelEntries.length} records
+                  <span className="font-mono text-stone-900 dark:text-stone-100">{formatValue(totalChannel)}</span> · activity records across all channels
                 </p>
               </div>
               <div className="flex flex-wrap justify-end gap-2">
@@ -1602,201 +1585,230 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
             </div>
 
             {isAddingActivityRecord && (
-              <form onSubmit={handleAddActivityRecord} className="mb-6 pt-4 border-t border-stone-200/80 dark:border-stone-800/80">
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
-                  <select 
-                    className="control-input"
-                    value={transType}
-                    onChange={e => setTransType(e.target.value as any)}
-                    disabled={!canOperateValue || isSavingActivityRecord}
-                  >
-                    <option value="increment">{tx('Inflow')} (+)</option>
-                    <option value="decrement">{tx('Outflow')} (-)</option>
-                  </select>
-                  <select 
-                    className="control-input"
-                    value={transMethodBase}
-                    onChange={e => {
-                      const val = e.target.value;
-                      setTransMethodBase(val);
-                      if (val !== '__custom__') setTransMethodCustom('');
-                      // If a saved account is selected, auto-fill label
-                      const savedAcct = transferAccounts.find(a => `saved::${a.id}` === val);
-                      if (savedAcct) {
-                        setTransAccountLabel(savedAcct.name);
-                        setTransMethodBase(savedAcct.category);
-                        setTransMethodCustom('');
-                      }
-                    }}
-                    disabled={!canOperateValue || isSavingActivityRecord}
-                  >
-                    {transferAccounts.filter(a => a.is_active).length > 0 && (
-                      <optgroup label="Saved Accounts">
-                        {transferAccounts.filter(a => a.is_active).map(a => (
-                          <option key={a.id} value={`saved::${a.id}`}>{a.name}</option>
-                        ))}
-                      </optgroup>
-                    )}
-                    <optgroup label="Manual Channel">
-                      {availableChannelCategories.map(category => (
-                        <option key={category.value} value={category.value}>{category.label}</option>
-                      ))}
-                      <option value="__custom__">+ New channel label…</option>
-                    </optgroup>
-                  </select>
-                  {transMethodBase === '__custom__' && (
-                    <input
-                      className="control-input"
-                      placeholder="Channel label (e.g. Alpha, Beta, Internal TransferAmount)"
-                      value={transMethodCustom}
-                      onChange={e => setTransMethodCustom(e.target.value)}
-                      disabled={!canOperateValue || isSavingActivityRecord}
-                      required
-                    />
-                  )}
-                  <input
-                    className="control-input"
-                    placeholder="Account name (optional)"
-                    value={transAccountLabel}
-                    onChange={e => setTransAccountLabel(e.target.value)}
-                    disabled={!canOperateValue || isSavingActivityRecord}
-                  />
-                  <div className="flex items-center rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 overflow-hidden focus-within:ring-2 focus-within:ring-stone-500">
-                    <input 
-                      type="number" 
-                      className="w-full bg-transparent border-0 px-3 py-2.5 text-stone-900 dark:text-stone-100 focus:outline-none" 
-                      placeholder="Value" 
-                      value={transAmount} 
-                      onChange={e => setTransAmount(e.target.value)} 
-                      disabled={!canOperateValue || isSavingActivityRecord}
-                      required 
-                    />
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="w-full max-w-lg bg-white dark:bg-stone-900 rounded-2xl shadow-xl border border-stone-200 dark:border-stone-800 overflow-hidden animate-in zoom-in-95 duration-200">
+                  <div className="px-6 py-4 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between">
+                    <h3 className="font-semibold text-stone-900 dark:text-stone-100">Add Record</h3>
+                    <button 
+                      onClick={() => setIsAddingActivityRecord(false)}
+                      className="p-1 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-full transition-colors"
+                    >
+                      <X size={18} className="text-stone-400" />
+                    </button>
                   </div>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <button 
-                    type="button" 
-                    onClick={() => setIsAddingActivityRecord(false)}
-                    disabled={isSavingActivityRecord}
-                    className="action-btn-tertiary px-3 py-1.5 text-xs"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    type="submit" 
-                    disabled={!canOperateValue || isSavingActivityRecord}
-                    className="px-3 py-1.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-md text-xs hover:bg-stone-800 dark:hover:bg-stone-200 disabled:opacity-70 disabled:cursor-not-allowed"
-                  >
-                    {isSavingActivityRecord ? tx('Saving…') : recordSaveState === 'saved' ? tx('Saved ✓') : tx('Save Record')}
-                  </button>
-                </div>
-                {isSavingActivityRecord && (
-                  <div className="mt-3 space-y-1">
-                    <div className="h-1.5 w-full rounded-full bg-stone-200 dark:bg-stone-700 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-stone-900 dark:bg-stone-100 transition-all duration-150"
-                        style={{ width: `${saveActivityRecordProgress}%` }}
+
+                  <div className="p-6">
+                    {activityRecordState !== 'idle' ? (
+                      <OverlaySavingState 
+                        state={activityRecordState as any} 
+                        label={activityRecordState === 'saving' ? "Saving record..." : "Record saved"}
                       />
-                    </div>
-                    <div className="text-[11px] text-stone-500 dark:text-stone-400">{tx('Saving record…')} {Math.max(8, Math.round(saveActivityRecordProgress))}%</div>
+                    ) : (
+                      <form onSubmit={handleAddActivityRecord} className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Type</label>
+                            <select 
+                              className="control-input"
+                              value={transType}
+                              onChange={e => setTransType(e.target.value as any)}
+                              disabled={!canOperateValue}
+                            >
+                              <option value="increment">{tx('Inflow')} (+)</option>
+                              <option value="decrement">{tx('Outflow')} (-)</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Amount</label>
+                            <input 
+                              type="number" 
+                              className="control-input" 
+                              placeholder="0.00" 
+                              value={transAmount} 
+                              onChange={e => setTransAmount(e.target.value)} 
+                              required 
+                            />
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Channel / Account</label>
+                          <div className="flex gap-2">
+                            <select 
+                              className="control-input flex-1"
+                              value={transMethodBase}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setTransMethodBase(val);
+                                const savedAcct = transferAccounts.find(a => `saved::${a.id}` === val);
+                                if (savedAcct) {
+                                  setTransAccountLabel(savedAcct.name);
+                                  setTransMethodBase(savedAcct.category);
+                                }
+                              }}
+                            >
+                              {transferAccounts.filter(a => a.is_active).length > 0 && (
+                                <optgroup label="Saved Accounts">
+                                  {transferAccounts.filter(a => a.is_active).map(a => (
+                                    <option key={a.id} value={`saved::${a.id}`}>{a.name}</option>
+                                  ))}
+                                </optgroup>
+                              )}
+                              <optgroup label="Channels">
+                                {availableChannelCategories.map(category => (
+                                  <option key={category.value} value={category.value}>{category.label}</option>
+                                ))}
+                              </optgroup>
+                            </select>
+                            <button
+                              type="button"
+                              onClick={openAddAccount}
+                              className="action-btn-secondary px-3"
+                              title="Add new channel"
+                            >
+                              <Plus size={16} />
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Label (Optional)</label>
+                          <input
+                            className="control-input"
+                            placeholder="e.g. Weekly Restock"
+                            value={transAccountLabel}
+                            onChange={e => setTransAccountLabel(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="pt-4 flex gap-3">
+                          <button 
+                            type="button" 
+                            onClick={() => setIsAddingActivityRecord(false)}
+                            className="flex-1 px-4 py-2.5 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 rounded-xl font-medium hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button 
+                            type="submit" 
+                            disabled={!canOperateValue}
+                            className="flex-[2] px-4 py-2.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-xl font-semibold hover:bg-stone-800 dark:hover:bg-stone-200 transition-colors disabled:opacity-50"
+                          >
+                            Save Record
+                          </button>
+                        </div>
+                      </form>
+                    )}
                   </div>
-                )}
-              </form>
+                </div>
+              </div>
             )}
 
             {isTransferringToChannel && (
-              <form onSubmit={handleTransferInternalToChannel} className="mb-6 pt-4 border-t border-stone-200/80 dark:border-stone-800/80 space-y-3">
-                <div className="text-xs text-stone-500 dark:text-stone-400">Move values from transfer channel to account</div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <input
-                    list="p2p-source-account-suggestions"
-                    className="control-input"
-                    placeholder="From Channel (type to search)"
-                    value={transferFromQuery}
-                    onChange={e => {
-                      const nextValue = e.target.value;
-                      setTransferFromQuery(nextValue);
-                      const exactMatch = p2pChannelOptions.find(
-                        item => p2pOptionDisplay(item.method, item.amount).toLowerCase() === nextValue.trim().toLowerCase()
-                      );
-                      setTransferFromMethod(exactMatch?.method || '');
-                    }}
-                    disabled={!canOperateValue || isSavingTransfer}
-                    required
-                  />
-                  <datalist id="p2p-source-account-suggestions">
-                    {p2pChannelOptions.map(item => (
-                      <option key={item.method} value={p2pOptionDisplay(item.method, item.amount)} />
-                    ))}
-                  </datalist>
-                  <input
-                    list="bank-account-label-suggestions"
-                    className="control-input"
-                    placeholder="To Account Label (optional)"
-                    value={transferToChannelLabel}
-                    onChange={e => setTransferToChannelLabel(e.target.value)}
-                    disabled={!canOperateValue || isSavingTransfer}
-                  />
-                  <datalist id="channel-label-suggestions">
-                    {channelLabelSuggestions.map(label => (
-                      <option key={label} value={label} />
-                    ))}
-                  </datalist>
-                  <input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    className="control-input"
-                    placeholder="Amount"
-                    value={transferAmount}
-                    onChange={e => settransferAmount(e.target.value)}
-                    disabled={!canOperateValue || isSavingTransfer}
-                    required
-                  />
-                </div>
-
-                {!transferFromMethod && transferFromQuery.trim() && (
-                  <div className="text-xs text-stone-500 dark:text-stone-400">
-                    Select a suggested account to continue.
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="w-full max-w-lg bg-white dark:bg-stone-900 rounded-2xl shadow-xl border border-stone-200 dark:border-stone-800 overflow-hidden animate-in zoom-in-95 duration-200">
+                  <div className="px-6 py-4 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between">
+                    <h3 className="font-semibold text-stone-900 dark:text-stone-100">Move to Account</h3>
+                    <button 
+                      onClick={() => setIsTransferringToChannel(false)}
+                      className="p-1 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-full transition-colors"
+                    >
+                      <X size={18} className="text-stone-400" />
+                    </button>
                   </div>
-                )}
 
-                {transferFromMethod && Number.isFinite(parseFloat(transferAmount)) && parseFloat(transferAmount) > (channelTotals[transferFromMethod] || 0) && (
-                  <div className="text-xs text-red-600 dark:text-red-400">
-                    Insufficient channel total for this transfer.
-                  </div>
-                )}
-
-                <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsTransferringToChannel(false)}
-                    disabled={isSavingTransfer}
-                    className="action-btn-tertiary px-3 py-1.5 text-xs"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={!canOperateValue || isSavingTransfer || !transferFromMethod || (Number.isFinite(parseFloat(transferAmount)) && parseFloat(transferAmount) > (channelTotals[transferFromMethod] || 0))}
-                    className="px-3 py-1.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-md text-xs hover:bg-stone-800 dark:hover:bg-stone-200 disabled:opacity-70 disabled:cursor-not-allowed"
-                  >
-                    {isSavingTransfer ? 'Transferring…' : transferSaveState === 'saved' ? 'Transferred ✓' : 'Move to Account'}
-                  </button>
-                </div>
-
-                {isSavingTransfer && (
-                  <div className="space-y-1">
-                    <div className="h-1.5 w-full rounded-full bg-stone-200 dark:bg-stone-700 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-stone-900 dark:bg-stone-100 transition-all duration-150"
-                        style={{ width: `${saveTransferProgress}%` }}
+                  <div className="p-6">
+                    {transferState !== 'idle' ? (
+                      <OverlaySavingState 
+                        state={transferState as any} 
+                        label={transferState === 'saving' ? "Processing transfer..." : "Transfer complete"}
                       />
-                    </div>
-                    <div className="text-[11px] text-stone-500 dark:text-stone-400">Processing transfer… {Math.max(8, Math.round(saveTransferProgress))}%</div>
+                    ) : (
+                      <form onSubmit={handleTransferInternalToChannel} className="space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">From Channel</label>
+                          <input
+                            list="p2p-source-account-suggestions"
+                            className="control-input"
+                            placeholder="Type to search..."
+                            value={transferFromQuery}
+                            onChange={e => {
+                              const nextValue = e.target.value;
+                              setTransferFromQuery(nextValue);
+                              const exactMatch = p2pChannelOptions.find(
+                                item => p2pOptionDisplay(item.method, item.amount).toLowerCase() === nextValue.trim().toLowerCase()
+                              );
+                              setTransferFromMethod(exactMatch?.method || '');
+                            }}
+                            required
+                          />
+                          <datalist id="p2p-source-account-suggestions">
+                            {p2pChannelOptions.map(item => (
+                              <option key={item.method} value={p2pOptionDisplay(item.method, item.amount)} />
+                            ))}
+                          </datalist>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">To Account Label</label>
+                            <input
+                              list="channel-label-suggestions"
+                              className="control-input"
+                              placeholder="Optional"
+                              value={transferToChannelLabel}
+                              onChange={e => setTransferToChannelLabel(e.target.value)}
+                            />
+                            <datalist id="channel-label-suggestions">
+                              {channelLabelSuggestions.map(label => (
+                                <option key={label} value={label} />
+                              ))}
+                            </datalist>
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Amount</label>
+                            <input
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              className="control-input"
+                              placeholder="0.00"
+                              value={transferAmount}
+                              onChange={e => settransferAmount(e.target.value)}
+                              required
+                            />
+                          </div>
+                        </div>
+
+                        {!transferFromMethod && transferFromQuery.trim() && (
+                          <p className="text-xs text-amber-600 font-medium">Please select a channel from the list.</p>
+                        )}
+
+                        {transferFromMethod && Number.isFinite(parseFloat(transferAmount)) && parseFloat(transferAmount) > (channelTotals[transferFromMethod] || 0) && (
+                          <p className="text-xs text-red-600 font-medium">Insufficient balance in source channel.</p>
+                        )}
+
+                        <div className="pt-4 flex gap-3">
+                          <button 
+                            type="button" 
+                            onClick={() => setIsTransferringToChannel(false)}
+                            className="flex-1 px-4 py-2.5 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 rounded-xl font-medium hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button 
+                            type="submit" 
+                            disabled={!canOperateValue || !transferFromMethod || (Number.isFinite(parseFloat(transferAmount)) && parseFloat(transferAmount) > (channelTotals[transferFromMethod] || 0))}
+                            className="flex-[2] px-4 py-2.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-xl font-semibold hover:bg-stone-800 dark:hover:bg-stone-200 transition-colors disabled:opacity-50"
+                          >
+                            Transfer
+                          </button>
+                        </div>
+                      </form>
+                    )}
                   </div>
-                )}
-              </form>
+                </div>
+              </div>
             )}
 
             <div className="md:hidden divide-y divide-stone-100 dark:divide-stone-800">
@@ -1833,14 +1845,16 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                         >
                           Archive
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => { void handleDeleteChannelActivityRecord(t.id); }}
-                          disabled={deletingChannelActivityRecordId === t.id}
-                          className="action-btn-tertiary px-2.5 py-1 text-xs text-red-600 dark:text-red-400 disabled:opacity-50"
-                        >
-                          {deletingChannelActivityRecordId === t.id ? 'Deleting…' : 'Delete'}
-                        </button>
+                        {canManageImpact && (
+                          <button
+                            type="button"
+                            onClick={() => { void handleDeleteChannelActivityRecord(t.id); }}
+                            disabled={deletingChannelActivityRecordId === t.id}
+                            className="action-btn-tertiary px-2.5 py-1 text-xs text-red-600 dark:text-red-400 disabled:opacity-50"
+                          >
+                            {deletingChannelActivityRecordId === t.id ? 'Deleting…' : 'Delete'}
+                          </button>
+                        )}
                       </>
                     )}
                   </div>
@@ -1907,94 +1921,104 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
               </div>
             )}
 
-            <CollapsibleActivitySection
-              title="Activity"
-              summary={`${filteredActiveChannelEntries.length} records`}
-              className="hidden md:block"
-              defaultExpanded={false}
-              maxExpandedHeightClass="max-h-[560px]"
-              maxCollapsedHeightClass="max-h-[96px]"
-              contentClassName="bg-white dark:bg-stone-900"
-            >
-              <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] activity-fixed bg-white dark:bg-stone-900 text-left text-[13px]">
-                <thead className="sticky top-0 z-10 bg-stone-50 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-700">
-                  <tr>
-                    <th className="sticky-col px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Date</th>
-                    <th className="px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Type</th>
-                    <th className="px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Channel</th>
-                    <th className="px-6 py-2.5 w-[150px] text-right text-[11px] font-semibold uppercase tracking-wide">Amount</th>
-                    <th className="sticky-col-right px-6 py-2.5 w-[170px] text-right text-[11px] font-semibold uppercase tracking-wide">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100 bg-white dark:divide-stone-800 dark:bg-stone-900">
-                  {filteredActiveChannelEntries.map(t => (
-                    <tr key={t.id} className={cn(
-                      "hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors",
-                      isTransferActivityRecord(t)
-                        ? "bg-blue-50/60 dark:bg-blue-900/10"
-                        : "odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60"
-                    )}>
-                      <td className="sticky-col px-6 py-2.5 text-stone-500 dark:text-stone-400">{formatDate(t.created_at || '')}</td>
-                      <td className="px-6 py-2.5">
-                        <div className="inline-flex items-center gap-1.5">
-                          {isTransferActivityRecord(t) && (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                              Transfer
-                            </span>
-                          )}
-                          <span className={cn(
-                            "inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium",
-                            t.direction === 'increase' 
-                              ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400" 
-                              : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400"
-                          )}>
-                            {t.direction === 'increase' ? <ArrowUpRight size={12} /> : <ArrowDownLeft size={12} />}
-                            {t.direction === 'increase' ? 'Inflow' : 'Outflow'}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-6 py-2.5 text-stone-900 dark:text-stone-100">{formatMethodLabel(t.method ?? t.notes ?? '')}</td>
-                      <td className={cn(
-                        "px-6 py-2.5 text-right font-mono font-medium",
-                        t.direction === 'increase' ? "amount-positive" : "amount-negative"
-                      )}>
-                        {t.direction === 'increase' ? '+' : '-'}{formatValue(t.unit_amount)}
-                      </td>
-                      <td className="sticky-col-right px-6 py-2.5 text-right">
-                        {canOperateValue && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleArchiveChannelActivityRecord(t.id)}
-                              className="action-btn-tertiary px-2 py-1 text-[11px] mr-1.5"
-                              title="Archive"
-                            >
-                              Archive
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => { void handleDeleteChannelActivityRecord(t.id); }}
-                              disabled={deletingChannelActivityRecordId === t.id}
-                              className="inline-flex items-center justify-center p-1.5 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                              title={deletingChannelActivityRecordId === t.id ? 'Deleting…' : 'Delete'}
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </>
+            <div className="hidden md:block border-t border-stone-100 dark:border-stone-800 -mx-4">
+              <div className="divide-y divide-stone-100 dark:divide-stone-800 max-h-[600px] overflow-y-auto overflow-x-hidden scrollbar-thin">
+                {filteredActiveChannelEntries.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 gap-3 text-stone-400 dark:text-stone-500">
+                    <Radio size={28} strokeWidth={1.5} />
+                    <p className="text-sm">No activity recorded yet</p>
+                  </div>
+                ) : (
+                  filteredActiveChannelEntries.map(t => {
+                    const isIncrease = t.direction === 'increase';
+                    const isTransfer = isTransferActivityRecord(t);
+                    return (
+                      <div
+                        key={t.id}
+                        className={cn(
+                          "group flex items-center gap-4 px-5 py-3 hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-all",
+                          isTransfer && "bg-blue-50/30 dark:bg-blue-900/10"
                         )}
-                      </td>
-                    </tr>
-                  ))}
-                  {filteredActiveChannelEntries.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-8 text-center text-stone-400">
-                        No records recorded.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </CollapsibleActivitySection>
+                      >
+                        {/* Feed Line / Icon */}
+                        <div className={cn(
+                          "flex items-center justify-center w-8 h-8 rounded-full shrink-0 border-2",
+                          isIncrease 
+                            ? "border-emerald-100 bg-emerald-50 text-emerald-600 dark:border-emerald-900/50 dark:bg-emerald-900/30 dark:text-emerald-400" 
+                            : "border-red-100 bg-red-50 text-red-600 dark:border-red-900/50 dark:bg-red-900/30 dark:text-red-400"
+                        )}>
+                          {isIncrease ? <Plus size={14} /> : <ArrowDownLeft size={14} />}
+                        </div>
+
+                        {/* Event Details */}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm font-medium text-stone-900 dark:text-stone-100 truncate">
+                              {formatMethodLabel(t.method ?? t.notes ?? 'Activity')}
+                            </p>
+                            {isTransfer && (
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                                Transfer
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <p className="text-[11px] text-stone-400 dark:text-stone-500 flex items-center gap-1">
+                              <Clock size={10} />
+                              {formatDate(t.created_at || '')}
+                            </p>
+                            <span className="w-1 h-1 rounded-full bg-stone-200 dark:bg-stone-700" />
+                            <p className="text-[11px] text-stone-400 dark:text-stone-500 italic max-w-[200px] truncate">
+                              {t.notes && t.notes !== t.method ? t.notes : 'Operational record'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Financial Delta */}
+                        <div className="flex items-center gap-5 shrink-0">
+                          <div className="text-right">
+                            <p className={cn(
+                              "text-sm font-mono font-bold leading-none",
+                              isIncrease ? "text-emerald-600 dark:text-emerald-400" : "text-red-500 dark:text-red-400"
+                            )}>
+                              {isIncrease ? '+' : '−'}{formatValue(t.unit_amount)}
+                            </p>
+                            <p className="text-[10px] text-stone-400 dark:text-stone-500 mt-1 uppercase tracking-tight">
+                              {t.channel_label || 'Other'}
+                            </p>
+                          </div>
+
+                          {/* Action Reveal */}
+                          {canOperateValue && (
+                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                type="button"
+                                onClick={() => handleArchiveChannelActivityRecord(t.id)}
+                                className="p-1.5 rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-200 dark:hover:bg-stone-700"
+                                title="Archive"
+                              >
+                                <Archive size={14} />
+                              </button>
+                              {canManageImpact && (
+                                <button
+                                  type="button"
+                                  onClick={() => { void handleDeleteChannelActivityRecord(t.id); }}
+                                  disabled={deletingChannelActivityRecordId === t.id}
+                                  className="p-1.5 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 disabled:opacity-50"
+                                  title="Delete"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
 
             {archivedChannelEntries.length > 0 && (
               <div className="hidden md:block mt-4">
@@ -2215,70 +2239,87 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
             </div>
 
             {isAddingAdjustment && (
-              <form onSubmit={handleAddAdjustment} className="mb-6 pt-4 border-t border-stone-200/80 dark:border-stone-800/80">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                  <select
-                    className="control-input"
-                    value={adjustmentUnitId}
-                    onChange={e => setAdjustmentUnitId(e.target.value)}
-                    disabled={!canOperateValue || isSavingAdjustment}
-                    required
-                  >
-                    <option value="">Select Entity...</option>
-                    {entities.map(p => (
-                      <option key={p.id} value={p.id}>{p.name}</option>
-                    ))}
-                  </select>
-                  <select
-                    className="control-input"
-                    value={adjustmentType}
-                    onChange={e => setAdjustmentType(e.target.value as any)}
-                    disabled={!canOperateValue || isSavingAdjustment}
-                  >
-                    <option value="input">Outflow</option>
-                    <option value="output">Inflow</option>
-                  </select>
-                  <div className="flex items-center rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-800 overflow-hidden focus-within:ring-2 focus-within:ring-stone-500">
-                    <input
-                      type="number"
-                      className="w-full bg-transparent border-0 px-3 py-2.5 text-stone-900 dark:text-stone-100 focus:outline-none"
-                      placeholder="Amount"
-                      value={adjustmentAmount}
-                      onChange={e => setAdjustmentAmount(e.target.value)}
-                      disabled={!canOperateValue || isSavingAdjustment}
-                      required
-                    />
+              <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+                <div className="w-full max-w-lg bg-white dark:bg-stone-900 rounded-2xl shadow-xl border border-stone-200 dark:border-stone-800 overflow-hidden animate-in zoom-in-95 duration-200">
+                  <div className="px-6 py-4 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between">
+                    <h3 className="font-semibold text-stone-900 dark:text-stone-100">Add Live Record</h3>
+                    <button 
+                      onClick={() => setIsAddingAdjustment(false)}
+                      className="p-1 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-full transition-colors"
+                    >
+                      <X size={18} className="text-stone-400" />
+                    </button>
                   </div>
-                </div>
-                <div className="flex justify-end gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setIsAddingAdjustment(false)}
-                    disabled={isSavingAdjustment}
-                    className="action-btn-tertiary px-3 py-1.5 text-xs"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={!canOperateValue || isSavingAdjustment}
-                    className="px-3 py-1.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-md text-xs hover:bg-stone-800 dark:hover:bg-stone-200 disabled:opacity-70 disabled:cursor-not-allowed"
-                  >
-                    {isSavingAdjustment ? 'Saving…' : adjustmentSaveState === 'saved' ? 'Saved ✓' : 'Save Entry'}
-                  </button>
-                </div>
-                {isSavingAdjustment && (
-                  <div className="mt-3 space-y-1">
-                    <div className="h-1.5 w-full rounded-full bg-stone-200 dark:bg-stone-700 overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-stone-900 dark:bg-stone-100 transition-all duration-150"
-                        style={{ width: `${saveAdjustmentProgress}%` }}
+
+                  <div className="p-6">
+                    {adjustmentState !== 'idle' ? (
+                      <OverlaySavingState 
+                        state={adjustmentState as any} 
+                        label={adjustmentState === 'saving' ? "Saving entry..." : "Entry saved"}
                       />
-                    </div>
-                    <div className="text-[11px] text-stone-500 dark:text-stone-400">Saving… {Math.max(8, Math.round(saveAdjustmentProgress))}%</div>
+                    ) : (
+                      <form onSubmit={handleAddAdjustment} className="space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Entity</label>
+                          <select
+                            className="control-input"
+                            value={adjustmentUnitId}
+                            onChange={e => setAdjustmentUnitId(e.target.value)}
+                            required
+                          >
+                            <option value="">Select Entity...</option>
+                            {entities.map(p => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Direction</label>
+                            <select
+                              className="control-input"
+                              value={adjustmentType}
+                              onChange={e => setAdjustmentType(e.target.value as any)}
+                            >
+                              <option value="input">Outflow</option>
+                              <option value="output">Inflow</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Amount</label>
+                            <input
+                              type="number"
+                              className="control-input"
+                              placeholder="0.00"
+                              value={adjustmentAmount}
+                              onChange={e => setAdjustmentAmount(e.target.value)}
+                              required
+                            />
+                          </div>
+                        </div>
+
+                        <div className="pt-4 flex gap-3">
+                          <button 
+                            type="button" 
+                            onClick={() => setIsAddingAdjustment(false)}
+                            className="flex-1 px-4 py-2.5 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 rounded-xl font-medium hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors"
+                          >
+                            Cancel
+                          </button>
+                          <button 
+                            type="submit" 
+                            disabled={!canOperateValue}
+                            className="flex-[2] px-4 py-2.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-xl font-semibold hover:bg-stone-800 dark:hover:bg-stone-200 transition-colors disabled:opacity-50"
+                          >
+                            Save Entry
+                          </button>
+                        </div>
+                      </form>
+                    )}
                   </div>
-                )}
-              </form>
+                </div>
+              </div>
             )}
 
             <div className="md:hidden divide-y divide-stone-100 dark:divide-stone-800">
@@ -2297,28 +2338,23 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                         <select
                           className="control-input text-xs flex-1 min-w-[130px]"
                           value={settleAccountBase}
-                          onChange={e => {
-                            const value = e.target.value;
-                            setSettleAccountBase(value);
-                            if (value !== '__custom__') setSettleAccountCustom('');
-                          }}
+                          onChange={e => setSettleAccountBase(e.target.value)}
                           disabled={isSettlingActivityRecord}
                         >
+                          <option value="">Select channel</option>
                           {availableChannelCategories.map(category => (
                             <option key={category.value} value={category.value}>{category.label}</option>
                           ))}
-                          <option value="__custom__">+ New channel label…</option>
                         </select>
-                        {settleAccountBase === '__custom__' && (
-                          <input
-                            className="control-input text-xs flex-1 min-w-[150px]"
-                            placeholder="Channel label"
-                            value={settleAccountCustom}
-                            onChange={e => setSettleAccountCustom(e.target.value)}
-                            disabled={isSettlingActivityRecord}
-                            required
-                          />
-                        )}
+                        <button
+                          type="button"
+                          onClick={openAddAccount}
+                          disabled={!canOperateValue || isSettlingActivityRecord}
+                          className="action-btn-secondary px-2.5 py-1 text-xs"
+                        >
+                          <Plus size={12} />
+                          Add channel
+                        </button>
                         <input
                           className="control-input text-xs flex-1 min-w-[110px]"
                           placeholder="Account label (optional)"
@@ -2343,7 +2379,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                           {settlingActivityRecordId !== l.id && (
                             <button
                               type="button"
-                              onClick={() => { setSettlingActivityRecordId(l.id); setSettleAccountBase('channel_account'); setSettleAccountLabel(''); }}
+                              onClick={() => { setSettlingActivityRecordId(l.id); setSettleAccountBase(defaultChannelCategory); setSettleAccountLabel(''); }}
                               className="action-btn-tertiary px-2.5 py-1 text-xs text-emerald-700 dark:text-emerald-400"
                             >
                               Settle
@@ -2356,14 +2392,16 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                           >
                             Archive
                           </button>
-                          <button
-                            type="button"
-                            onClick={() => { void handleDeleteAdjustment(l.id); }}
-                            disabled={deletingAdjustmentId === l.id}
-                            className="action-btn-tertiary px-2.5 py-1 text-xs text-red-600 dark:text-red-400 disabled:opacity-50"
-                          >
-                            {deletingAdjustmentId === l.id ? 'Removing…' : 'Remove'}
-                          </button>
+                          {canManageImpact && (
+                            <button
+                              type="button"
+                              onClick={() => { void handleDeleteAdjustment(l.id); }}
+                              disabled={deletingAdjustmentId === l.id}
+                              className="action-btn-tertiary px-2.5 py-1 text-xs text-red-600 dark:text-red-400 disabled:opacity-50"
+                            >
+                              {deletingAdjustmentId === l.id ? 'Removing…' : 'Remove'}
+                            </button>
+                          )}
                         </>
                       )}
                     </div>
@@ -2469,28 +2507,23 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                               <select
                                 className="control-input text-xs w-[130px]"
                                 value={settleAccountBase}
-                                onChange={e => {
-                                  const value = e.target.value;
-                                  setSettleAccountBase(value);
-                                  if (value !== '__custom__') setSettleAccountCustom('');
-                                }}
+                                onChange={e => setSettleAccountBase(e.target.value)}
                                 disabled={isSettlingActivityRecord}
                               >
+                                <option value="">Select channel</option>
                                 {availableChannelCategories.map(category => (
                                   <option key={category.value} value={category.value}>{category.label}</option>
                                 ))}
-                                <option value="__custom__">+ New channel label…</option>
                               </select>
-                              {settleAccountBase === '__custom__' && (
-                                <input
-                                  className="control-input text-xs w-[140px]"
-                                  placeholder="Channel label"
-                                  value={settleAccountCustom}
-                                  onChange={e => setSettleAccountCustom(e.target.value)}
-                                  disabled={isSettlingActivityRecord}
-                                  required
-                                />
-                              )}
+                              <button
+                                type="button"
+                                onClick={openAddAccount}
+                                disabled={!canOperateValue || isSettlingActivityRecord}
+                                className="action-btn-secondary px-2 py-1 text-[11px]"
+                              >
+                                <Plus size={12} />
+                                Add channel
+                              </button>
                               <input
                                 className="control-input text-xs w-[110px]"
                                 placeholder="Label (opt.)"
@@ -2514,7 +2547,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                                 <>
                                   <button
                                     type="button"
-                                    onClick={() => { setSettlingActivityRecordId(l.id); setSettleAccountBase('channel_account'); setSettleAccountLabel(''); }}
+                                    onClick={() => { setSettlingActivityRecordId(l.id); setSettleAccountBase(defaultChannelCategory); setSettleAccountLabel(''); }}
                                     className="action-btn-tertiary px-2 py-1 text-[11px] mr-1.5 text-emerald-700 dark:text-emerald-400"
                                   >
                                     Settle

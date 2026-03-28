@@ -23,31 +23,31 @@ const shortcutGroups: Array<{ title: string; items: ShortcutItem[] }> = [
     ],
   },
   {
-    title: 'Global Navigation',
+    title: 'Global Navigation (single letter, not in a text field)',
     items: [
-      { keys: 'B', action: 'Go to Brief (Dashboard)' },
-      { keys: 'A', action: 'Go to Activity' },
-      { keys: 'P', action: 'Go to Entities' },
-      { keys: 'C', action: 'Go to Collaborations' },
-      { keys: 'V', action: 'Go to Channels' },
-      { keys: 'T', action: 'Go to Team' },
-      { keys: 'S', action: 'Go to Setup (Settings)' },
+      { keys: 'B', action: 'Overview (Dashboard for admin; Activities home for operator/viewer)' },
+      { keys: 'A', action: 'Activities' },
+      { keys: 'P', action: 'Entities (admin); operators stay on Activities' },
+      { keys: 'C', action: 'Network (admin)' },
+      { keys: 'V', action: 'Channels (admin)' },
+      { keys: 'T', action: 'Team' },
+      { keys: 'S', action: 'Settings (admin)' },
     ],
   },
   {
     title: 'Global Create (N then …)',
     items: [
       { keys: 'N then A', action: 'Create activity' },
-      { keys: 'N then E', action: 'ActivityRecord record' },
-      { keys: 'N then V', action: 'Add account (Channels)' },
-      { keys: 'N then P', action: 'Add entity' },
+      { keys: 'N then E', action: 'Add entry on current activity' },
+      { keys: 'N then V', action: 'Add reserve account (Channels, admin)' },
+      { keys: 'N then P', action: 'Add entity (admin)' },
     ],
   },
   {
     title: 'Activity Page',
     items: [
       { keys: 'U', action: 'Add entity' },
-      { keys: 'E', action: 'ActivityRecord record' },
+      { keys: 'E', action: 'Add entry' },
       { keys: 'Shift + Enter', action: 'Complete activity' },
       { keys: 'M', action: 'Toggle activity monitor' },
     ],
@@ -55,15 +55,15 @@ const shortcutGroups: Array<{ title: string; items: ShortcutItem[] }> = [
   {
     title: 'Team Page',
     items: [
-      { keys: 'Delete', action: 'Remove selected team teamMember' },
+      { keys: 'Delete', action: 'Remove selected team member' },
       { keys: 'L', action: 'View team log' },
     ],
   },
   {
     title: 'Channels Page',
     items: [
-      { keys: 'I', action: 'ActivityRecord inflow' },
-      { keys: 'O', action: 'ActivityRecord outflow' },
+      { keys: 'I', action: 'Record inflow' },
+      { keys: 'O', action: 'Record outflow' },
       { keys: 'A', action: 'Add account' },
       { keys: 'F', action: 'Toggle filters' },
     ],

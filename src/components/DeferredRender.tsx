@@ -9,7 +9,7 @@ type DeferredRenderProps = {
 export default function DeferredRender({
   children,
   fallback,
-  rootMargin = '220px',
+  rootMargin = '160px',
 }: DeferredRenderProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
   const [shouldRender, setShouldRender] = React.useState(false);
@@ -33,9 +33,9 @@ export default function DeferredRender({
     let idleCallbackId: number | null = null;
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
-      idleCallbackId = window.requestIdleCallback(() => setShouldRender(true), { timeout: 1800 });
+      idleCallbackId = window.requestIdleCallback(() => setShouldRender(true), { timeout: 900 });
     } else {
-      timeoutId = globalThis.setTimeout(() => setShouldRender(true), 1400);
+      timeoutId = globalThis.setTimeout(() => setShouldRender(true), 900);
     }
 
     return () => {

@@ -159,8 +159,9 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
     if (isClusterAdmin) {
       if (isPlatformAdmin) {
         // Platform admins see EVERYTHING
-        const { data: clusterRows } = await supabase.from('clusters').select('id, name, tag, slug');
-        const { data: clusterOrgs } = await supabase.from('organizations').select('id, name, tag, slug, cluster_id');
+        // Use * so older DBs without tag/slug columns still resolve org scope (narrow selects 400 if column missing).
+        const { data: clusterRows } = await supabase.from('clusters').select('*');
+        const { data: clusterOrgs } = await supabase.from('organizations').select('*');
         
         if (clusterRows) manageableClusters = clusterRows as ClusterMeta[];
         if (clusterOrgs) {
@@ -179,7 +180,7 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
           // Fetch cluster metadata
           const { data: clusterRows } = await supabase
             .from('clusters')
-            .select('id, name, tag, slug')
+            .select('*')
             .in('id', adminClusterIds);
           if (clusterRows) {
             manageableClusters = clusterRows as ClusterMeta[];
@@ -187,7 +188,7 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
           // Fetch all orgs across those clusters
           const { data: clusterOrgs } = await supabase
             .from('organizations')
-            .select('id, name, tag, slug, cluster_id')
+            .select('*')
             .in('cluster_id', adminClusterIds);
           if (clusterOrgs) {
             allClusterOrgIds = (clusterOrgs as OrgMeta[]).map(o => o.id);

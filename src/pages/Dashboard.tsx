@@ -13,9 +13,36 @@ import RecordIcon from '../components/icons/RecordIcon';
 import EntitiesIcon from '../components/icons/EntitiesIcon';
 import PendingRecordIcon from '../components/icons/PendingRecordIcon';
 import ChannelIcon from '../components/icons/ChannelIcon';
+import RecentActivitiesList from '../components/dashboard/RecentActivitiesList';
+import type { Activity as WorkspaceActivity } from '../types';
 
 const DashboardCharts = lazy(() => import('../components/dashboard/DashboardCharts'));
 const WORKSPACE_LEDGER_LABEL = 'Workspace ledger';
+
+/** `YYYY-MM-DD` only — use local noon so day/hour charts match the calendar date, not UTC midnight. */
+function parseActivityScheduleDate(dateStr: string | undefined | null): Date | null {
+  if (!dateStr) return null;
+  const t = dateStr.trim();
+  if (!t) return null;
+  const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t);
+  if (ymd) {
+    const y = Number(ymd[1]);
+    const mo = Number(ymd[2]);
+    const d = Number(ymd[3]);
+    return new Date(y, mo - 1, d, 12, 0, 0, 0);
+  }
+  const parsed = new Date(t);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/** Prefer `created_at` for “when it happened”; else scheduled `date`. */
+function activityHeatmapInstant(activity: Pick<WorkspaceActivity, 'date' | 'created_at'>): Date | null {
+  if (activity.created_at) {
+    const fromCreated = new Date(activity.created_at);
+    if (!Number.isNaN(fromCreated.getTime())) return fromCreated;
+  }
+  return parseActivityScheduleDate(activity.date);
+}
 
 export default function Dashboard({ embedded = false }: { embedded?: boolean }) {
   const { entities, entityBalances, activities, recordsByActivityId, records, auditOrgs, auditActivities, auditAnomalies } = useData();
@@ -107,11 +134,8 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
     const heatmapData = new Map<string, { day: number; hour: number; value: number }>();
 
     visibleActivities.forEach(activity => {
-      const dateStr = activity.start_time || activity.date;
-      if (!dateStr) return;
-      
-      const date = new Date(dateStr);
-      if (isNaN(date.getTime())) return;
+      const date = activityHeatmapInstant(activity);
+      if (!date) return;
 
       const day = date.getDay();
       const hour = date.getHours();
@@ -351,86 +375,13 @@ export default function Dashboard({ embedded = false }: { embedded?: boolean }) 
             days={days}
             theme={theme}
             sidePanel={
-              <section className="relative overflow-hidden rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-gradient-to-b from-white to-stone-50/60 dark:from-stone-900 dark:to-stone-900/70 p-4">
-                <div className="absolute inset-x-0 top-0 h-8 bg-gradient-to-r from-emerald-500/10 via-transparent to-transparent pointer-events-none" />
-                <div className="relative flex items-center justify-between mb-2.5">
-                  <h3 className="text-lg font-medium text-stone-900 dark:text-stone-100">{getMetricLabel('recentActivityLogs')}</h3>
-                  <Link to="/activity" className="text-xs text-[var(--accent)] hover:opacity-90 font-medium interactive-3d rounded px-1.5 py-0.5">View All</Link>
-                </div>
-                <p className="relative mb-3 text-xs text-stone-500 dark:text-stone-400">Each row reflects a saved activity with its net movement and audit state.</p>
-                <div className="relative divide-y divide-stone-200/70 dark:divide-stone-800/80 max-h-[188px] overflow-y-auto pr-1">
-                  {recentActivitys.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-40 text-stone-400">
-                      <AlertCircle className="mb-2 opacity-50" size={24} />
-                      <p className="text-sm italic">No activities recorded yet.</p>
-                      <div className="mt-3 flex gap-2">
-                        <button
-                          type="button"
-                          onClick={() => navigate('/activity?action=create-activity')}
-                          className="action-btn-secondary text-xs px-2.5 py-1.5"
-                        >
-                          {getActionText('startActivity')}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => navigate('/entities?action=add-entity')}
-                          className="action-btn-secondary text-xs px-2.5 py-1.5"
-                        >
-                          {getActionText('addEntity')}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    recentActivitys.map(activity => {
-                      const auditSummary = auditActivityById.get(activity.id);
-                      const activityEntries = recordsByActivityId[activity.id] || [];
-                      const recordFlow = activityEntries.reduce((sum, entry) => {
-                        if (entry.status !== 'applied') return sum;
-                        return sum + (entry.direction === 'increase' ? entry.unit_amount : entry.direction === 'decrease' ? -entry.unit_amount : 0);
-                      }, 0);
-                      const entityCount = new Set(activityEntries.map(entry => entry.entity_id).filter(Boolean)).size;
-                      const activityStateTone = auditSummary?.status === 'broken'
-                        ? 'text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-950/20'
-                        : (auditSummary?.open_record_count || 0) > 0
-                          ? 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/20'
-                          : 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/20';
-                      const activityStateLabel = auditSummary?.status === 'broken'
-                        ? 'Broken'
-                        : (auditSummary?.open_record_count || 0) > 0
-                          ? `${auditSummary?.open_record_count || 0} open`
-                          : 'Clear';
-
-                      return (
-                        <div key={activity.id} className="interactive-3d grid grid-cols-[1fr_auto] items-center gap-3 py-2.5 first:pt-1 last:pb-0.5">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div className={`w-2 h-2 rounded-full shrink-0 ${activity.end_time ? 'bg-stone-300 dark:bg-stone-600' : 'bg-emerald-500 animate-pulse'}`} />
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <p className="font-medium text-stone-900 dark:text-stone-100 text-[13px] truncate">
-                                  {activity.name || activity.label || new Date(activity.date).toLocaleDateString()}
-                                </p>
-                                <span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold', activityStateTone)}>
-                                  {activityStateLabel}
-                                </span>
-                              </div>
-                              <p className="text-xs text-stone-500 dark:text-stone-400 truncate">
-                                {new Date(activity.date).toLocaleDateString()} · {entityCount} entities
-                              </p>
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <p className={cn('font-mono font-medium text-[13px]', recordFlow > 0 ? 'amount-positive' : recordFlow < 0 ? 'amount-negative' : 'amount-zero')}>
-                              {formatValue(recordFlow)}
-                            </p>
-                            <p className="text-xs text-stone-500 dark:text-stone-400">Net movement</p>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </section>
+              <RecentActivitiesList 
+                activities={visibleActivities}
+                recordsByActivityId={recordsByActivityId}
+                limit={5}
+              />
             }
+
           />
         </Suspense>
       </DeferredRender>

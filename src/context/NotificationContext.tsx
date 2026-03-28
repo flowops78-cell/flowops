@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { CheckCircle2, AlertCircle, Info, AlertTriangle, X } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { sanitizeLabel } from '../lib/labels';
 
 type NotificationType = 'success' | 'error' | 'info' | 'warning';
 
@@ -45,16 +46,20 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     setItems(prev => prev.filter(item => item.id !== id));
   }, []);
 
-  const notify = useCallback(({ type = 'info', message, durationMs = 2600 }: NotifyInput) => {
-    const trimmedMessage = message.trim();
+  const notify = useCallback(({ type = 'info', message, durationMs }: NotifyInput) => {
+    const trimmedMessage = sanitizeLabel(message).trim();
     if (!trimmedMessage) return;
 
+    const resolvedDuration =
+      durationMs ??
+      (type === 'error' ? 9000 : type === 'warning' ? 6000 : 2600);
+
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    setItems(prev => [...prev, { id, type, message: trimmedMessage, durationMs }]);
+    setItems(prev => [...prev, { id, type, message: trimmedMessage, durationMs: resolvedDuration }]);
 
     window.setTimeout(() => {
       setItems(prev => prev.filter(item => item.id !== id));
-    }, durationMs);
+    }, resolvedDuration);
   }, []);
 
   const value = useMemo<NotificationContextType>(() => ({ notify, dismiss }), [notify, dismiss]);

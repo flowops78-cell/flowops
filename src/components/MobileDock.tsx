@@ -36,7 +36,11 @@ export default function MobileDock() {
       <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+0.75rem)] left-1/2 -translate-x-1/2 z-50 lg:hidden w-auto max-w-[95vw] pointer-events-none">
         <div className="mobile-nav-light pointer-events-auto touch-manipulation flex items-center gap-1 p-2 rounded-full surface-elevated">
           {visibleNavItems.map((item) => (
-            <DockItem key={item.to} item={item} isActive={normalizedPath === item.to} />
+            <DockItem
+              key={item.to}
+              item={item}
+              isActive={normalizedPath === item.to || normalizedPath.startsWith(`${item.to}/`)}
+            />
           ))}
         </div>
       </div>

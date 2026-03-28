@@ -1,5 +1,5 @@
 -- Flow Ops Canonical Backend Verification
--- Use this to verify a database created from supabase/migrations/20260327000000_baseline_schema.sql.
+-- Use this to verify a database created from supabase/migrations/00000000000000_init_canonical_schema.sql.
 
 -- 1) Schema sanity
 select table_name
@@ -23,6 +23,20 @@ where table_schema = 'public'
     'audit_events',
     'access_requests',
     'access_invites'
+  )
+order by table_name;
+
+select table_name
+from information_schema.views
+where table_schema = 'public'
+  and table_name in (
+    'audit_record_ledger',
+    'entity_balances',
+    'audit_activity_integrity',
+    'audit_entity_health',
+    'audit_channel_integrity',
+    'audit_org_integrity',
+    'audit_record_anomalies'
   )
 order by table_name;
 
@@ -73,7 +87,7 @@ from information_schema.columns
 where table_schema = 'public'
   and (
     (table_name = 'entities' and column_name in (
-      'org_id', 'name', 'collaboration_id', 'referred_by_entity_id', 'referring_collaboration_id', 'total_units'
+      'org_id', 'name', 'collaboration_id', 'referred_by_entity_id', 'referring_collaboration_id'
     ))
     or
     (table_name = 'activities' and column_name in (
@@ -85,7 +99,7 @@ where table_schema = 'public'
     ))
     or
     (table_name = 'collaborations' and column_name in (
-      'org_id', 'name', 'collaboration_type', 'participation_factor', 'overhead_weight_pct', 'rules'
+      'org_id', 'name', 'collaboration_type', 'status', 'participation_factor', 'overhead_weight_pct', 'rules'
     ))
     or
     (table_name = 'team_members' and column_name in (

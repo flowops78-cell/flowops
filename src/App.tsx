@@ -10,14 +10,16 @@ import { useAppRole } from './context/AppRoleContext';
 import { isSupabaseConfigured } from './lib/supabase';
 import LoadingLine from './components/LoadingLine';
 import { NotificationProvider } from './context/NotificationContext';
+import { ConfirmProvider } from './context/ConfirmContext';
 import { preloadCoreRoutesOnIdle } from './lib/routePreloaders';
 import { enableHorizontalMouseDrag } from './lib/enableHorizontalMouseDrag';
 import { useData } from './context/DataContext';
+import { LABELS } from './lib/labels';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const ActivityOverview = lazy(() => import('./pages/ActivityOverview'));
 const Collaborations = lazy(() => import('./pages/CollaborationNetwork'));
-const ActivityMonitor = lazy(() => import('./pages/ActivityMonitor'));
+const Activities = lazy(() => import('./pages/Activities'));
 const ActivityDetail = lazy(() => import('./pages/ActivityDetail'));
 const Entities = lazy(() => import('./pages/Entities'));
 const EntityDetail = lazy(() => import('./pages/EntityDetail'));
@@ -44,7 +46,7 @@ function AppRoutes() {
     return (
       <div className="min-h-screen flex items-center justify-center px-4">
         <div className="w-full max-w-sm">
-          <LoadingLine label="Syncing organization context…" />
+          <LoadingLine label={LABELS.actions.loadingWorkspace} />
         </div>
       </div>
     );
@@ -69,7 +71,7 @@ function AppRoutes() {
         <Routes>
           <Route path="/" element={canAccessAdminUi ? <Dashboard /> : <Navigate to="/activity" replace />} />
           <Route path="/dashboard" element={canAccessAdminUi ? <Dashboard /> : <Navigate to="/activity" replace />} />
-          <Route path="/activity" element={<ActivityMonitor />} />
+          <Route path="/activity" element={<Activities />} />
           <Route path="/activity/:id" element={<ActivityDetail />} />
           <Route path="/channels" element={canAccessAdminUi ? <Channels /> : <Navigate to="/activity" replace />} />
           <Route path="/channels-fallback" element={<Navigate to="/channels" replace />} />
@@ -148,9 +150,11 @@ export default function App() {
       <AuthProvider>
         <AppRoleProvider>
           <NotificationProvider>
-            <DataProvider>
-              <AppShell />
-            </DataProvider>
+            <ConfirmProvider>
+              <DataProvider>
+                <AppShell />
+              </DataProvider>
+            </ConfirmProvider>
           </NotificationProvider>
         </AppRoleProvider>
       </AuthProvider>

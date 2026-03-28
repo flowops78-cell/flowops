@@ -111,11 +111,11 @@ export default function TelemetrySidebar({ activity, records, entities, isOpen, 
   const events: TelemetryEvent[] = [];
 
   // Activity Start
-  if (activity.start_time || activity.created_at) {
+  if (activity.created_at || activity.date) {
     events.push({
       id: 'activity-start',
       type: 'activity_start',
-      timestamp: new Date(activity.start_time || activity.created_at || activity.date),
+      timestamp: new Date(activity.created_at || activity.date),
       message: 'Activity started',
       details: activity.label ? `${activity.label}${activity.location ? ` - ${activity.location}` : ''}` : 'Default Mode'
     });
@@ -195,9 +195,15 @@ export default function TelemetrySidebar({ activity, records, entities, isOpen, 
     return () => clearTimeout(timeout);
   }, [notificationStatus]);
 
-  // --- Real-time Stats Calculation ---
-  const totalInflow = records.reduce((sum, record) => sum + record.unit_amount, 0);
-  const totalOutflow = records.reduce((sum, record) => sum + (record.unit_amount || 0), 0);
+  // --- Real-time Stats Calculation (match Activity detail: inflow = increases, outflow = decreases) ---
+  const totalInflow = records.reduce(
+    (sum, record) => sum + (record.direction === 'increase' ? (record.unit_amount ?? 0) : 0),
+    0,
+  );
+  const totalOutflow = records.reduce(
+    (sum, record) => sum + (record.direction === 'decrease' ? (record.unit_amount ?? 0) : 0),
+    0,
+  );
   const activeValue = totalInflow - totalOutflow;
   const activeEntitiesCount = records.filter(record => !record.left_at).length;
   const discrepancy = totalOutflow - totalInflow;
@@ -232,7 +238,7 @@ export default function TelemetrySidebar({ activity, records, entities, isOpen, 
     },
     {
       key: 'total-net-delta',
-      label: 'Total Units',
+      label: 'Net (out − in)',
       value: formatValue(discrepancy),
       icon: <AlertCircle size={12} />,
       valueClass: Math.abs(discrepancy) < 0.01 ? 'text-stone-900 dark:text-stone-100' : 'text-red-600 dark:text-red-400',

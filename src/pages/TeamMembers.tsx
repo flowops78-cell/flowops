@@ -6,6 +6,7 @@ import { useAppRole } from '../context/AppRoleContext';
 import { cn, formatDate } from '../lib/utils';
 import OverlaySavingState from '../components/OverlaySavingState';
 import LoadingLine from '../components/LoadingLine';
+import { useConfirm } from '../context/ConfirmContext';
 
 const getTeamMemberDisplayName = (name?: string | null) => {
   const trimmed = name?.trim();
@@ -32,6 +33,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
     deleteTeamMember,
   } = useData();
   const { canAccessAdminUi } = useAppRole();
+  const { confirm } = useConfirm();
 
   const teamMembers = useMemo(
     () => (rawTeamMembers ?? []).filter(member => (member.role ?? '').toLowerCase() !== 'viewer').sort((left, right) => getTeamMemberDisplayName(left.name).localeCompare(getTeamMemberDisplayName(right.name))),
@@ -181,8 +183,13 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
       return;
     }
 
-    const confirmed = window.confirm(`Remove ${getTeamMemberDisplayName(teamMember.name)}?`);
-    if (!confirmed) return;
+    const ok = await confirm({
+      title: 'Remove team member?',
+      message: `Remove ${getTeamMemberDisplayName(teamMember.name)}?`,
+      danger: true,
+      confirmLabel: 'Remove',
+    });
+    if (!ok) return;
 
     try {
       setDeletingTeamMemberId(targetTeamMemberId);

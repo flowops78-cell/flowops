@@ -11,8 +11,17 @@
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "npm run typecheck",
+    "lint": "npm run lint:ui && npm run typecheck",
+    "lint:ui": "eslint \"src/**/*.{ts,tsx}\"",
     "check": "npm run typecheck && npm run build",
+    "debug:env": "node scripts/debug/check-env.mjs",
+    "debug:migrations": "node scripts/debug/check-migrations.mjs",
+    "debug:api": "node scripts/debug/check-postgrest.mjs",
+    "debug:functions": "node scripts/debug/check-edge-function.mjs",
+    "debug:app": "node scripts/debug/check-app.mjs",
+    "debug:db": "node scripts/debug/check-db-cli.mjs",
+    "debug:all": "node scripts/debug/run-all.mjs",
+    "debug:all:local": "node scripts/debug/run-all.mjs --local",
     "deploy": "npm run build && wrangler deploy",
     "deploy:check": "npm run clean && npm run check"
   },
@@ -36,12 +45,14 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
+    "@typescript-eslint/parser": "^8.28.0",
     "@types/node": "^22.14.0",
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/uuid": "^10.0.0",
     "autoprefixer": "^10.4.21",
+    "eslint": "^9.23.0",
     "jsdom": "^29.0.1",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",
@@ -51,3 +62,4 @@
     "wrangler": "^4.77.0"
   }
 }
+

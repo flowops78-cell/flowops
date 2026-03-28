@@ -159,8 +159,8 @@ Deno.serve(async (request: Request) => {
     return rateLimitResponse(rl.retryAfterMs ?? 1000, origin, getCorsHeaders(origin));
   }
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL');
-  const serviceRoleKey = Deno.env.get('SB_SERVICE_ROLE_KEY');
+  const supabaseUrl = Deno.env.get('SUPABASE_URL') || 'https://yudmcgtfqchzcgmcbcrk.supabase.co';
+  const serviceRoleKey = Deno.env.get('SB_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
 
   if (!supabaseUrl || !serviceRoleKey) {
     return json(500, { error: 'Missing Supabase function environment variables.' }, origin);
@@ -179,16 +179,11 @@ Deno.serve(async (request: Request) => {
   const payloadBearerToken = (payload.access_token ?? '').trim() || null;
   const bearerToken = headerBearerToken || payloadBearerToken;
 
-  // DEBUG LOGS (Requested Truth Test)
-  console.log("DEBUG [manage-organizations]: KEY_PRESENT:", !!serviceRoleKey);
-  console.log("DEBUG [manage-organizations]: TOKEN_PRESENT:", !!bearerToken);
-  console.log("TOKEN:", bearerToken);
-
   // Hybrid Bypass for bootstrap-cluster-admin (Option C)
   // This allows the request to proceed if no token is present, but ONLY for bootstrapping.
   // Note: bootstrap-cluster-admin still requires callerUserId which usually needs a token.
   if (!bearerToken && payload.action !== 'bootstrap-cluster-admin') {
-    return json(401, { error: `Missing authentication token (Truth Test: TOKEN_PRESENT=${!!bearerToken}). Please sign in.` }, origin);
+    return json(401, { error: 'Missing authentication token. Please sign in.' }, origin);
   }
 
   // If no bearerToken but bootstrapping, we'll try to find a user another way or return a specific error
@@ -196,12 +191,14 @@ Deno.serve(async (request: Request) => {
     return json(401, { error: 'Bootstrap requires an authenticated session but no token was provided.' }, origin);
   }
 
-  const { data: authUserData, error: authUserError } = await adminClient.auth.getUser(bearerToken);
-  if (authUserError || !authUserData.user) {
-    return json(401, { error: `Invalid or expired user session (Truth Test: USER_ERR=${authUserError?.message || 'NULL'}). Please sign in again.` }, origin);
+  const { data: { user }, error: authError } = await adminClient.auth.getUser(bearerToken);
+
+  if (authError || !user) {
+    console.error('Auth Error Details:', authError);
+    return json(401, { error: 'Authentication failed', details: authError?.message }, origin);
   }
 
-  const callerUserId = authUserData.user.id;
+  const callerUserId = user.id;
 
   // Action: bootstrap-cluster-admin (Publicly available to signed-in users with no cluster)
   if (payload.action === 'bootstrap-cluster-admin') {
@@ -350,10 +347,23 @@ Deno.serve(async (request: Request) => {
 
     const { data: admins, error: adminError } = await adminClient
       .from('cluster_memberships')
-      .select('user_id, role, created_at, profiles(id, active_org_id)')
+      .select('user_id, role, created_at')
       .eq('cluster_id', clusterId);
 
     if (adminError) return json(400, { error: adminError.message }, origin);
+
+    const profilesMap = new Map();
+    if (admins && admins.length > 0) {
+      const userIds = admins.map((a: any) => a.user_id);
+      const { data: profiles } = await adminClient
+        .from('profiles')
+        .select('id, active_org_id')
+        .in('id', userIds);
+      
+      if (profiles) {
+        profiles.forEach((p: any) => profilesMap.set(p.id, p));
+      }
+    }
 
     // Also fetch Organization-level administrators if orgId is provided
     let orgAdmins: any[] = [];
@@ -381,7 +391,7 @@ Deno.serve(async (request: Request) => {
         email: emailMap.get(a.user_id) ?? null,
         role: a.role, // cluster_admin, etc.
         type: 'cluster',
-        active_org_id: (a.profiles as any)?.active_org_id || null,
+        active_org_id: profilesMap.get(a.user_id)?.active_org_id || null,
         created_at: a.created_at
       });
     });
