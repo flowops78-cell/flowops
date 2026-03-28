@@ -372,6 +372,10 @@ verify_jwt = false
 [functions.submit-access-request]
 verify_jwt = false
 
+# Organization management using service role for admin actions.
+[functions.manage-organizations]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327
