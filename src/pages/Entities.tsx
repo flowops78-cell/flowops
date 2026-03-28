@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useData, EntityBalance } from '../context/DataContext';
-import { Search, Plus, Tag, X, TrendingUp, TrendingDown, Calendar, Award, Edit2, Save, Eye, Clock, Download, LayoutGrid, List, ArrowRightLeft, Trash2, Loader2, CheckCircle2 } from 'lucide-react';
+import { Search, Plus, Tag, X, TrendingUp, TrendingDown, Calendar, Award, Edit2, Save, Eye, Clock, Download, LayoutGrid, List, ArrowRightLeft, Trash2 } from 'lucide-react';
 import { Collaboration, Entity } from '../types';
 
 import { formatValue, formatDate } from '../lib/utils';
@@ -13,6 +13,7 @@ import { useAppRole } from '../context/AppRoleContext';
 import DataActionMenu from '../components/DataActionMenu';
 import EntitySnapshot from '../components/EntitySnapshot';
 import EntitiesIcon from '../components/icons/EntitiesIcon';
+import OverlaySavingState from '../components/OverlaySavingState';
 import { useLabels } from '../lib/labels';
 
 const getEntityDisplayName = (name?: string | null) => {
@@ -641,25 +642,10 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
               )}
             >
               {/* ── SAVING state ── */}
-              {addEntityState === 'saving' && (
-                <div className="flex flex-col items-center justify-center gap-4 py-6">
-                  <Loader2 size={28} className="animate-spin text-stone-400" />
-                  <p className="text-sm font-medium text-stone-700 dark:text-stone-300">Adding entity…</p>
-                  {/* Indeterminate bar */}
-                  <div className="w-full max-w-xs h-1 rounded-full bg-stone-100 dark:bg-stone-800 overflow-hidden">
-                    <div className="h-full w-1/2 rounded-full bg-stone-800 dark:bg-stone-200 animate-[slide_1.2s_ease-in-out_infinite]" />
-                  </div>
-                  <p className="text-xs text-stone-400">Please wait</p>
-                </div>
-              )}
+              {addEntityState === 'saving' && <OverlaySavingState state="saving" label="Adding entity…" />}
 
               {/* ── SUCCESS state ── */}
-              {addEntityState === 'success' && (
-                <div className="flex flex-col items-center justify-center gap-3 py-6">
-                  <CheckCircle2 size={32} className="text-emerald-500" />
-                  <p className="text-sm font-semibold text-stone-900 dark:text-stone-100">Entity added</p>
-                </div>
-              )}
+              {addEntityState === 'success' && <OverlaySavingState state="success" label="Entity added" />}
 
               {/* ── IDLE / ERROR state ── */}
               {(addEntityState === 'idle' || addEntityState === 'error') && (
