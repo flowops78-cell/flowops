@@ -332,8 +332,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <button
             onClick={() => setIsTelemetryOpen(true)}
             className="interactive-3d inline-flex h-9 w-9 items-center justify-center rounded-full text-stone-300 hover:text-white"
-            aria-label="Ops Console"
-            title="Ops Console"
+            aria-label="Audit Panel"
+            title="Audit Panel"
           >
             <Activity size={18} />
           </button>
@@ -406,7 +406,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                       id={activeOrgId || ''}
                       name={activeOrg?.name}
                       tag={activeOrg?.tag}
-                      slug={activeOrg?.slug}
+                      showShortId={false}
                       className="w-full"
                       hideCopy={true}
                     />
@@ -488,8 +488,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <button
               onClick={() => setIsTelemetryOpen(true)}
               className="interactive-3d inline-flex h-8 w-8 items-center justify-center rounded-lg text-stone-500 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800"
-              title="Ops Console"
-              aria-label="Ops Console"
+              title="Audit Panel"
+              aria-label="Audit Panel"
             >
               <Activity size={15} />
             </button>
