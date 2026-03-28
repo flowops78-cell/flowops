@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useData, EntityBalance } from '../context/DataContext';
-import { Search, Plus, Tag, X, TrendingUp, TrendingDown, Calendar, Award, Edit2, Save, Eye, Clock, Download, LayoutGrid, List, ArrowRightLeft, Trash2 } from 'lucide-react';
+import { Search, Plus, Tag, X, TrendingUp, TrendingDown, Calendar, Award, Edit2, Save, Eye, Clock, Download, LayoutGrid, List, ArrowRightLeft, Trash2, Loader2, CheckCircle2 } from 'lucide-react';
 import { Collaboration, Entity } from '../types';
 
 import { formatValue, formatDate } from '../lib/utils';
@@ -44,6 +44,10 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
   const canActivityRecordDeferred = canOperateLog;
   const [searchTerm, setSearchTerm] = useState('');
   const [isAdding, setIsAdding] = useState(false);
+  type AddEntityState = 'idle' | 'saving' | 'success' | 'error';
+  const [addEntityState, setAddEntityState] = useState<AddEntityState>('idle');
+  const [addEntityError, setAddEntityError] = useState<string | null>(null);
+  const addEntityInFlight = useRef(false);
   const [isTransferring, setIsTransferring] = useState(false);
   const [isActivityRecordingOutputRequest, setIsActivityRecordingOutputRequest] = useState(false);
   const [isActivityRecordingDeferred, setIsActivityRecordingDeferred] = useState(false);
@@ -268,21 +272,27 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
 
   const handleAddEntity = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (addEntityInFlight.current) return;
+
     const displayName = name.trim();
     if (displayName.length === 0) {
-      setImportStatus({ type: 'error', message: 'Name is required.' });
+      setAddEntityError('Name is required.');
       return;
     }
 
     const trimmedTotal = profileTotal.trim();
     const parsedTotal = trimmedTotal === '' ? undefined : Number(trimmedTotal);
     if (trimmedTotal !== '' && !Number.isFinite(parsedTotal)) {
-      setImportStatus({ type: 'error', message: 'Starting total must be a valid number.' });
+      setAddEntityError('Starting total must be a valid number.');
       return;
     }
 
+    addEntityInFlight.current = true;
+    setAddEntityError(null);
+    setAddEntityState('saving');
+
     try {
-      await addEntity({ 
+      await addEntity({
         name: displayName,
         tags,
         total: Number.isFinite(parsedTotal as number) ? parsedTotal : undefined,
@@ -294,11 +304,20 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
           ? 'Entity saved with starting total.'
           : 'Entity saved.',
       });
-      setIsAdding(false);
-      resetForm();
+      setAddEntityState('success');
+      // Auto-close after 700 ms
+      setTimeout(() => {
+        setIsAdding(false);
+        setAddEntityState('idle');
+        resetForm();
+      }, 700);
     } catch (error: any) {
-      const message = error?.message || 'Unable to save entity.';
+      const message = error?.message || 'Unable to add entity.';
       setImportStatus({ type: 'error', message });
+      setAddEntityError(message);
+      setAddEntityState('error');
+    } finally {
+      addEntityInFlight.current = false;
     }
   };
 
@@ -604,115 +623,157 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
       {isAdding && (
         <div
           className="fixed inset-0 z-50 bg-stone-950/45 p-4 backdrop-blur-sm animate-in fade-in"
-          onClick={() => { setIsAdding(false); resetForm(); }}
+          onClick={() => {
+            // Lock backdrop during save / success
+            if (addEntityState === 'saving' || addEntityState === 'success') return;
+            setIsAdding(false);
+            setAddEntityState('idle');
+            setAddEntityError(null);
+            resetForm();
+          }}
         >
           <div className="flex min-h-full items-center justify-center">
-            <form
-              onSubmit={handleAddEntity}
+            <div
               onClick={e => e.stopPropagation()}
-              className="section-card w-full max-w-lg p-6 animate-in zoom-in-95"
+              className={cn(
+                'section-card w-full max-w-lg p-6 animate-in zoom-in-95 transition-shadow duration-300',
+                addEntityState === 'success' && 'ring-2 ring-emerald-400 dark:ring-emerald-500'
+              )}
             >
-              {/* Header */}
-              <div className="mb-5 flex items-start justify-between gap-3">
-                <div>
-                  <h3 className="font-medium text-stone-900 dark:text-stone-100">New Entity</h3>
-                  <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">Add a name, optional starting total, and tags.</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => { setIsAdding(false); resetForm(); }}
-                  className="rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 dark:hover:bg-stone-800 dark:hover:text-stone-200"
-                  aria-label="Close add entity"
-                >
-                  <X size={16} />
-                </button>
-              </div>
-
-              <div className="space-y-4 mb-5">
-                {/* Name */}
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Name</label>
-                  <input
-                    className="control-input w-full"
-                    placeholder="Entity name"
-                    value={name}
-                    onChange={e => setName(e.target.value)}
-                    autoFocus
-                    required
-                  />
-                </div>
-
-                {/* Starting total */}
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Starting total <span className="font-normal text-stone-400">(optional)</span></label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    className="control-input w-full"
-                    placeholder="0.00"
-                    value={profileTotal}
-                    onChange={e => setProfileTotal(e.target.value)}
-                  />
-                </div>
-
-                {/* Collaboration */}
-                {collaborations.length > 0 && (
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Collaboration <span className="font-normal text-stone-400">(optional)</span></label>
-                    <select
-                      className="control-input w-full"
-                      value={attributedCollaborationId}
-                      onChange={e => setAttributedCollaborationId(e.target.value)}
-                    >
-                      <option value="">None</option>
-                      {collaborations.map(a => (
-                        <option key={a.id} value={a.id}>{a.name} ({a.role})</option>
-                      ))}
-                    </select>
+              {/* ── SAVING state ── */}
+              {addEntityState === 'saving' && (
+                <div className="flex flex-col items-center justify-center gap-4 py-6">
+                  <Loader2 size={28} className="animate-spin text-stone-400" />
+                  <p className="text-sm font-medium text-stone-700 dark:text-stone-300">Adding entity…</p>
+                  {/* Indeterminate bar */}
+                  <div className="w-full max-w-xs h-1 rounded-full bg-stone-100 dark:bg-stone-800 overflow-hidden">
+                    <div className="h-full w-1/2 rounded-full bg-stone-800 dark:bg-stone-200 animate-[slide_1.2s_ease-in-out_infinite]" />
                   </div>
-                )}
+                  <p className="text-xs text-stone-400">Please wait</p>
+                </div>
+              )}
 
-                {/* Tags */}
-                <div className="space-y-2">
-                  <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Tags <span className="font-normal text-stone-400">(press Enter to add)</span></label>
-                  {tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {tags.map(tag => (
-                        <span key={tag} className="inline-flex items-center gap-1 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 px-2 py-0.5 rounded-full text-xs shadow-sm">
-                          {tag}
-                          <button type="button" onClick={() => removeTag(tag)} className="hover:text-red-500"><X size={11} /></button>
-                        </span>
-                      ))}
+              {/* ── SUCCESS state ── */}
+              {addEntityState === 'success' && (
+                <div className="flex flex-col items-center justify-center gap-3 py-6">
+                  <CheckCircle2 size={32} className="text-emerald-500" />
+                  <p className="text-sm font-semibold text-stone-900 dark:text-stone-100">Entity added</p>
+                </div>
+              )}
+
+              {/* ── IDLE / ERROR state ── */}
+              {(addEntityState === 'idle' || addEntityState === 'error') && (
+                <form onSubmit={handleAddEntity}>
+                  {/* Header */}
+                  <div className="mb-5 flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="font-medium text-stone-900 dark:text-stone-100">New Entity</h3>
+                      <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">Add a name, optional starting total, and tags.</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => { setIsAdding(false); setAddEntityState('idle'); setAddEntityError(null); resetForm(); }}
+                      className="rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 dark:hover:bg-stone-800 dark:hover:text-stone-200"
+                      aria-label="Close add entity"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+
+                  {/* Error banner */}
+                  {addEntityState === 'error' && addEntityError && (
+                    <div className="mb-4 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-xs text-red-600 dark:text-red-400">
+                      {addEntityError}
                     </div>
                   )}
-                  <input
-                    className="control-input w-full"
-                    placeholder="e.g. priority, vip…"
-                    value={currentTag}
-                    onChange={e => setCurrentTag(e.target.value)}
-                    onKeyDown={handleAddTag}
-                  />
-                </div>
-              </div>
 
-              {/* Actions */}
-              <div className="flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => { setIsAdding(false); resetForm(); }}
-                  className="action-btn-secondary"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="action-btn-primary"
-                >
-                  <Plus size={16} />
-                  {getActionText('addEntity')}
-                </button>
-              </div>
-            </form>
+                  <div className="space-y-4 mb-5">
+                    {/* Name */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Name</label>
+                      <input
+                        className="control-input w-full"
+                        placeholder="Entity name"
+                        value={name}
+                        onChange={e => setName(e.target.value)}
+                        autoFocus
+                        required
+                      />
+                    </div>
+
+                    {/* Starting total */}
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Starting total <span className="font-normal text-stone-400">(optional)</span></label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        className="control-input w-full"
+                        placeholder="0.00"
+                        value={profileTotal}
+                        onChange={e => setProfileTotal(e.target.value)}
+                      />
+                    </div>
+
+                    {/* Collaboration */}
+                    {collaborations.length > 0 && (
+                      <div className="space-y-1">
+                        <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Collaboration <span className="font-normal text-stone-400">(optional)</span></label>
+                        <select
+                          className="control-input w-full"
+                          value={attributedCollaborationId}
+                          onChange={e => setAttributedCollaborationId(e.target.value)}
+                        >
+                          <option value="">None</option>
+                          {collaborations.map(a => (
+                            <option key={a.id} value={a.id}>{a.name} ({a.role})</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    {/* Tags */}
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Tags <span className="font-normal text-stone-400">(press Enter to add)</span></label>
+                      {tags.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {tags.map(tag => (
+                            <span key={tag} className="inline-flex items-center gap-1 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 px-2 py-0.5 rounded-full text-xs shadow-sm">
+                              {tag}
+                              <button type="button" onClick={() => removeTag(tag)} className="hover:text-red-500"><X size={11} /></button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <input
+                        className="control-input w-full"
+                        placeholder="e.g. priority, vip…"
+                        value={currentTag}
+                        onChange={e => setCurrentTag(e.target.value)}
+                        onKeyDown={handleAddTag}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => { setIsAdding(false); setAddEntityState('idle'); setAddEntityError(null); resetForm(); }}
+                      className="action-btn-secondary"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      className="action-btn-primary"
+                    >
+                      <Plus size={16} />
+                      {addEntityState === 'error' ? 'Try again' : getActionText('addEntity')}
+                    </button>
+                  </div>
+                </form>
+              )}
+            </div>
           </div>
         </div>
       )}
