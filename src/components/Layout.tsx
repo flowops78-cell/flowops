@@ -41,10 +41,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { to: '/dashboard', icon: <LayoutDashboard size={18} />, label: 'Overview', hint: 'Operational overview and key metrics' },
         { to: '/activity', icon: <History size={18} />, label: 'Activities', hint: 'Activity records and management' },
         { to: '/entities', icon: <EntitiesIcon size={18} />, label: 'Entities', hint: 'Entity list and detailed profiles' },
-
         { to: '/channels', icon: <Circle size={18} />, label: 'Channels', hint: 'Channel tracking and settings overview' },
-        { to: '/collaborations', icon: <Handshake size={18} />, label: 'Collaborations', hint: 'Collaboration network and relationship tracking' },
-        { to: '/team', icon: <UserCog size={18} />, label: 'Team Members', hint: 'Team management and operator coverage' },
+        { to: '/collaborations', icon: <Handshake size={18} />, label: 'Network', hint: 'Collaboration network and relationship tracking' },
+        { to: '/team', icon: <UserCog size={18} />, label: 'Team', hint: 'Team management and operator coverage' },
         { to: '/settings', icon: <Settings size={18} />, label: 'Settings', hint: 'System preferences and access control' },
 
       ],
@@ -59,8 +58,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { to: '/activity', icon: <History size={18} />, label: 'Activities' },
         { to: '/entities', icon: <EntitiesIcon size={18} />, label: 'Entities' },
         { to: '/channels', icon: <Circle size={18} />, label: 'Channels' },
-        { to: '/collaborations', icon: <Handshake size={18} />, label: 'Collaborations' },
-        { to: '/team', icon: <UserCog size={18} />, label: 'Team Members' },
+        { to: '/collaborations', icon: <Handshake size={18} />, label: 'Network' },
+        { to: '/team', icon: <UserCog size={18} />, label: 'Team' },
       ],
 
     },
@@ -290,7 +289,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-stone-800 dark:bg-stone-800 text-[10px] font-bold uppercase tracking-wider text-stone-300 border border-stone-700/50"
               >
                 <Globe size={12} />
-                <span className="max-w-[80px] truncate">{activeOrg?.name || 'Org'}</span>
+                <span className="max-w-[80px] truncate">Workspace</span>
                 <ChevronDown size={10} className={cn("transition-transform duration-200", isOrgSwitcherOpen && "rotate-180")} />
               </button>
               
@@ -399,17 +398,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <div className="w-8 h-8 rounded-lg bg-stone-900 dark:bg-emerald-500/20 flex items-center justify-center shrink-0 shadow-sm border border-stone-800 dark:border-emerald-500/10">
                     <Globe size={14} className="text-white dark:text-emerald-400" />
                   </div>
-                  <div className="text-left min-w-0 flex-1 flex flex-col gap-1.5">
-                    <IdentityBadge 
-                      type="org"
-                      size="sm"
-                      id={activeOrgId || ''}
-                      name={activeOrg?.name}
-                      tag={activeOrg?.tag}
-                      showShortId={false}
-                      className="w-full"
-                      hideCopy={true}
-                    />
+                  <div className="text-left min-w-0 flex-1 flex flex-col gap-1">
+                    <span className="text-xs font-bold text-stone-900 dark:text-stone-100 leading-none">Workspace</span>
                     <div className={cn("inline-flex items-center px-2 py-0.5 rounded-full border text-[9px] font-bold uppercase tracking-tight w-fit shrink-0", desktopRoleBadgeClass)}>
                       {roleLabel}
                     </div>
