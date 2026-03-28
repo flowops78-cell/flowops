@@ -304,7 +304,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       collaboration_id: entity.collaboration_id,
       referred_by_entity_id: entity.referred_by_entity_id,
       referring_collaboration_id: entity.referring_collaboration_id,
-      total_units: entity.total_units || 0
+      // total_units intentionally omitted — column is locked by DB trigger;
+      // computed net is derived from records (entity_balances view)
     }).eq('id', entity.id);
     if (error) throw error;
     await fetchData();
