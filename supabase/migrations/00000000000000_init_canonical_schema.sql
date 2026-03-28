@@ -1,10 +1,11 @@
 -- -------------------------------------------------------------
 -- 00000000000000_init_canonical_schema.sql
--- Single baseline for Flow Ops (schema, RLS, ledger/audit views).
--- New environments: supabase db reset / push applies this file only.
--- Existing DBs that already ran older migration filenames: use supabase
--- migration repair or manual alignment; do not expect CREATE IF NOT EXISTS
--- to add new columns to pre-existing tables.
+-- Streamlined single baseline: schema, RLS (no platform_roles), ledger/audit
+-- views, internal patch log. Access = cluster_memberships + organization_memberships.
+-- New project: supabase db push / db reset.
+-- If remote lists migration versions you deleted locally, run:
+--   supabase migration repair --status reverted <version>
+-- then push, or align schema_migrations in the Dashboard SQL editor.
 -- -------------------------------------------------------------
 
 BEGIN;
@@ -53,12 +54,6 @@ CREATE TABLE IF NOT EXISTS public.organizations (
   tag         text,
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.platform_roles (
-  user_id     uuid PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  role        text NOT NULL CHECK (role IN ('platform_admin')),
-  created_at  timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS public.cluster_memberships (
@@ -233,6 +228,12 @@ CREATE TABLE IF NOT EXISTS public.access_invites (
   max_uses     integer NOT NULL DEFAULT 1 CHECK (max_uses > 0)
 );
 
+CREATE TABLE IF NOT EXISTS public._flow_ops_schema_patch_runs (
+  id bigserial PRIMARY KEY,
+  label text NOT NULL,
+  applied_at timestamptz NOT NULL DEFAULT now()
+);
+
 -- 4. TRIGGER FUNCTIONS
 CREATE OR REPLACE FUNCTION public.update_updated_at_column()
 RETURNS trigger AS $$
@@ -267,26 +268,6 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 6. UTILITY FUNCTIONS
-CREATE OR REPLACE FUNCTION public.get_my_platform_role()
-RETURNS text
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT role FROM public.platform_roles WHERE user_id = auth.uid() LIMIT 1;
-$$;
-
-CREATE OR REPLACE FUNCTION public.is_platform_admin()
-RETURNS boolean
-LANGUAGE sql STABLE SECURITY DEFINER
-SET search_path = public
-AS $$
-  SELECT EXISTS (
-    SELECT 1 FROM public.platform_roles 
-    WHERE user_id = auth.uid() 
-      AND role = 'platform_admin'
-  );
-$$;
-
 CREATE OR REPLACE FUNCTION public.get_my_org_id()
 RETURNS uuid
 LANGUAGE sql STABLE SECURITY DEFINER
@@ -315,11 +296,6 @@ DECLARE
   membership_role app_role;
   inherited_role text;
 BEGIN
-  -- Platform admins are effective admins everywhere
-  IF public.is_platform_admin() THEN
-    RETURN 'admin'::app_role;
-  END IF;
-
   v_org_id := public.get_my_org_id();
   IF v_org_id IS NULL THEN
     RETURN 'viewer'::app_role;
@@ -364,7 +340,7 @@ AS $$
     WHERE user_id = auth.uid()
       AND org_id = target_org
       AND status = 'active'
-  ) OR public.is_platform_admin();
+  );
 $$;
 
 CREATE OR REPLACE FUNCTION public.user_has_cluster_access(target_cluster uuid)
@@ -377,7 +353,7 @@ AS $$
     FROM public.cluster_memberships
     WHERE user_id = auth.uid()
       AND cluster_id = target_cluster
-  ) OR public.is_platform_admin();
+  );
 $$;
 
 CREATE OR REPLACE FUNCTION public.is_org_in_my_cluster(target_org uuid)
@@ -392,7 +368,7 @@ AS $$
     WHERE o.id = target_org
       AND cm.user_id = auth.uid()
       AND cm.role IN ('cluster_admin', 'cluster_operator')
-  ) OR public.is_platform_admin();
+  );
 $$;
 
 CREATE OR REPLACE FUNCTION public.log_audit_event(
@@ -531,10 +507,6 @@ CREATE POLICY profiles_update ON public.profiles
   FOR UPDATE USING (id = auth.uid())
   WITH CHECK (id = auth.uid());
 
-DROP POLICY IF EXISTS platform_roles_read ON public.platform_roles;
-CREATE POLICY platform_roles_read ON public.platform_roles
-  FOR SELECT USING (user_id = auth.uid() OR public.is_platform_admin());
-
 -- Dynamic Read/Write for Org-Bound Tables
 DO $$
 DECLARE
@@ -554,7 +526,7 @@ BEGIN
         'organization_memberships',
         'cluster_memberships',
         'profiles',
-        'platform_roles'
+        '_flow_ops_schema_patch_runs'
       )
     GROUP BY t.table_name
   LOOP
@@ -815,6 +787,11 @@ GRANT SELECT ON public.audit_channel_integrity TO authenticated, service_role;
 GRANT SELECT ON public.audit_org_integrity TO authenticated, service_role;
 GRANT SELECT ON public.audit_record_anomalies TO authenticated, service_role;
 
+REVOKE ALL ON public._flow_ops_schema_patch_runs FROM PUBLIC;
+GRANT ALL ON public._flow_ops_schema_patch_runs TO postgres;
+
+NOTIFY pgrst, 'reload schema';
+
 -- 9. GLOBAL PERMISSIONS (ensure API access)
 GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO postgres, service_role;
@@ -822,9 +799,12 @@ GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
 GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;
 GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO authenticated, service_role;
 
--- 9. BOOTSTRAP
+-- 10. BOOTSTRAP
 INSERT INTO public.profiles (id)
 SELECT id FROM auth.users
 ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO public._flow_ops_schema_patch_runs (label)
+VALUES ('00000000000000_init_canonical_schema');
 
 COMMIT;
