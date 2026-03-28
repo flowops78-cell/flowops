@@ -24,6 +24,13 @@ const getTeamMemberRoleLabel = (role?: string | null) => {
   return normalized ? `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}` : 'Operator';
 };
 
+// ─── INVARIANT ────────────────────────────────────────────────────────────────
+// TeamMember = a named roster entry (name, role, org_id).
+// TeamMember.user_id is an OPTIONAL foreign key pointing to a Supabase auth
+// account. Most roster members will NOT have one. Never surface user_id or any
+// auth UUID in the UI. Never confuse TeamMember with the signed-in User.
+// ──────────────────────────────────────────────────────────────────────────────
+
 export default function Team({ embedded = false }: { embedded?: boolean }) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -76,16 +83,29 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
 
   const selectedTeamMember = teamMembers.find(s => s.id === selectedTeamMemberId);
 
-  const activeTeamMemberActivityByTeamMemberId = useMemo(() => {
-    const map = new Map<string, typeof activityLogs[number]>();
+  // activeLogByMemberId: keyed by TeamMember.id (primary).
+  // Falls back to matching by TeamMember.user_id only when the optional auth
+  // link exists AND a log's actor_user_id matches it.
+  // Never assume the two IDs are the same — they are different namespaces.
+  const activeLogByMemberId = useMemo(() => {
+    // Build a lookup: auth_user_id → active log
+    const byAuthId = new Map<string, typeof activityLogs[number]>();
     activityLogs.forEach(log => {
-      const actorId = log.teamMember_id ?? '';
-      if (log.status === 'active' && !map.has(actorId)) {
-        map.set(actorId, log);
+      const actorId = log.teamMember_id ?? ''; // teamMember_id = actor_user_id in DB
+      if (log.status === 'active' && actorId && !byAuthId.has(actorId)) {
+        byAuthId.set(actorId, log);
       }
     });
-    return map;
-  }, [activityLogs]);
+    // Remap by TeamMember.id using the optional user_id bridge
+    const byMemberId = new Map<string, typeof activityLogs[number]>();
+    teamMembers.forEach(member => {
+      if (member.user_id) {
+        const log = byAuthId.get(member.user_id);
+        if (log) byMemberId.set(member.id, log);
+      }
+    });
+    return byMemberId;
+  }, [activityLogs, teamMembers]);
 
   const totalWorkHours = useMemo(() => (
     activityLogs.reduce((sum, activity) => sum + (activity.duration_hours ?? 0), 0)
@@ -232,7 +252,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
         event.preventDefault();
         const targetTeamMember = selectedTeamMemberId
           ? teamMembers.find(teamMember => teamMember.id === selectedTeamMemberId)
-          : teamMembers.find(teamMember => !activeTeamMemberActivityByTeamMemberId.has(teamMember.id));
+          : teamMembers.find(teamMember => !activeLogByMemberId.has(teamMember.id));
         if (targetTeamMember) {
           void handleDeleteTeamMember(targetTeamMember.id);
         }
@@ -247,7 +267,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
 
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
-  }, [selectedTeamMemberId, teamMembers, activeTeamMemberActivityByTeamMemberId, canAccessAdminUi]);
+  }, [selectedTeamMemberId, teamMembers, activeLogByMemberId, canAccessAdminUi]);
 
   const handleDeleteTeamMember = async (targetTeamMemberId: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -256,8 +276,8 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
     const teamMember = teamMembers.find(item => item.id === targetTeamMemberId);
     if (!teamMember) return;
 
-    const activeTeamMemberActivity = activeTeamMemberActivityByTeamMemberId.get(targetTeamMemberId);
-    if (activeTeamMemberActivity) {
+    const activeLog = activeLogByMemberId.get(targetTeamMemberId);
+    if (activeLog) {
       setImportStatus({ type: 'error', message: 'Close the active activity log before deleting this team member.' });
       return;
     }
@@ -320,7 +340,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
 
   const statusMessages = importStatus ? [importStatus] : [];
 
-  const formatTeamMemberCount = (count: number) => `${count} ${count === 1 ? 'user' : 'users'}`;
+  const formatTeamMemberCount = (count: number) => `${count} ${count === 1 ? 'member' : 'members'}`;
 
   if (loading && teamMembers.length === 0) {
     return (
@@ -355,7 +375,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
                   <span className="font-mono text-stone-900 dark:text-stone-100">{formatTeamMemberCount(teamMembers.length)}</span>
                 </span>
                 <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
-                  <span className="font-mono text-stone-900 dark:text-stone-100">{Array.from(activeTeamMemberActivityByTeamMemberId.values()).length}</span> active
+                  <span className="font-mono text-stone-900 dark:text-stone-100">{activeLogByMemberId.size}</span> active
                 </span>
               </div>
               <div className="flex gap-2 flex-wrap">
@@ -474,7 +494,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
       ) : rosterViewMode === 'grid' ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {teamMembers.map(teamMember => {
-            const activeActivity = activeTeamMemberActivityByTeamMemberId.get(teamMember.user_id ?? '');
+            const activeActivity = activeLogByMemberId.get(teamMember.id);
             return (
               <div 
                 key={teamMember.id} 
@@ -488,7 +508,8 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
                     </div>
                     <div>
                       <h3 className="font-medium text-stone-900 dark:text-stone-100">{getTeamMemberDisplayName(teamMember.name)}</h3>
-                      <p className="text-[10px] text-stone-500 font-mono">{teamMember.user_id || getTeamMemberRoleLabel(teamMember.role)}</p>
+                      {/* Show role only — never surface user_id or auth UUIDs in the UI */}
+                      <p className="text-[10px] text-stone-500">{getTeamMemberRoleLabel(teamMember.role)}</p>
                     </div>
                   </div>
                 </div>
@@ -498,7 +519,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
                     {activeActivity ? (
                       <span className="text-emerald-600 flex items-center gap-1 font-medium">
                         <Clock size={12} />
-                        Active in {activeActivity.activity_id?.slice(0, 8).toUpperCase()}
+                        Active
                       </span>
                     ) : (
                       'Inactive'
@@ -529,8 +550,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
             <table className="w-full text-left text-sm">
               <thead className="bg-stone-50 dark:bg-stone-800 text-stone-500 text-[11px] uppercase tracking-wider border-b border-stone-200 dark:border-stone-700">
                 <tr>
-                  <th className="px-4 py-3">User</th>
-                  <th className="px-4 py-3">ID</th>
+                  <th className="px-4 py-3">Name</th>
                   <th className="px-4 py-3">Role</th>
                   <th className="px-4 py-3">Status</th>
                   <th className="px-4 py-3 text-right">Actions</th>
@@ -538,7 +558,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
               </thead>
               <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
                 {teamMembers.map(teamMember => {
-                  const activeActivity = activeTeamMemberActivityByTeamMemberId.get(teamMember.user_id ?? '');
+                  const activeActivity = activeLogByMemberId.get(teamMember.id);
                   return (
                     <tr key={teamMember.id} className="hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
                       <td className="px-4 py-3">
@@ -546,11 +566,11 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
                           {getTeamMemberDisplayName(teamMember.name)}
                         </button>
                       </td>
-                      <td className="px-4 py-3 text-stone-500 font-mono text-xs">{teamMember.user_id || '-'}</td>
+                      {/* Role column — never show user_id/auth UUIDs here */}
                       <td className="px-4 py-3 text-stone-600 dark:text-stone-400">{getTeamMemberRoleLabel(teamMember.role)}</td>
                       <td className="px-4 py-3">
                         {activeActivity ? (
-                          <span className="text-emerald-600 font-medium text-xs">Active in {activeActivity.activity_id?.slice(0, 8).toUpperCase()}</span>
+                          <span className="text-emerald-600 font-medium text-xs">Active</span>
                         ) : (
                           <span className="text-stone-400 text-xs">Inactive</span>
                         )}
@@ -604,8 +624,11 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
             </thead>
             <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
               {visibleTeamMemberActivities.map((log) => {
-                const teamMember = teamMembers.find(m => m.user_id === log.teamMember_id);
-                const displayName = teamMember ? getTeamMemberDisplayName(teamMember.name) : (log.actor_label || 'Unknown Operator');
+                // Match log to team member via the optional auth link (user_id).
+                // TeamMember is a roster entry — most won't have user_id set.
+                // Do NOT use teamMember.id here; log.teamMember_id is actor_user_id (auth UUID).
+                const teamMember = teamMembers.find(m => m.user_id && m.user_id === log.teamMember_id);
+                const displayName = teamMember ? getTeamMemberDisplayName(teamMember.name) : (log.actor_label || 'Operator');
                 
                 return (
                   <tr key={log.id} className="hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
