@@ -408,10 +408,10 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
     },
     {
       key: 'alignment-request',
-      label: 'Alignment Request',
+      label: 'Adjust',
       onClick: () => {
         if (!canManageImpact) {
-          setImportStatus({ type: 'error', message: 'Only admin can record alignment requests.' });
+          setImportStatus({ type: 'error', message: 'Only admin can record adjustments.' });
           return;
         }
         setIsActivityRecordingOutputRequest(true);
@@ -444,7 +444,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
     <div className="page-shell relative">
       {!canManageImpact && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400 px-4 py-2 text-sm">
-          Admin-only actions: transfer totals, alignment requests, and deferred alignment. Activity operators can still record deferred records.
+          Admin only: Send, Adjust, Pending. Operators: Pending.
         </div>
       )}
       <div
@@ -558,13 +558,12 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                 onChange={e => setName(e.target.value)}
                 required
               />
-              <p className="text-[11px] text-stone-500 dark:text-stone-400">Used to identify this entity.</p>
             </div>
             <input
               type="number"
               step="0.01"
               className="control-input"
-              placeholder="Total (optional)"
+              placeholder="Starting total (optional)"
               value={profileTotal}
               onChange={e => setProfileTotal(e.target.value)}
             />
@@ -573,7 +572,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
               value={attributedCollaborationId}
               onChange={e => setAttributedCollaborationId(e.target.value)}
             >
-              <option value="">Collaboration attribution (optional)</option>
+              <option value="">Collaboration (optional)</option>
               {collaborations.map(a => (
                 <option key={a.id} value={a.id}>{a.name} ({a.role})</option>
               ))}
@@ -620,7 +619,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
       {isTransferring && (
         <div className="fixed inset-0 z-40 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center p-4">
           <form onSubmit={handleTransferBetweenEntitys} className="section-card w-full max-w-3xl p-6 animate-in fade-in zoom-in-95">
-            <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">TransferAmount Between Entities</h3>
+            <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Send</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <select
                 className="control-input"
@@ -629,7 +628,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                 disabled={!canManageImpact}
                 required
               >
-                <option value="">From Entity</option>
+                <option value="">From</option>
                 {entities.map(entity => {
                   const s = entityStats.get(entity.id);
                   return <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(s?.net ?? 0)})</option>;
@@ -642,7 +641,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                 disabled={!canManageImpact}
                 required
               >
-                <option value="">To Entity</option>
+                <option value="">To</option>
                 {entities.map(entity => {
                   const s = entityStats.get(entity.id);
                   return <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(s?.net ?? 0)})</option>;
@@ -653,7 +652,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                 min="0.01"
                 step="0.01"
                 className="control-input"
-                placeholder="Amount"
+                placeholder="Units"
                 value={transferAmount}
                 onChange={e => settransferAmount(e.target.value)}
                 onBlur={() => normalizeValueInput(transferAmount, settransferAmount)}
@@ -675,7 +674,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                 Cancel
               </button>
               <button type="submit" disabled={!canManageImpact} className="action-btn-primary disabled:opacity-50">
-                TransferAmount Total
+                Send
               </button>
             </div>
           </form>
@@ -685,7 +684,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
       {isActivityRecordingDeferred && (
         <div className="fixed inset-0 z-40 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center p-4">
           <form onSubmit={handleActivityRecordDeferredActivityRecord} className="section-card w-full max-w-3xl p-6 animate-in fade-in zoom-in-95">
-            <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">{getActionText('recordDeferredActivityRecord')}</h3>
+            <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Add pending</h3>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
               <select
                 className="control-input"
@@ -694,7 +693,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                 disabled={!canActivityRecordDeferred}
                 required
               >
-                <option value="">Select Entity</option>
+                <option value="">Entity</option>
                 {entities.map(entity => {
                   const s = entityStats.get(entity.id);
                   return <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(s?.net ?? 0)})</option>;
@@ -705,7 +704,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                 min="0.01"
                 step="0.01"
                 className="control-input"
-                placeholder="Amount"
+                placeholder="Units"
                 value={deferredAmount}
                 onChange={e => setDeferredAmount(e.target.value)}
                 onBlur={() => normalizeValueInput(deferredAmount, setDeferredAmount)}
@@ -746,7 +745,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
       {isActivityRecordingOutputRequest && (
         <div className="fixed inset-0 z-40 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center p-4">
           <form onSubmit={handleActivityRecordAlignmentRequest} className="section-card w-full max-w-3xl p-6 animate-in fade-in zoom-in-95">
-            <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">ActivityRecord Entity Alignment Request</h3>
+            <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Adjust</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
               <select
                 className="control-input"
@@ -766,7 +765,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                 min="0.01"
                 step="0.01"
                 className="control-input"
-                placeholder="Alignment Amount"
+                placeholder="Units"
                 value={outputRequestAmount}
                 onChange={e => setOutputRequestAmount(e.target.value)}
                 onBlur={() => normalizeValueInput(outputRequestAmount, setOutputRequestAmount)}
@@ -787,7 +786,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                 Cancel
               </button>
               <button type="submit" disabled={!canManageImpact} className="action-btn-primary disabled:opacity-50">
-                Save Alignment Request
+                Save
               </button>
             </div>
           </form>
@@ -843,14 +842,14 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                       {formatValue(stats.net)}
                     </span>
                   }
-                  meta={<span>{stats.activitys} activities • {stats.lastActive ? formatDate(stats.lastActive) : 'Never active'}</span>}
+                  meta={<span>{stats.activitys} · {stats.lastActive ? formatDate(stats.lastActive) : 'Never'}</span>}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <p className={cn(
                       "font-mono text-sm",
                       stats.net > 0 ? "text-emerald-600 dark:text-emerald-400" : stats.net < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
                     )}>
-                      Net: {formatValue(stats.net)}
+                      {formatValue(stats.net)}
                     </p>
                     <div className="flex items-center gap-1.5">
                       {canManageImpact && (
@@ -875,13 +874,13 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                         onClick={() => openEntityProfile(entity.id)}
                         className="action-btn-secondary text-xs px-2.5 py-1"
                       >
-                        Open Profile
+                        Open
                       </button>
                       <button
                         onClick={() => setQuickViewEntity(entity)}
                         className="action-btn-secondary text-xs px-2.5 py-1"
                       >
-                        Quick Snapshot
+                        Snapshot
                       </button>
                       {canManageImpact && (
                         <button

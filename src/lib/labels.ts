@@ -1,5 +1,95 @@
 // Flow Ops — neutral operational vocabulary. Permanently locked. No toggle.
 
+export const LABELS = {
+	workspace: 'Workspace',
+	group: 'Group',
+	currentWorkspace: 'Current workspace',
+	roles: {
+		systemAdmin: 'System Admin',
+		groupManager: 'Group Manager',
+		workspaceManager: 'Workspace Manager',
+		operator: 'Operator',
+		viewer: 'Viewer',
+	},
+	actions: {
+		chooseWorkspace: 'Choose workspace',
+		chooseGroup: 'Choose group',
+		loadingWorkspace: 'Loading your workspace...',
+	},
+	states: {
+		noWorkspace: 'No workspace selected',
+		awaitingAccess: 'You need workspace access',
+	},
+} as const;
+
+export const getRoleLabel = (role: string | null | undefined): string => {
+	switch (role) {
+		case 'platform_admin':
+			return LABELS.roles.systemAdmin;
+		case 'cluster_admin':
+			return LABELS.roles.groupManager;
+		case 'cluster_operator':
+			return 'Group Operator';
+		case 'admin':
+			return LABELS.roles.workspaceManager;
+		case 'operator':
+			return LABELS.roles.operator;
+		case 'viewer':
+			return LABELS.roles.viewer;
+		default:
+			return role ? role.charAt(0).toUpperCase() + role.slice(1) : LABELS.roles.viewer;
+	}
+};
+
+export const getIdentityTypeLabel = (type: 'cluster' | 'org'): string => {
+	return type === 'cluster' ? LABELS.group : LABELS.workspace;
+};
+
+export const getUnnamedIdentityLabel = (type: 'cluster' | 'org'): string => {
+	return `Unnamed ${getIdentityTypeLabel(type)}`;
+};
+
+const applyMatchCase = (match: string, replacement: string): string => {
+	if (match === match.toUpperCase()) return replacement.toUpperCase();
+	if (match[0] === match[0].toUpperCase()) return replacement.charAt(0).toUpperCase() + replacement.slice(1);
+	return replacement;
+};
+
+const replaceWordVariant = (text: string, pattern: RegExp, singular: string, plural: string): string => {
+	return text.replace(pattern, (match) => {
+		const replacement = match.toLowerCase().endsWith('s') ? plural : singular;
+		return applyMatchCase(match, replacement);
+	});
+};
+
+export const sanitizeLabel = (text: string): string => {
+	let sanitized = text;
+
+	const phraseReplacements = [
+		{ pattern: /\borganization contexts?\b/gi, replacement: 'workspace' },
+		{ pattern: /\borg contexts?\b/gi, replacement: 'workspace' },
+		{ pattern: /\bcluster contexts?\b/gi, replacement: 'group' },
+		{ pattern: /\borganization scopes?\b/gi, replacement: 'workspace' },
+		{ pattern: /\borg scopes?\b/gi, replacement: 'workspace' },
+		{ pattern: /\bcluster scopes?\b/gi, replacement: 'group' },
+	];
+
+	for (const { pattern, replacement } of phraseReplacements) {
+		sanitized = sanitized.replace(pattern, (match) => applyMatchCase(match, replacement));
+	}
+
+	sanitized = replaceWordVariant(sanitized, /\borganizations?\b/gi, 'workspace', 'workspaces');
+	sanitized = replaceWordVariant(sanitized, /\bclusters?\b/gi, 'group', 'groups');
+	sanitized = sanitized.replace(/\bcontexts?\b/gi, '');
+	sanitized = sanitized.replace(/\bscopes?\b/gi, '');
+
+	return sanitized
+		.replace(/\s{2,}/g, ' ')
+		.replace(/\s+([,.:;!?])/g, '$1')
+		.replace(/\(\s*\)/g, '')
+		.trim();
+};
+
 export const METRIC_LABELS = {
 	openActivities: 'Open activities',
 	activeEntitys: 'Active entities',
@@ -17,36 +107,36 @@ export const METRIC_LABELS = {
 } as const;
 
 export const ACTION_LABELS = {
-	manageActivities: 'Open activity',
+	manageActivities: 'Open',
 	startActivity: 'New record',
 	addEntity: 'Add entity',
-	recordDeferredActivityRecord: 'Add Pending Record',
+	recordDeferredActivityRecord: 'Pending',
 	viewAll: 'View all',
-	recordInput: 'ActivityRecord input',
-	recordOutput: 'ActivityRecord outflow',
+	recordInput: 'Inflow',
+	recordOutput: 'Outflow',
 } as const;
 
 export const EVENT_LABELS: Record<string, string> = {
 	outflow_added: 'Cost logged',
-	record_added: 'ActivityRecord recorded',
-	activity_record_added: 'ActivityRecord recorded',
-	teamMember_added: 'Team teamMember added',
-	teamMember_imported: 'Team teamMembers imported',
-	teamMember_updated: 'Team teamMember updated',
-	teamMember_deleted: 'Team teamMember removed',
+	record_added: 'Record added',
+	activity_record_added: 'Record added',
+	teamMember_added: 'Team member added',
+	teamMember_imported: 'Team members imported',
+	teamMember_updated: 'Team member updated',
+	teamMember_deleted: 'Team member removed',
 	activity_created: 'Activity created',
 	activity_deleted: 'Activity deleted',
-	operator_session_started: 'Operator session started',
+	operator_session_started: 'Session started',
 	log_started: 'Log opened',
 	log_ended: 'Log closed',
 	log_updated: 'Log updated',
 	unit_added: 'Entity added',
 	unit_deleted: 'Entity removed',
 	unit_updated: 'Entity updated',
-	adjustment_added: 'Pending record recorded',
+	adjustment_added: 'Pending record added',
 	adjustment_updated: 'Pending record updated',
 	adjustment_deleted: 'Pending record removed',
-	channel_record_added: 'Channel record recorded',
+	channel_record_added: 'Channel record added',
 	// Legacy keys — kept so existing DB audit rows still display correctly
 	partner_added: 'Collaboration added',
 	partner_updated: 'Collaboration updated',

@@ -13,13 +13,13 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { to: "/dashboard", icon: <LayoutDashboard size={20} />, label: "Brief", hint: "Operational dashboard and value summary" },
-  { to: "/activity", icon: <History size={20} />, label: "Activities", hint: "Activity records and management" },
-  { to: "/entities", icon: <EntitiesIcon size={20} />, label: "Entities", hint: "Entity profiles and status overview" },
-  { to: "/channels", icon: <Circle size={20} />, label: "Channels", hint: "Channel tracking and settings overview" },
-  { to: "/collaborations", icon: <Handshake size={20} />, label: "Collaborations", hint: "Collaboration network and relationship tracking" },
-  { to: "/team", icon: <UserCog size={20} />, label: "Team Members", hint: "Team management and activity block operations" },
-  { to: "/settings", icon: <Settings size={20} />, label: "Settings", hint: "System settings and data actions" },
+  { to: "/dashboard", icon: <LayoutDashboard size={20} />, label: "Brief", hint: "Dashboard" },
+  { to: "/activity", icon: <History size={20} />, label: "Activities", hint: "Activities" },
+  { to: "/entities", icon: <EntitiesIcon size={20} />, label: "Entities", hint: "Entities" },
+  { to: "/channels", icon: <Circle size={20} />, label: "Channels", hint: "Channels" },
+  { to: "/collaborations", icon: <Handshake size={20} />, label: "Collaborations", hint: "Collaborations" },
+  { to: "/team", icon: <UserCog size={20} />, label: "Team", hint: "Team" },
+  { to: "/settings", icon: <Settings size={20} />, label: "Settings", hint: "Settings" },
 ];
 
 export default function MobileDock() {
