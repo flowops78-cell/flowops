@@ -9,44 +9,28 @@ type LoadingLineProps = {
 };
 
 export default function LoadingLine({
-  label = 'Loading…',
+  label = 'Loading\u2026',
   progress,
   className,
   compact = false,
 }: LoadingLineProps) {
-  const [animatedProgress, setAnimatedProgress] = React.useState(10);
   const isDeterminate = typeof progress === 'number';
-
-  React.useEffect(() => {
-    if (isDeterminate) return;
-
-    const timer = window.setInterval(() => {
-      setAnimatedProgress(prev => {
-        const next = prev + 7;
-        return next > 92 ? 10 : next;
-      });
-    }, 130);
-
-    return () => window.clearInterval(timer);
-  }, [isDeterminate]);
-
-  const resolvedProgress = isDeterminate
-    ? Math.max(4, Math.min(100, progress ?? 0))
-    : animatedProgress;
+  const resolvedProgress = isDeterminate ? Math.max(4, Math.min(100, progress ?? 0)) : 0;
 
   return (
     <div className={cn(compact ? 'space-y-1' : 'space-y-1.5', className)}>
       <div className={cn(
         'w-full overflow-hidden rounded-full bg-stone-200 dark:bg-stone-800',
-        compact ? 'h-1' : 'h-1.5',
+        compact ? 'h-[3px]' : 'h-[3px]',
       )}>
-        <div
-          className={cn(
-            'h-full rounded-full bg-emerald-500 transition-[width] duration-200 ease-out',
-            !isDeterminate && 'animate-pulse',
-          )}
-          style={{ width: `${resolvedProgress}%` }}
-        />
+        {isDeterminate ? (
+          <div
+            className="h-full rounded-full bg-stone-800 dark:bg-stone-200 transition-[width] duration-200 ease-out"
+            style={{ width: `${resolvedProgress}%` }}
+          />
+        ) : (
+          <div className="overlay-progress-bar" />
+        )}
       </div>
       <div className="text-[11px] text-stone-500 dark:text-stone-400">
         {label}{isDeterminate ? ` ${Math.round(resolvedProgress)}%` : ''}

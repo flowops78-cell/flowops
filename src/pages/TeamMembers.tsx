@@ -1,35 +1,23 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, Clock, Plus, RotateCcw, Trash2, Users } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
-import { Plus, Clock, User, LayoutGrid, List, Trash2, Users } from 'lucide-react';
-import { formatValue, formatDate } from '../lib/utils';
-import ContextPanel from '../components/ContextPanel';
-import MobileActivityRecordCard from '../components/MobileActivityRecordCard';
-import CollapsibleActivitySection from '../components/CollapsibleActivitySection';
-import { cn } from '../lib/utils';
-import EmptyState from '../components/EmptyState';
-import LoadingLine from '../components/LoadingLine';
-import { useLabels } from '../lib/labels';
 import { useAppRole } from '../context/AppRoleContext';
+import { cn, formatDate } from '../lib/utils';
+import OverlaySavingState from '../components/OverlaySavingState';
+import LoadingLine from '../components/LoadingLine';
 
 const getTeamMemberDisplayName = (name?: string | null) => {
   const trimmed = name?.trim();
-  return trimmed && trimmed.length > 0 ? trimmed : 'Unnamed Team Member';
+  return trimmed && trimmed.length > 0 ? trimmed : 'Unnamed';
 };
 
 const getTeamMemberRoleLabel = (role?: string | null) => {
   const normalized = (role ?? '').toLowerCase();
-  if (normalized === 'operator') return 'Operator';
   if (normalized === 'admin') return 'Admin';
-  return normalized ? `${normalized.charAt(0).toUpperCase()}${normalized.slice(1)}` : 'Operator';
+  if (normalized === 'operator') return 'Operator';
+  return 'Operator';
 };
-
-// ─── INVARIANT ────────────────────────────────────────────────────────────────
-// TeamMember = a named roster entry (name, role, org_id).
-// TeamMember.user_id is an OPTIONAL foreign key pointing to a Supabase auth
-// account. Most roster members will NOT have one. Never surface user_id or any
-// auth UUID in the UI. Never confuse TeamMember with the signed-in User.
-// ──────────────────────────────────────────────────────────────────────────────
 
 export default function Team({ embedded = false }: { embedded?: boolean }) {
   const location = useLocation();
@@ -41,183 +29,79 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
     loadingProgress,
     addTeamMember,
     updateTeamMember,
-    deleteTeamMember
+    deleteTeamMember,
   } = useData();
-
-  const teamMembers = useMemo(() => (rawTeamMembers ?? []).filter(m => (m.role ?? '').toLowerCase() !== 'viewer'), [rawTeamMembers]);
-  const activityLogs = useMemo(() => rawActivityLogs ?? [], [rawActivityLogs]);
   const { canAccessAdminUi } = useAppRole();
-  const { tx } = useLabels();
-  const [isAddingTeamMember, setIsAddingTeamMember] = useState(false);
-  const [rosterViewMode, setRosterViewMode] = useState<'grid' | 'list'>('grid');
+
+  const teamMembers = useMemo(
+    () => (rawTeamMembers ?? []).filter(member => (member.role ?? '').toLowerCase() !== 'viewer').sort((left, right) => getTeamMemberDisplayName(left.name).localeCompare(getTeamMemberDisplayName(right.name))),
+    [rawTeamMembers],
+  );
+  const activityLogs = useMemo(() => rawActivityLogs ?? [], [rawActivityLogs]);
+
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isAddAdvancedOpen, setIsAddAdvancedOpen] = useState(false);
+  const [isDetailAdvancedOpen, setIsDetailAdvancedOpen] = useState(false);
   const [selectedTeamMemberId, setSelectedTeamMemberId] = useState<string | null>(null);
-  const [teamMemberActivityScrollTop, setTeamMemberActivityScrollTop] = useState(0);
-  const [logActivityScrollTop, setLogActivityScrollTop] = useState(0);
-  const [importStatus, setImportStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
-  const [teamMemberSearch, setTeamMemberSearch] = useState('');
-  const [deletingTeamMemberId, setDeletingTeamMemberId] = useState<string | null>(null);
-  const [isSavingTeamMember, setIsSavingTeamMember] = useState(false);
-  const [saveTeamMemberProgress, setSaveTeamMemberProgress] = useState(0);
-  const teamMemberActivitySectionRef = useRef<HTMLDivElement | null>(null);
-  const saveTeamMemberProgressTimerRef = useRef<number | null>(null);
-  const saveTeamMemberProgressResetTimerRef = useRef<number | null>(null);
-
-  const clearSaveTeamMemberProgressTimers = () => {
-    if (saveTeamMemberProgressTimerRef.current !== null) {
-      window.clearInterval(saveTeamMemberProgressTimerRef.current);
-      saveTeamMemberProgressTimerRef.current = null;
-    }
-    if (saveTeamMemberProgressResetTimerRef.current !== null) {
-      window.clearTimeout(saveTeamMemberProgressResetTimerRef.current);
-      saveTeamMemberProgressResetTimerRef.current = null;
-    }
-  };
-
-  useEffect(() => () => {
-    clearSaveTeamMemberProgressTimers();
-  }, []);
-
   const [name, setName] = useState('');
   const [teamMemberLoginId, setTeamMemberLoginId] = useState('');
   const [role, setRole] = useState('operator');
+  const [editRole, setEditRole] = useState('operator');
+  const [editLoginId, setEditLoginId] = useState('');
+  const [deletingTeamMemberId, setDeletingTeamMemberId] = useState<string | null>(null);
+  type AddMemberState = 'idle' | 'saving' | 'success' | 'error';
+  const [addMemberState, setAddMemberState] = useState<AddMemberState>('idle');
+  const [addMemberError, setAddMemberError] = useState<string | null>(null);
+  const addMemberInFlight = useRef(false);
+  const [importStatus, setImportStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const selectedTeamMember = teamMembers.find(s => s.id === selectedTeamMemberId);
+  const selectedTeamMember = teamMembers.find(member => member.id === selectedTeamMemberId) ?? null;
 
-  // activeLogByMemberId: keyed by TeamMember.id (primary).
-  // Falls back to matching by TeamMember.user_id only when the optional auth
-  // link exists AND a log's actor_user_id matches it.
-  // Never assume the two IDs are the same — they are different namespaces.
   const activeLogByMemberId = useMemo(() => {
-    // Build a lookup: auth_user_id → active log
     const byAuthId = new Map<string, typeof activityLogs[number]>();
     activityLogs.forEach(log => {
-      const actorId = log.teamMember_id ?? ''; // teamMember_id = actor_user_id in DB
+      const actorId = log.teamMember_id ?? '';
       if (log.status === 'active' && actorId && !byAuthId.has(actorId)) {
         byAuthId.set(actorId, log);
       }
     });
-    // Remap by TeamMember.id using the optional user_id bridge
+
     const byMemberId = new Map<string, typeof activityLogs[number]>();
     teamMembers.forEach(member => {
-      if (member.user_id) {
-        const log = byAuthId.get(member.user_id);
-        if (log) byMemberId.set(member.id, log);
-      }
+      if (!member.user_id) return;
+      const log = byAuthId.get(member.user_id);
+      if (log) byMemberId.set(member.id, log);
     });
+
     return byMemberId;
   }, [activityLogs, teamMembers]);
 
-  const totalWorkHours = useMemo(() => (
-    activityLogs.reduce((sum, activity) => sum + (activity.duration_hours ?? 0), 0)
-  ), [activityLogs]);
-
-  const lastActivityLabel = useMemo(() => {
-    if (activityLogs.length === 0) return 'No activity yet';
-    const latest = activityLogs
-      .map(activity => activity.end_time || activity.start_time)
-      .filter((date): date is string => !!date)
-      .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
-    return latest ? formatDate(latest) : 'No recent activity';
-  }, [activityLogs]);
-
-  const teamMemberNameById = useMemo(() => {
-    const map = new Map<string, string>();
-    teamMembers.forEach(teamMember => {
-      map.set(teamMember.id, getTeamMemberDisplayName(teamMember.name));
-    });
-    return map;
-  }, [teamMembers]);
-
-  const ROSTER_ROW_HEIGHT = 56;
-  const SHIFT_ROW_HEIGHT = 58;
-  const WORKSPACE_OVERSCAN = 10;
-  const ROSTER_VIEWPORT_HEIGHT = 560;
-  const SHIFT_VIEWPORT_HEIGHT = 460;
-
-  const normalizedTeamMemberSearch = teamMemberSearch.trim().toLowerCase();
-  
-  const filteredTeamMemberActivities = useMemo(() => {
-    if (!normalizedTeamMemberSearch) return activityLogs;
-
-    return activityLogs.filter(log => {
-      const teamMemberName = (teamMemberNameById.get(log.teamMember_id ?? '') ?? 'Unknown').toLowerCase();
-      const dateLabel = log.start_time ? formatDate(log.start_time).toLowerCase() : '';
-      const status = (log.status ?? '').toLowerCase();
-      const activityId = (log.activity_id ?? '').toLowerCase();
-      return (
-        teamMemberName.includes(normalizedTeamMemberSearch) ||
-        activityId.includes(normalizedTeamMemberSearch) ||
-        dateLabel.includes(normalizedTeamMemberSearch) ||
-        status.includes(normalizedTeamMemberSearch)
-      );
-    });
-  }, [normalizedTeamMemberSearch, activityLogs, teamMemberNameById]);
-
-  const shouldWindowTeamMemberActivity = filteredTeamMemberActivities.length > 150;
-  const logVisibleCount = Math.ceil(SHIFT_VIEWPORT_HEIGHT / SHIFT_ROW_HEIGHT) + WORKSPACE_OVERSCAN * 2;
-  const logStartIndex = shouldWindowTeamMemberActivity
-    ? Math.max(0, Math.floor(logActivityScrollTop / SHIFT_ROW_HEIGHT) - WORKSPACE_OVERSCAN)
-    : 0;
-  const logEndIndex = shouldWindowTeamMemberActivity
-    ? Math.min(filteredTeamMemberActivities.length, logStartIndex + logVisibleCount)
-    : filteredTeamMemberActivities.length;
-
-  const visibleTeamMemberActivities = shouldWindowTeamMemberActivity 
-    ? filteredTeamMemberActivities.slice(logStartIndex, logEndIndex) 
-    : filteredTeamMemberActivities;
-
-  const logTopSpacerHeight = shouldWindowTeamMemberActivity ? logStartIndex * SHIFT_ROW_HEIGHT : 0;
-  const logBottomSpacerHeight = shouldWindowTeamMemberActivity 
-    ? Math.max(0, (filteredTeamMemberActivities.length - logEndIndex) * SHIFT_ROW_HEIGHT) 
-    : 0;
+  const selectedLogs = useMemo(() => {
+    if (!selectedTeamMember) return [] as typeof activityLogs;
+    return activityLogs
+      .filter(log => selectedTeamMember.user_id && log.teamMember_id === selectedTeamMember.user_id)
+      .sort((left, right) => new Date(right.start_time || right.started_at || 0).getTime() - new Date(left.start_time || left.started_at || 0).getTime())
+      .slice(0, 8);
+  }, [activityLogs, selectedTeamMember]);
 
   useEffect(() => {
-    setLogActivityScrollTop(0);
-  }, [normalizedTeamMemberSearch]);
-
-  const handleAddTeamMember = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (isSavingTeamMember) return;
-    const normalizedName = name.trim();
-    if (!normalizedName) {
-      setImportStatus({ type: 'error', message: 'Team member name is required.' });
+    if (selectedTeamMemberId && teamMembers.some(member => member.id === selectedTeamMemberId)) {
       return;
     }
-    clearSaveTeamMemberProgressTimers();
-    setIsSavingTeamMember(true);
-    let progress = 8;
-    setSaveTeamMemberProgress(progress);
-    saveTeamMemberProgressTimerRef.current = window.setInterval(() => {
-      progress = Math.min(progress + (progress < 70 ? 10 : progress < 90 ? 4 : 1), 92);
-      setSaveTeamMemberProgress(progress);
-    }, 120);
+    setSelectedTeamMemberId(teamMembers[0]?.id ?? null);
+  }, [selectedTeamMemberId, teamMembers]);
 
-    try {
-      await addTeamMember({
-        name: normalizedName,
-        user_id: teamMemberLoginId.trim() || undefined,
-        role: role as any,
-        status: 'active'
-      });
-
-      clearSaveTeamMemberProgressTimers();
-      setSaveTeamMemberProgress(100);
-      setImportStatus({ type: 'success', message: 'Team member saved.' });
-      setIsAddingTeamMember(false);
-      setName('');
-      setTeamMemberLoginId('');
-    } catch (error: any) {
-      clearSaveTeamMemberProgressTimers();
-      setSaveTeamMemberProgress(100);
-      setImportStatus({ type: 'error', message: error?.message || 'Unable to save team member.' });
-    } finally {
-      saveTeamMemberProgressResetTimerRef.current = window.setTimeout(() => {
-        setIsSavingTeamMember(false);
-        setSaveTeamMemberProgress(0);
-        saveTeamMemberProgressResetTimerRef.current = null;
-      }, 360);
+  useEffect(() => {
+    if (!selectedTeamMember) {
+      setEditRole('operator');
+      setEditLoginId('');
+      setIsDetailAdvancedOpen(false);
+      return;
     }
-  };
+
+    setEditRole(selectedTeamMember.role || 'operator');
+    setEditLoginId(selectedTeamMember.user_id || '');
+  }, [selectedTeamMember]);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -225,9 +109,7 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
     if (!action) return;
 
     if (action === 'add-team-member' || action === 'add-member') {
-      setIsAddingTeamMember(true);
-    } else if (action === 'view-log') {
-      teamMemberActivitySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setIsAddOpen(true);
     }
 
     params.delete('action');
@@ -235,42 +117,59 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
     navigate({ pathname: location.pathname, search: nextSearch ? `?${nextSearch}` : '' }, { replace: true });
   }, [location.pathname, location.search, navigate]);
 
-  useEffect(() => {
-    const handleShortcut = (event: KeyboardEvent) => {
-      const normalizedKey = typeof event.key === 'string' ? event.key.toLowerCase() : '';
-      const target = event.target as HTMLElement | null;
-      const isTypingTarget =
-        target?.tagName === 'INPUT' ||
-        target?.tagName === 'TEXTAREA' ||
-        target?.tagName === 'SELECT' ||
-        Boolean(target?.isContentEditable);
+  const clearAddForm = () => {
+    setName('');
+    setTeamMemberLoginId('');
+    setRole('operator');
+    setIsAddAdvancedOpen(false);
+  };
 
-      if (isTypingTarget || event.metaKey || event.ctrlKey || event.altKey) return;
-      if (!canAccessAdminUi) return;
+  const closeAddModal = () => {
+    if (addMemberState === 'saving' || addMemberState === 'success') return;
+    setIsAddOpen(false);
+    setAddMemberState('idle');
+    setAddMemberError(null);
+    clearAddForm();
+  };
 
-      if (normalizedKey === 'delete' || normalizedKey === 'backspace') {
-        event.preventDefault();
-        const targetTeamMember = selectedTeamMemberId
-          ? teamMembers.find(teamMember => teamMember.id === selectedTeamMemberId)
-          : teamMembers.find(teamMember => !activeLogByMemberId.has(teamMember.id));
-        if (targetTeamMember) {
-          void handleDeleteTeamMember(targetTeamMember.id);
-        }
-        return;
-      }
+  const handleAddTeamMember = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (addMemberInFlight.current) return;
+    const normalizedName = name.trim();
+    if (!normalizedName) {
+      setAddMemberError('Name required.');
+      setAddMemberState('error');
+      return;
+    }
 
-      if (normalizedKey === 'l') {
-        event.preventDefault();
-        teamMemberActivitySectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      }
-    };
+    addMemberInFlight.current = true;
+    setAddMemberError(null);
+    setAddMemberState('saving');
 
-    window.addEventListener('keydown', handleShortcut);
-    return () => window.removeEventListener('keydown', handleShortcut);
-  }, [selectedTeamMemberId, teamMembers, activeLogByMemberId, canAccessAdminUi]);
+    try {
+      await addTeamMember({
+        name: normalizedName,
+        user_id: teamMemberLoginId.trim() || undefined,
+        role,
+        status: 'active',
+      });
+      setAddMemberState('success');
+      setTimeout(() => {
+        setIsAddOpen(false);
+        setAddMemberState('idle');
+        clearAddForm();
+      }, 700);
+    } catch (error: any) {
+      const msg = error?.message || 'Unable to save member.';
+      setAddMemberError(msg);
+      setAddMemberState('error');
+      setImportStatus({ type: 'error', message: msg });
+    } finally {
+      addMemberInFlight.current = false;
+    }
+  };
 
-  const handleDeleteTeamMember = async (targetTeamMemberId: string, e?: React.MouseEvent) => {
-    e?.stopPropagation();
+  const handleDeleteTeamMember = async (targetTeamMemberId: string) => {
     if (deletingTeamMemberId === targetTeamMemberId) return;
 
     const teamMember = teamMembers.find(item => item.id === targetTeamMemberId);
@@ -278,390 +177,326 @@ export default function Team({ embedded = false }: { embedded?: boolean }) {
 
     const activeLog = activeLogByMemberId.get(targetTeamMemberId);
     if (activeLog) {
-      setImportStatus({ type: 'error', message: 'Close the active activity log before deleting this team member.' });
+      setImportStatus({ type: 'error', message: 'Close log first.' });
       return;
     }
 
-    const confirmed = window.confirm(`Remove ${getTeamMemberDisplayName(teamMember.name)} from the team?`);
+    const confirmed = window.confirm(`Remove ${getTeamMemberDisplayName(teamMember.name)}?`);
     if (!confirmed) return;
 
     try {
       setDeletingTeamMemberId(targetTeamMemberId);
       await deleteTeamMember(targetTeamMemberId);
-      setImportStatus({ type: 'success', message: 'Team member removed.' });
+      setImportStatus({ type: 'success', message: 'Removed.' });
       if (selectedTeamMemberId === targetTeamMemberId) {
         setSelectedTeamMemberId(null);
       }
     } catch (error: any) {
-      setImportStatus({ type: 'error', message: error?.message || 'Unable to delete team member.' });
+      setImportStatus({ type: 'error', message: error?.message || 'Unable to remove member.' });
     } finally {
       setDeletingTeamMemberId(null);
     }
   };
 
+  const handleSaveAdvanced = async () => {
+    if (!selectedTeamMember) return;
 
-  const handleUpdateTags = async (id: string, tags: string[]) => {
-    const member = teamMembers.find(s => s.id === id);
-    if (member && updateTeamMember) {
-      await updateTeamMember({ ...member, tags });
+    try {
+      await updateTeamMember({
+        ...selectedTeamMember,
+        role: editRole,
+        user_id: editLoginId.trim() || undefined,
+      });
+      setImportStatus({ type: 'success', message: 'Updated.' });
+    } catch (error: any) {
+      setImportStatus({ type: 'error', message: error?.message || 'Unable to update member.' });
     }
   };
-
-  const rosterViewToggle = (
-    <div className="toggle-indirect-track inline-flex rounded-xl border border-stone-200 dark:border-stone-800 p-1 gap-1">
-      <button
-        type="button"
-        onClick={() => setRosterViewMode('grid')}
-        className={cn(
-          "interactive-3d px-3 py-1.5 rounded-lg text-sm font-medium inline-flex items-center gap-1.5",
-          rosterViewMode === 'grid'
-            ? "toggle-indirect-active"
-            : "toggle-indirect-idle"
-        )}
-      >
-        <LayoutGrid size={14} />
-        Grid
-      </button>
-      <button
-        type="button"
-        onClick={() => setRosterViewMode('list')}
-        className={cn(
-          "interactive-3d px-3 py-1.5 rounded-lg text-sm font-medium inline-flex items-center gap-1.5",
-          rosterViewMode === 'list'
-            ? "toggle-indirect-active"
-            : "toggle-indirect-idle"
-        )}
-      >
-        <List size={14} />
-        List
-      </button>
-    </div>
-  );
-
-  const statusMessages = importStatus ? [importStatus] : [];
-
-  const formatTeamMemberCount = (count: number) => `${count} ${count === 1 ? 'member' : 'members'}`;
 
   if (loading && teamMembers.length === 0) {
     return (
       <div className="page-shell">
-        <div className="section-card p-4">
-          <LoadingLine
-            progress={Math.max(8, Math.min(100, loadingProgress || 8))}
-            label="Loading team..."
-          />
+        <div className="section-card p-4 space-y-3">
+          <LoadingLine label="Loading team…" />
         </div>
       </div>
     );
   }
 
   return (
-    <div className="page-shell">
-
+    <div className={embedded ? 'space-y-4' : 'page-shell animate-in fade-in space-y-4'}>
       {!embedded && (
-        <div className="section-card p-5 lg:p-6 flex flex-col gap-6">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-stone-100 dark:bg-stone-800 flex items-center justify-center shrink-0 shadow-sm border border-stone-200 dark:border-stone-700">
-                <Users size={24} className="text-stone-900 dark:text-stone-100" />
-              </div>
-              <div>
-                <h2 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Team Members</h2>
-              </div>
+        <div className="section-card flex items-center justify-between gap-4 p-5 lg:p-6">
+          <div className="flex items-center gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-stone-200 bg-stone-100 shadow-sm dark:border-stone-700 dark:bg-stone-800">
+              <Users size={24} className="text-stone-900 dark:text-stone-100" />
             </div>
-            <div className="flex flex-col items-start lg:items-end gap-3">
-              <div className="hidden lg:flex items-center gap-2 text-xs">
-                <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
-                  <span className="font-mono text-stone-900 dark:text-stone-100">{formatTeamMemberCount(teamMembers.length)}</span>
-                </span>
-                <span className="rounded-full border border-stone-200 dark:border-stone-700 bg-stone-50 dark:bg-stone-800 px-3 py-1.5 text-stone-600 dark:text-stone-300">
-                  <span className="font-mono text-stone-900 dark:text-stone-100">{activeLogByMemberId.size}</span> active
-                </span>
-              </div>
-              <div className="flex gap-2 flex-wrap">
-                {rosterViewToggle}
-                {canAccessAdminUi && (
-                  <button
-                    onClick={() => setIsAddingTeamMember(true)}
-                    className="action-btn-primary"
-                    title="Add Team Member"
-                  >
-                    <Plus size={16} />
-                    Add Team Member
-                  </button>
-                )}
-              </div>
-            </div>
+            <h2 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Team</h2>
           </div>
-          {statusMessages.length > 0 && (
-            <div className="space-y-2">
-              {statusMessages.map((status, index) => (
-                <div
-                  key={`${status.type}-${index}`}
-                  className={cn(
-                    'rounded-lg border px-4 py-2 text-sm',
-                    status.type === 'success'
-                      ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400'
-                      : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400'
-                  )}
-                >
-                  {status.message}
-                </div>
-              ))}
-            </div>
+          {teamMembers.length > 0 && canAccessAdminUi && (
+            <button type="button" onClick={() => setIsAddOpen(true)} className="action-btn-primary">
+              <Plus size={16} />
+              Add
+            </button>
           )}
         </div>
       )}
 
-      {embedded && (
-        <div className="flex gap-2 flex-wrap justify-end mb-4">
-          {rosterViewToggle}
-          {canAccessAdminUi && (
-            <button
-              onClick={() => setIsAddingTeamMember(true)}
-              className="action-btn-primary"
-            >
-              <Plus size={16} />
-              Add Team Member
-            </button>
-          )}
+      {importStatus && (
+        <div className={cn(
+          'rounded-xl border px-3 py-2 text-sm',
+          importStatus.type === 'success'
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400'
+            : 'border-red-200 bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400',
+        )}>
+          {importStatus.message}
         </div>
-      )}
-      
-      {canAccessAdminUi && isAddingTeamMember && (
-        <form onSubmit={handleAddTeamMember} className="section-card p-4 animate-in fade-in slide-in-from-top-4 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
-            <div className="space-y-1 md:col-span-1">
-              <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Name</label>
-              <input
-                className="control-input"
-                placeholder="Name"
-                value={name}
-                onChange={e => setName(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-1 md:col-span-1">
-              <label className="text-xs font-medium text-stone-500 dark:text-stone-400">User ID (Optional)</label>
-              <input
-                className="control-input"
-                placeholder="e.g. USR-101"
-                value={teamMemberLoginId}
-                onChange={e => setTeamMemberLoginId(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Role</label>
-              <select 
-                className="control-input"
-                value={role}
-                onChange={e => setRole(e.target.value)}
-              >
-                <option value="operator">Operator</option>
-                <option value="admin">Admin</option>
-              </select>
-            </div>
-          </div>
-          <div className="flex justify-end gap-2">
-            <button 
-              type="button" 
-              onClick={() => setIsAddingTeamMember(false)}
-              disabled={isSavingTeamMember}
-              className="action-btn-tertiary px-4 py-2 text-sm"
-            >
-              Cancel
-            </button>
-            <button 
-              type="submit" 
-              disabled={isSavingTeamMember}
-              className="px-4 py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-md text-sm hover:bg-stone-800 dark:hover:bg-stone-200 disabled:opacity-70"
-            >
-              {isSavingTeamMember ? 'Saving…' : 'Add Team Member'}
-            </button>
-          </div>
-        </form>
       )}
 
       {teamMembers.length === 0 ? (
-        <div className="section-card">
-          <EmptyState
-            title="No team members yet"
-            description="Add a team member to include them in operational tracking."
-            actionLabel="Add Team Member"
-            onAction={() => setIsAddingTeamMember(true)}
-          />
+        <div className="section-card flex min-h-[280px] flex-col items-center justify-center gap-5 p-8 text-center">
+          {!embedded && <h3 className="text-2xl font-semibold text-stone-900 dark:text-stone-100">Team</h3>}
+          <p className="text-lg text-stone-500 dark:text-stone-400">No members</p>
+          {canAccessAdminUi && (
+            <button type="button" onClick={() => setIsAddOpen(true)} className="action-btn-primary">
+              <Plus size={16} />
+              Add
+            </button>
+          )}
         </div>
-      ) : rosterViewMode === 'grid' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {teamMembers.map(teamMember => {
-            const activeActivity = activeLogByMemberId.get(teamMember.id);
-            return (
-              <div 
-                key={teamMember.id} 
-                onClick={() => setSelectedTeamMemberId(teamMember.id)}
-                className="bg-white dark:bg-stone-900 p-4 rounded-xl shadow-sm border border-stone-200 dark:border-stone-800 cursor-pointer hover:border-emerald-500 transition-colors group"
-              >
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-stone-100 dark:bg-stone-800 rounded-full flex items-center justify-center text-stone-500 group-hover:bg-emerald-50 dark:group-hover:bg-emerald-900/20 group-hover:text-emerald-600 transition-colors">
-                      <User size={20} />
-                    </div>
+      ) : (
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+          <section className="section-card p-3">
+            <div className="space-y-2">
+              {teamMembers.map(teamMember => {
+                const activeLog = activeLogByMemberId.get(teamMember.id);
+                return (
+                  <button
+                    key={teamMember.id}
+                    type="button"
+                    onClick={() => setSelectedTeamMemberId(teamMember.id)}
+                    className={cn(
+                      'flex w-full items-center justify-between rounded-2xl border px-4 py-4 text-left transition-all',
+                      selectedTeamMemberId === teamMember.id
+                        ? 'border-emerald-300 bg-emerald-50 text-emerald-900 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-100'
+                        : 'border-stone-200 bg-white text-stone-900 hover:border-stone-300 hover:bg-stone-50 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800/80',
+                    )}
+                  >
+                    <span className="truncate text-base font-medium">{getTeamMemberDisplayName(teamMember.name)}</span>
+                    <span className={cn(
+                      'ml-3 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold',
+                      activeLog
+                        ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'
+                        : 'bg-stone-100 text-stone-500 dark:bg-stone-800 dark:text-stone-300',
+                    )}>
+                      <span className={cn('h-1.5 w-1.5 rounded-full', activeLog ? 'bg-emerald-500' : 'bg-stone-400')} />
+                      {activeLog ? 'Active' : 'Inactive'}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {canAccessAdminUi && (
+              <button type="button" onClick={() => setIsAddOpen(true)} className="mt-3 w-full rounded-2xl border border-dashed border-stone-300 px-4 py-4 text-left text-base font-semibold text-stone-700 transition-colors hover:bg-stone-50 dark:border-stone-700 dark:text-stone-200 dark:hover:bg-stone-800/70">
+                <span className="inline-flex items-center gap-2">
+                  <Plus size={18} />
+                  Add
+                </span>
+              </button>
+            )}
+          </section>
+
+          <section className="section-card overflow-hidden">
+            {selectedTeamMember ? (
+              <>
+                <div className="border-b border-stone-200 px-5 py-5 dark:border-stone-800 lg:px-6">
+                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div>
-                      <h3 className="font-medium text-stone-900 dark:text-stone-100">{getTeamMemberDisplayName(teamMember.name)}</h3>
-                      {/* Show role only — never surface user_id or auth UUIDs in the UI */}
-                      <p className="text-[10px] text-stone-500">{getTeamMemberRoleLabel(teamMember.role)}</p>
+                      <h3 className="text-2xl font-semibold text-stone-900 dark:text-stone-100">{getTeamMemberDisplayName(selectedTeamMember.name)}</h3>
+                      <div className="mt-2 inline-flex items-center gap-2 rounded-full px-3 py-1 text-sm font-medium text-stone-700 dark:text-stone-200">
+                        <span className={cn('h-2 w-2 rounded-full', activeLogByMemberId.get(selectedTeamMember.id) ? 'bg-emerald-500' : 'bg-stone-400')} />
+                        {activeLogByMemberId.get(selectedTeamMember.id) ? 'Active' : 'Inactive'}
+                      </div>
                     </div>
+                    {canAccessAdminUi && (
+                      <button
+                        type="button"
+                        onClick={() => { void handleDeleteTeamMember(selectedTeamMember.id); }}
+                        disabled={Boolean(activeLogByMemberId.get(selectedTeamMember.id)) || deletingTeamMemberId === selectedTeamMember.id}
+                        className="action-btn-tertiary text-red-600 dark:text-red-400 disabled:opacity-50"
+                      >
+                        <Trash2 size={14} />
+                        {deletingTeamMemberId === selectedTeamMember.id ? 'Removing' : 'Remove'}
+                      </button>
+                    )}
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between mt-3 pt-3 border-t border-stone-100 dark:border-stone-800">
-                  <div className="text-xs text-stone-500">
-                    {activeActivity ? (
-                      <span className="text-emerald-600 flex items-center gap-1 font-medium">
-                        <Clock size={12} />
-                        Active
-                      </span>
-                    ) : (
-                      'Inactive'
+                <div className="space-y-5 p-5 lg:p-6">
+                  <div className="rounded-2xl border border-stone-200 bg-white px-4 py-3 dark:border-stone-800 dark:bg-stone-900">
+                    <div className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Status</div>
+                    <div className="mt-1 text-sm font-medium text-stone-900 dark:text-stone-100">{activeLogByMemberId.get(selectedTeamMember.id) ? 'Active' : 'Inactive'}</div>
+                  </div>
+
+                  <div className="rounded-2xl border border-stone-200 bg-stone-50/70 p-3 dark:border-stone-800 dark:bg-stone-900/60">
+                    <button
+                      type="button"
+                      onClick={() => setIsDetailAdvancedOpen(value => !value)}
+                      className="flex w-full items-center justify-between text-sm font-semibold text-stone-700 dark:text-stone-200"
+                    >
+                      Advanced
+                      <ChevronDown size={16} className={cn('transition-transform', isDetailAdvancedOpen ? 'rotate-180' : '')} />
+                    </button>
+
+                    {isDetailAdvancedOpen && (
+                      <div className="mt-4 space-y-4 border-t border-stone-200 pt-4 dark:border-stone-800">
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Role</label>
+                            <select className="control-input" value={editRole} onChange={event => setEditRole(event.target.value)} disabled={!canAccessAdminUi}>
+                              <option value="operator">Operator</option>
+                              <option value="admin">Admin</option>
+                            </select>
+                          </div>
+                          <div className="space-y-1.5">
+                            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Login</label>
+                            <input className="control-input" value={editLoginId} onChange={event => setEditLoginId(event.target.value)} disabled={!canAccessAdminUi} />
+                          </div>
+                        </div>
+
+                        {canAccessAdminUi && (
+                          <div className="flex justify-end">
+                            <button type="button" onClick={() => { void handleSaveAdvanced(); }} className="action-btn-primary">
+                              Save
+                            </button>
+                          </div>
+                        )}
+
+                        <div className="space-y-2">
+                          <div className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Logs</div>
+                          {selectedLogs.length === 0 ? (
+                            <div className="rounded-2xl border border-dashed border-stone-200 px-4 py-6 text-sm text-stone-500 dark:border-stone-800 dark:text-stone-400">
+                              None
+                            </div>
+                          ) : (
+                            <div className="space-y-2">
+                              {selectedLogs.map(log => (
+                                <div key={log.id} className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm dark:border-stone-800 dark:bg-stone-950">
+                                  <div className="flex items-start justify-between gap-3">
+                                    <div>
+                                      <div className="font-medium text-stone-900 dark:text-stone-100">{log.activity_id?.slice(0, 8).toUpperCase() || 'Activity'}</div>
+                                      <div className="mt-1 text-xs text-stone-500 dark:text-stone-400">{formatDate(log.start_time || log.started_at || new Date().toISOString())}</div>
+                                    </div>
+                                    <div className="text-right text-xs text-stone-500 dark:text-stone-400">
+                                      <div>{(log.duration_hours ?? 0).toFixed(2)}h</div>
+                                      <div className="mt-1">{log.status}</div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     )}
                   </div>
-                  {canAccessAdminUi && (
-                    <button
-                      onClick={(e) => { void handleDeleteTeamMember(teamMember.id, e); }}
-                      disabled={Boolean(activeActivity) || deletingTeamMemberId === teamMember.id}
-                      className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md disabled:opacity-30"
-                    >
-                      <Trash2 size={14} />
-                    </button>
-                  )}
                 </div>
+              </>
+            ) : (
+              <div className="flex min-h-[420px] items-center justify-center px-6 text-sm text-stone-500 dark:text-stone-400">
+                Select a member
               </div>
-            );
-          })}
-        </div>
-      ) : (
-        <div className="section-card overflow-hidden">
-          <CollapsibleActivitySection
-            title="Team Members"
-            summary={formatTeamMemberCount(teamMembers.length)}
-            defaultExpanded
-            onContentScroll={event => setTeamMemberActivityScrollTop(event.currentTarget.scrollTop)}
-          >
-            <table className="w-full text-left text-sm">
-              <thead className="bg-stone-50 dark:bg-stone-800 text-stone-500 text-[11px] uppercase tracking-wider border-b border-stone-200 dark:border-stone-700">
-                <tr>
-                  <th className="px-4 py-3">Name</th>
-                  <th className="px-4 py-3">Role</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                {teamMembers.map(teamMember => {
-                  const activeActivity = activeLogByMemberId.get(teamMember.id);
-                  return (
-                    <tr key={teamMember.id} className="hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
-                      <td className="px-4 py-3">
-                        <button onClick={() => setSelectedTeamMemberId(teamMember.id)} className="font-medium text-stone-900 dark:text-stone-100 hover:underline">
-                          {getTeamMemberDisplayName(teamMember.name)}
-                        </button>
-                      </td>
-                      {/* Role column — never show user_id/auth UUIDs here */}
-                      <td className="px-4 py-3 text-stone-600 dark:text-stone-400">{getTeamMemberRoleLabel(teamMember.role)}</td>
-                      <td className="px-4 py-3">
-                        {activeActivity ? (
-                          <span className="text-emerald-600 font-medium text-xs">Active</span>
-                        ) : (
-                          <span className="text-stone-400 text-xs">Inactive</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {canAccessAdminUi && (
-                          <button
-                            onClick={(e) => { void handleDeleteTeamMember(teamMember.id, e); }}
-                            disabled={Boolean(activeActivity) || deletingTeamMemberId === teamMember.id}
-                            className="text-red-600 hover:underline text-xs disabled:opacity-30"
-                          >
-                            Remove
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </CollapsibleActivitySection>
+            )}
+          </section>
         </div>
       )}
 
-      <div className="mt-8 pt-8 border-t border-stone-200 dark:border-stone-800">
-        <div ref={teamMemberActivitySectionRef} className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-light text-stone-900 dark:text-stone-100">Activity Logs</h3>
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              <input
-                type="text"
-                value={teamMemberSearch}
-                onChange={e => setTeamMemberSearch(e.target.value)}
-                placeholder="Search logs..."
-                className="control-input py-1.5 min-w-[200px]"
-              />
-            </div>
+      {isAddOpen && canAccessAdminUi && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/40 p-4 backdrop-blur-sm animate-in fade-in"
+          onClick={closeAddModal}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className={cn(
+              'w-full max-w-md rounded-3xl border border-stone-200 bg-white p-5 shadow-2xl dark:border-stone-800 dark:bg-stone-950 animate-in zoom-in-95 transition-shadow duration-300',
+              addMemberState === 'success' && 'ring-2 ring-emerald-400 dark:ring-emerald-500'
+            )}
+          >
+            {/* ── SAVING ── */}
+            {addMemberState === 'saving' && <OverlaySavingState state="saving" label="Adding member…" />}
+
+            {/* ── SUCCESS ── */}
+            {addMemberState === 'success' && <OverlaySavingState state="success" label="Member added" />}
+
+            {/* ── IDLE / ERROR ── */}
+            {(addMemberState === 'idle' || addMemberState === 'error') && (
+              <form onSubmit={handleAddTeamMember} className="space-y-4">
+                <div className="flex items-start justify-between gap-3">
+                  <h3 className="text-xl font-semibold text-stone-900 dark:text-stone-100">Add member</h3>
+                  <button
+                    type="button"
+                    onClick={closeAddModal}
+                    className="rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 dark:hover:bg-stone-800 dark:hover:text-stone-200"
+                    aria-label="Close"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {addMemberState === 'error' && addMemberError && (
+                  <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 px-3 py-2 text-xs text-red-600 dark:text-red-400">
+                    {addMemberError}
+                  </div>
+                )}
+
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-stone-700 dark:text-stone-200">Name</label>
+                  <input className="control-input" value={name} onChange={event => setName(event.target.value)} autoFocus required />
+                </div>
+
+                <div className="rounded-2xl border border-stone-200 bg-stone-50/80 p-3 dark:border-stone-800 dark:bg-stone-900/60">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddAdvancedOpen(value => !value)}
+                    className="flex w-full items-center justify-between text-sm font-semibold text-stone-700 dark:text-stone-200"
+                  >
+                    Advanced
+                    <ChevronDown size={16} className={cn('transition-transform', isAddAdvancedOpen ? 'rotate-180' : '')} />
+                  </button>
+
+                  {isAddAdvancedOpen && (
+                    <div className="mt-4 space-y-3 border-t border-stone-200 pt-4 dark:border-stone-800">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Role</label>
+                        <select className="control-input" value={role} onChange={event => setRole(event.target.value)}>
+                          <option value="operator">Operator</option>
+                          <option value="admin">Admin</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Login</label>
+                        <input className="control-input" value={teamMemberLoginId} onChange={event => setTeamMemberLoginId(event.target.value)} />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex justify-end gap-2">
+                  <button type="button" onClick={closeAddModal} className="action-btn-secondary">
+                    Cancel
+                  </button>
+                  <button type="submit" className="action-btn-primary">
+                    <Plus size={16} />
+                    {addMemberState === 'error' ? 'Try again' : 'Add'}
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
         </div>
-
-        <div className="section-card overflow-hidden">
-          <table className="w-full text-left text-sm">
-            <thead className="bg-stone-50 dark:bg-stone-800 text-stone-500 text-[11px] uppercase tracking-wider border-b border-stone-200 dark:border-stone-700">
-              <tr>
-                <th className="px-4 py-3">Member</th>
-                <th className="px-4 py-3">Activity</th>
-                <th className="px-4 py-3">Time</th>
-                <th className="px-4 py-3">Hours</th>
-                <th className="px-4 py-3 text-right">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-              {visibleTeamMemberActivities.map((log) => {
-                // Match log to team member via the optional auth link (user_id).
-                // TeamMember is a roster entry — most won't have user_id set.
-                // Do NOT use teamMember.id here; log.teamMember_id is actor_user_id (auth UUID).
-                const teamMember = teamMembers.find(m => m.user_id && m.user_id === log.teamMember_id);
-                const displayName = teamMember ? getTeamMemberDisplayName(teamMember.name) : (log.actor_label || 'Operator');
-                
-                return (
-                  <tr key={log.id} className="hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-colors">
-                    <td className="px-4 py-3 font-medium text-stone-900 dark:text-stone-100">
-                      {displayName}
-                    </td>
-                    <td className="px-4 py-3 text-stone-500 font-mono text-xs">
-                      {log.activity_id?.slice(0, 8).toUpperCase() || '-'}
-                    </td>
-                    <td className="px-4 py-3 text-stone-600 dark:text-stone-400">
-                      {log.start_time ? formatDate(log.start_time) : '-'}
-                    </td>
-                    <td className="px-4 py-3 font-mono">
-                      {log.duration_hours?.toFixed(2) || '0.00'}h
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <span className={cn(
-                        "inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase",
-                        log.status === 'active' ? "bg-emerald-100 text-emerald-800" : "bg-stone-100 text-stone-600"
-                      )}>
-                        {log.status}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {visibleTeamMemberActivities.length === 0 && (
-            <div className="p-8 text-center text-stone-500">No activity logs found.</div>
-          )}
-        </div>
-      </div>
+      )}
     </div>
   );
 }

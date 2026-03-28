@@ -42,7 +42,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { to: '/activity', icon: <History size={18} />, label: 'Activities', hint: 'Activity records and management' },
         { to: '/entities', icon: <EntitiesIcon size={18} />, label: 'Entities', hint: 'Entity list and detailed profiles' },
         { to: '/channels', icon: <Circle size={18} />, label: 'Channels', hint: 'Channel tracking and settings overview' },
-        { to: '/collaborations', icon: <Handshake size={18} />, label: 'Network', hint: 'Collaboration network and relationship tracking' },
+        { to: '/collaborations', icon: <Handshake size={18} />, label: 'Network', hint: 'Network profiles and linked entities' },
         { to: '/team', icon: <UserCog size={18} />, label: 'Team', hint: 'Team management and operator coverage' },
         { to: '/settings', icon: <Settings size={18} />, label: 'Settings', hint: 'System preferences and access control' },
 
@@ -270,7 +270,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         showSyncProgress ? 'opacity-100' : 'opacity-0'
       )}>
         <div
-          className="h-full bg-emerald-500 transition-[width] duration-200 ease-out"
+          className="h-full bg-stone-800 dark:bg-stone-200 transition-[width] duration-200 ease-out"
           style={{ width: `${Math.max(4, Math.min(100, loadingProgress))}%` }}
         />
       </div>
