@@ -43,6 +43,9 @@ export interface Entity {
   collaboration_id?: string;
   referred_by_entity_id?: string;
   referring_collaboration_id?: string;
+  total?: number;
+  total_net?: number;
+  last_active_at?: string;
   tags?: string[];
   created_at?: string;
   updated_at?: string;
@@ -56,6 +59,7 @@ export interface Activity {
   date: string;
   status: 'active' | 'completed' | 'archived';
   channel_label?: string;
+  location?: string;
   assigned_user_id?: string;
   start_time?: string;
   end_time?: string;
@@ -90,7 +94,9 @@ export interface TeamMember {
   name: string;
   staff_role: string;
   role?: string; 
+  status?: 'active' | 'inactive';
   user_id?: string;
+  teamMember_id?: string;
   arrangement_type?: 'hourly' | 'fixed' | 'percentage';
   overhead_weight?: number;
   service_rate?: number;
