@@ -15,6 +15,7 @@ import IdentityBadge from './IdentityBadge';
 import { preloadRoute } from '../lib/routePreloaders';
 import { ChevronDown, Globe } from 'lucide-react';
 import EntitiesIcon from './icons/EntitiesIcon';
+import { getRoleLabel } from '../lib/labels';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { theme, toggleTheme } = useTheme();
@@ -68,7 +69,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const visibleNavGroups = canAccessAdminUi ? adminNavGroups : operatorNavGroups;
 
   const showSyncProgress = loading || loadingProgress > 0;
-  const roleLabel = isClusterAdmin ? 'Cluster Admin' : role === 'admin' ? 'Org Admin' : role === 'operator' ? 'Operator' : 'Viewer';
+  const roleLabel = isClusterAdmin ? getRoleLabel('cluster_admin') : getRoleLabel(role);
   const roleSummary = `Activities: ${canOperateLog ? 'Yes' : 'No'} • Value: ${canManageImpact ? 'Yes' : 'No'} • Align: ${canAlign ? 'Yes' : 'No'}`;
 
   const mobileRoleBadgeClass = role === 'admin'
@@ -315,7 +316,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                           id={org.id}
                           name={org.name}
                           tag={org.tag}
-                          slug={org.slug}
+                          showShortId={false}
+                          hideCopy={true}
                         />
                         {org.id === activeOrgId && <div className="w-1 h-1 rounded-full bg-emerald-500" />}
                       </button>
@@ -442,7 +444,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                             id={org.id}
                             name={org.name}
                             tag={org.tag}
-                            slug={org.slug}
+                            showShortId={false}
                             hideCopy={true}
                           />
                         </button>
