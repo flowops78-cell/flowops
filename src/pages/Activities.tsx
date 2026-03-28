@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useData } from '../context/DataContext';
-import { Plus, Calendar, ChevronRight, Smartphone, Clock, Trash2, Loader2, History } from 'lucide-react';
+import { Plus, Calendar, ChevronRight, Clock, Trash2, Loader2, History } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { APP_MIN_DATE, cn, formatValue, formatDate } from '../lib/utils';
 import { useNotification } from '../context/NotificationContext';
@@ -30,35 +30,14 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
   const { tx } = useLabels();
   const [isCreating, setIsCreating] = useState(false);
   const [isSavingActivity, setIsSavingActivity] = useState(false);
-  const [saveActivityProgress, setSaveActivityProgress] = useState(0);
   const [deletingActivityId, setDeletingActivityId] = useState<string | null>(null);
   const [isArchivedSectionExpanded, setIsArchivedSectionExpanded] = useState(false);
-  const saveActivityProgressTimerRef = useRef<number | null>(null);
-  const saveActivityProgressResetTimerRef = useRef<number | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   
   // New Activity Form
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [startTime, setStartTime] = useState(new Date().toTimeString().slice(0, 5));
   const [activityName, setActivityName] = useState('');
 
-  // New Fields
-  const [channel, setChannel] = useState('Channel 1');
-
-  const clearSaveActivityProgressTimers = () => {
-    if (saveActivityProgressTimerRef.current !== null) {
-      window.clearInterval(saveActivityProgressTimerRef.current);
-      saveActivityProgressTimerRef.current = null;
-    }
-    if (saveActivityProgressResetTimerRef.current !== null) {
-      window.clearTimeout(saveActivityProgressResetTimerRef.current);
-      saveActivityProgressResetTimerRef.current = null;
-    }
-  };
-
-  useEffect(() => () => {
-    clearSaveActivityProgressTimers();
-  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -91,15 +70,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
       return;
     }
 
-    let created = false;
-    clearSaveActivityProgressTimers();
     setIsSavingActivity(true);
-    let progress = 8;
-    setSaveActivityProgress(progress);
-    saveActivityProgressTimerRef.current = window.setInterval(() => {
-      progress = Math.min(progress + (progress < 70 ? 10 : progress < 90 ? 4 : 1), 92);
-      setSaveActivityProgress(progress);
-    }, 120);
 
     try {
       await addActivity({
@@ -109,31 +80,18 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
         status: 'active',
         assigned_user_id: user?.id,
         activity_category: 'Standard',
-        channel,
         org_code: undefined,
       });
-      created = true;
-      clearSaveActivityProgressTimers();
-      setSaveActivityProgress(100);
       // Reset form
       setDate(new Date().toISOString().split('T')[0]);
       setStartTime(new Date().toTimeString().slice(0, 5));
       setActivityName('');
-      setChannel('Channel 1');
+      setIsCreating(false);
       notify({ type: 'success', message: 'Activity created successfully.' });
     } catch (error: any) {
-      clearSaveActivityProgressTimers();
-      setSaveActivityProgress(100);
       notify({ type: 'error', message: error?.message || 'Unable to create activity.' });
     } finally {
-      saveActivityProgressResetTimerRef.current = window.setTimeout(() => {
-        setIsSavingActivity(false);
-        setSaveActivityProgress(0);
-        if (created) {
-          setIsCreating(false);
-        }
-        saveActivityProgressResetTimerRef.current = null;
-      }, 360);
+      setIsSavingActivity(false);
     }
   };
 
@@ -217,10 +175,6 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               )}
 
               <div className="flex flex-wrap gap-x-4 gap-y-1 mt-1">
-                <div className="flex items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400">
-                  <Smartphone size={12} />
-                  {activity.channel_label || 'Unknown'}
-                </div>
                 <div className="flex items-center gap-1.5 text-xs text-stone-500 dark:text-stone-400">
                   <Clock size={12} />
                   {activity.start_time
@@ -371,33 +325,9 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               />
             </div>
 
-            {/* Channel */}
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-stone-500 dark:text-stone-400">Channel</label>
-              <select 
-                className="control-input"
-                value={channel}
-                onChange={e => setChannel(e.target.value)}
-              >
-                <option value="Channel 1">Channel 1</option>
-                <option value="Channel 2">Channel 2</option>
-                <option value="Channel 3">Channel 3</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-
           </div>
 
           <div className="flex justify-end gap-2">
-            {saveActivityProgress > 0 && (
-              <div className="w-full mr-auto max-w-sm">
-                <LoadingLine
-                  compact
-                  progress={saveActivityProgress}
-                  label={tx('Saving activity...')}
-                />
-              </div>
-            )}
             <button 
               type="button" 
               onClick={() => setIsCreating(false)}
@@ -411,7 +341,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               disabled={isSavingActivity}
               className="action-btn-primary"
             >
-              <Plus size={16} />
+              {isSavingActivity ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
               {isSavingActivity ? tx('Saving...') : tx('Create Activity')}
             </button>
           </div>
