@@ -116,6 +116,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [activityLogs, setActivityLogs] = useState<OperatorActivity[]>([]);
   const [availableOrgs, setAvailableOrgs] = useState<Record<string, Organization>>({});
 
+  // In-flight deduplication: prevents double-submit from rapid clicks
+  const inflightRef = React.useRef<Set<string>>(new Set());
+
   const [loading, setLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(() => {
@@ -429,88 +432,159 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return activeOrgId;
   };
 
-  // Actions
+  // ─── Targeted re-fetchers ────────────────────────────────────────────────
+  // Called instead of full fetchData() after record-affecting mutations.
+  // Only fetches the 2 tables whose data is computed/aggregated by the DB.
+  const refreshRecordsAndBalances = async (orgId: string) => {
+    if (!supabase) return;
+    const [rRes, ebRes] = await Promise.all([
+      supabase.from('records').select('*').eq('org_id', orgId).order('created_at', { ascending: false }),
+      supabase.from('entity_balances').select('*').eq('org_id', orgId),
+    ]);
+    if (rRes.data) setRecords(rRes.data);
+    if (ebRes.data) {
+      const map = new Map<string, EntityBalance>();
+      (ebRes.data as EntityBalance[]).forEach(r => map.set(r.id, r));
+      setEntityBalances(map);
+    }
+  };
+
+  const refreshActivityLogs = async (orgId: string) => {
+    if (!supabase) return;
+    const { data } = await supabase
+      .from('operator_activities')
+      .select('*')
+      .eq('org_id', orgId)
+      .order('started_at', { ascending: false });
+    if (data) {
+      setActivityLogs(data.map((item: any) => ({
+        ...item,
+        teamMember_id: item.actor_user_id,
+        start_time: item.started_at,
+        end_time: item.ended_at,
+        duration_hours: item.duration_seconds ? item.duration_seconds / 3600 : 0,
+        status: item.is_active ? 'active' : 'completed',
+      })));
+    }
+  };
+
+  // ─── In-flight guard ─────────────────────────────────────────────────────
+  // Wraps an async operation so that concurrent calls with the same key
+  // are rejected instantly (prevents double-submit duplicates).
+  const withInflight = <T,>(key: string, fn: () => Promise<T>): Promise<T> => {
+    if (inflightRef.current.has(key)) {
+      return Promise.reject(new Error('Operation already in progress — please wait.'));
+    }
+    inflightRef.current.add(key);
+    return fn().finally(() => { inflightRef.current.delete(key); });
+  };
+
+  // ─── Entity mutations (optimistic local update — 1 DB call, 0 refetch) ──
   const addEntity = async (data: any) => {
     const orgId = requireOrgScope();
-    const { data: newEntity, error } = await supabase!
-      .from('entities')
-      .insert([{ 
-        org_id: orgId,
-        name: data.name,
-        collaboration_id: data.collaboration_id,
-        referred_by_entity_id: data.referred_by_entity_id,
-        referring_collaboration_id: data.referring_collaboration_id,
-      }])
-      .select('id')
-      .single();
-    if (error) throw error;
-    await fetchData();
-    return newEntity.id;
+    const key = `addEntity:${orgId}:${String(data.name).toLowerCase()}`;
+    return withInflight(key, async () => {
+      const { data: row, error } = await supabase!
+        .from('entities')
+        .insert([{
+          org_id: orgId,
+          name: data.name,
+          collaboration_id: data.collaboration_id,
+          referred_by_entity_id: data.referred_by_entity_id,
+          referring_collaboration_id: data.referring_collaboration_id,
+        }])
+        .select('*')
+        .single();
+      if (error) throw error;
+      setEntities(prev => [...prev, row]);
+      return row.id as string;
+    });
   };
 
   const updateEntity = async (entity: any) => {
-    const { error } = await supabase!.from('entities').update({
-      name: entity.name,
-      collaboration_id: entity.collaboration_id,
-      referred_by_entity_id: entity.referred_by_entity_id,
-      referring_collaboration_id: entity.referring_collaboration_id,
-      // total_units intentionally omitted — column is locked by DB trigger;
-      // computed net is derived from records (entity_balances view)
-    }).eq('id', entity.id);
-    if (error) throw error;
-    await fetchData();
+    return withInflight(`updateEntity:${entity.id}`, async () => {
+      const { data: row, error } = await supabase!
+        .from('entities')
+        .update({
+          name: entity.name,
+          collaboration_id: entity.collaboration_id,
+          referred_by_entity_id: entity.referred_by_entity_id,
+          referring_collaboration_id: entity.referring_collaboration_id,
+        })
+        .eq('id', entity.id)
+        .select('*')
+        .single();
+      if (error) throw error;
+      if (row) setEntities(prev => prev.map(e => e.id === entity.id ? row : e));
+    });
   };
 
   const deleteEntity = async (id: string) => {
-    const { error } = await supabase!.from('entities').delete().eq('id', id);
-    if (error) throw error;
-    await fetchData();
+    return withInflight(`deleteEntity:${id}`, async () => {
+      const orgId = requireOrgScope();
+      const { error } = await supabase!.from('entities').delete().eq('id', id);
+      if (error) throw error;
+      setEntities(prev => prev.filter(e => e.id !== id));
+      await refreshRecordsAndBalances(orgId);
+    });
   };
 
+  // ─── Activity mutations (optimistic local update) ─────────────────────────
   const addActivity = async (data: any) => {
     const orgId = requireOrgScope();
-    const { data: newActivity, error } = await supabase!
-      .from('activities')
-      .insert([{ 
-        org_id: orgId,
-        label: data.label || data.name, // Support both label and name
-        date: data.date,
-        status: data.status || 'active',
-        channel_label: data.channel_label || data.channel,
-        assigned_user_id: data.assigned_user_id
-      }])
-      .select('id')
-      .single();
-    if (error) throw error;
-    await fetchData();
-    return newActivity.id;
+    const key = `addActivity:${orgId}:${String(data.label ?? data.name).toLowerCase()}:${data.date}`;
+    return withInflight(key, async () => {
+      const { data: row, error } = await supabase!
+        .from('activities')
+        .insert([{
+          org_id: orgId,
+          label: data.label || data.name,
+          date: data.date,
+          status: data.status || 'active',
+          channel_label: data.channel_label || data.channel,
+          assigned_user_id: data.assigned_user_id,
+        }])
+        .select('*')
+        .single();
+      if (error) throw error;
+      setActivities(prev => [row, ...prev]);
+      return row.id as string;
+    });
   };
 
   const updateActivity = async (activity: any) => {
-    const updates: any = {
-      label: activity.label || activity.name,
-      date: activity.date,
-      status: activity.status || 'active',
-      channel_label: activity.channel_label || activity.channel,
-      assigned_user_id: activity.assigned_user_id
-    };
+    return withInflight(`updateActivity:${activity.id}`, async () => {
+      const updates: any = {
+        label: activity.label || activity.name,
+        date: activity.date,
+        status: activity.status || 'active',
+        channel_label: activity.channel_label || activity.channel,
+        assigned_user_id: activity.assigned_user_id,
+      };
+      if (activity.start_time) updates.start_time = activity.start_time;
+      if (activity.operational_weight !== undefined) updates.operational_weight = activity.operational_weight;
+      if (activity.channel_weight !== undefined) updates.channel_weight = activity.channel_weight;
+      if (activity.activity_mode) updates.activity_mode = activity.activity_mode;
 
-    if (activity.start_time) updates.start_time = activity.start_time;
-    if (activity.operational_weight !== undefined) updates.operational_weight = activity.operational_weight;
-    if (activity.channel_weight !== undefined) updates.channel_weight = activity.channel_weight;
-    if (activity.activity_mode) updates.activity_mode = activity.activity_mode;
-
-    const { error } = await supabase!.from('activities').update(updates).eq('id', activity.id);
-    if (error) throw error;
-    await fetchData();
+      const { data: row, error } = await supabase!
+        .from('activities').update(updates).eq('id', activity.id).select('*').single();
+      if (error) throw error;
+      if (row) setActivities(prev => prev.map(a => a.id === activity.id ? row : a));
+    });
   };
 
   const deleteActivity = async (id: string) => {
-    const { error } = await supabase!.from('activities').delete().eq('id', id);
-    if (error) throw error;
-    await fetchData();
+    return withInflight(`deleteActivity:${id}`, async () => {
+      const orgId = requireOrgScope();
+      const { error } = await supabase!.from('activities').delete().eq('id', id);
+      if (error) throw error;
+      setActivities(prev => prev.filter(a => a.id !== id));
+      // Records referencing this activity still exist — refresh to reflect reality
+      await refreshRecordsAndBalances(orgId);
+    });
   };
 
+  // ─── Record mutations (targeted 2-query refresh — records + balances) ─────
   const addRecord = async (data: any) => {
     const orgId = requireOrgScope();
     const activityId = data.activity_id || await ensureWorkspaceLedgerActivityId();
@@ -519,274 +593,290 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!data.entity_id || !data.target_entity_id) {
         throw new Error('Transfers must include both source and destination entities.');
       }
-
       if (data.entity_id === data.target_entity_id) {
         throw new Error('Transfers must move between different entities.');
       }
+      const tgId = data.transfer_group_id || crypto.randomUUID();
+      const key = `transfer:${orgId}:${data.entity_id}:${data.target_entity_id}:${data.unit_amount}:${tgId}`;
+      return withInflight(key, async () => {
+        await insertTransferPair({
+          org_id: orgId,
+          activity_id: activityId,
+          from_entity_id: data.entity_id,
+          to_entity_id: data.target_entity_id,
+          unit_amount: data.unit_amount,
+          status: data.status || 'pending',
+          transfer_group_id: tgId,
+          channel_label: data.channel_label,
+          source_note: data.notes || 'Transfer out',
+          target_note: data.target_notes || 'Transfer in',
+        });
+        await refreshRecordsAndBalances(orgId);
+      });
+    }
 
-      await insertTransferPair({
+    const key = `addRecord:${orgId}:${data.entity_id}:${data.direction}:${data.unit_amount}:${activityId}`;
+    return withInflight(key, async () => {
+      const recordData: any = {
         org_id: orgId,
         activity_id: activityId,
-        from_entity_id: data.entity_id,
-        to_entity_id: data.target_entity_id,
-        unit_amount: data.unit_amount,
+        entity_id: data.entity_id,
+        direction: data.direction,
         status: data.status || 'pending',
+        unit_amount: data.unit_amount,
         transfer_group_id: data.transfer_group_id,
-        channel_label: data.channel_label,
-        source_note: data.notes || 'Transfer out',
-        target_note: data.target_notes || 'Transfer in',
-      });
-      await fetchData();
-      return;
-    }
-
-    const recordData: any = { 
-      org_id: orgId,
-      activity_id: activityId,
-      entity_id: data.entity_id,
-      direction: data.direction,
-      status: data.status || 'pending',
-      unit_amount: data.unit_amount,
-      transfer_group_id: data.transfer_group_id,
-      notes: data.notes
-    };
-    
-    // channel_label is new, omit if missing to avoid 400 if migration not applied
-    if (data.channel_label) {
-      recordData.channel_label = data.channel_label;
-    }
-
-    const { error } = await supabase!.from('records').insert([recordData]);
-    if (error) throw error;
-    await fetchData();
+        notes: data.notes,
+      };
+      if (data.channel_label) recordData.channel_label = data.channel_label;
+      const { error } = await supabase!.from('records').insert([recordData]);
+      if (error) throw error;
+      await refreshRecordsAndBalances(orgId);
+    });
   };
 
   const updateRecord = async (record: any) => {
-    const { error } = await supabase!.from('records').update({
-      activity_id: record.activity_id,
-      entity_id: record.entity_id,
-      direction: record.direction,
-      status: record.status,
-      unit_amount: record.unit_amount,
-      transfer_group_id: record.transfer_group_id,
-      notes: record.notes
-    }).eq('id', record.id);
-    if (error) throw error;
-    await fetchData();
+    const orgId = requireOrgScope();
+    return withInflight(`updateRecord:${record.id}`, async () => {
+      const { error } = await supabase!.from('records').update({
+        activity_id: record.activity_id,
+        entity_id: record.entity_id,
+        direction: record.direction,
+        status: record.status,
+        unit_amount: record.unit_amount,
+        transfer_group_id: record.transfer_group_id,
+        notes: record.notes,
+      }).eq('id', record.id);
+      if (error) throw error;
+      await refreshRecordsAndBalances(orgId);
+    });
   };
 
   const deleteRecord = async (id: string) => {
-    const { error } = await supabase!.from('records').delete().eq('id', id);
-    if (error) throw error;
-    await fetchData();
+    const orgId = requireOrgScope();
+    return withInflight(`deleteRecord:${id}`, async () => {
+      const { error } = await supabase!.from('records').delete().eq('id', id);
+      if (error) throw error;
+      await refreshRecordsAndBalances(orgId);
+    });
   };
 
+  // ─── Operator activity log mutations ─────────────────────────────────────
   const addActivityLog = async (data: any) => {
     const orgId = requireOrgScope();
-    const { data: { user } } = await supabase!.auth.getUser();
-    if (!user) throw new Error("Not authenticated");
-
-    const { error } = await supabase!
-      .from('operator_activities')
-      .insert([{ 
-        org_id: orgId,
-        actor_user_id: user.id,
-        actor_role: data.actor_role || 'operator',
-        actor_label: data.actor_label || user.email,
-        started_at: new Date().toISOString(),
-        last_active_at: new Date().toISOString(),
-        is_active: true
-      }]);
-    if (error) throw error;
-    await fetchData();
+    const key = `addLog:${orgId}:${user?.id}`;
+    return withInflight(key, async () => {
+      const { data: { user: authUser } } = await supabase!.auth.getUser();
+      if (!authUser) throw new Error('Not authenticated');
+      const { error } = await supabase!
+        .from('operator_activities')
+        .insert([{
+          org_id: orgId,
+          actor_user_id: authUser.id,
+          actor_role: data.actor_role || 'operator',
+          actor_label: data.actor_label || authUser.email,
+          started_at: new Date().toISOString(),
+          last_active_at: new Date().toISOString(),
+          is_active: true,
+        }]);
+      if (error) throw error;
+      await refreshActivityLogs(orgId);
+    });
   };
 
   const endActivityLog = async (id: string, endedAt: string, duration: number, _pay?: number) => {
-    const { error } = await supabase!
-      .from('operator_activities')
-      .update({ 
-        ended_at: endedAt, 
-        duration_seconds: Math.floor(duration * 3600), 
-        is_active: false 
-      })
-      .eq('id', id);
-    if (error) throw error;
-    await fetchData();
+    const orgId = requireOrgScope();
+    return withInflight(`endLog:${id}`, async () => {
+      const { error } = await supabase!
+        .from('operator_activities')
+        .update({ ended_at: endedAt, duration_seconds: Math.floor(duration * 3600), is_active: false })
+        .eq('id', id);
+      if (error) throw error;
+      await refreshActivityLogs(orgId);
+    });
   };
 
+  // ─── Adjustment / channel record mutations ────────────────────────────────
   const requestAdjustment = async (data: any) => {
     const orgId = requireOrgScope();
-    const recordData: any = {
-      org_id: orgId,
-      entity_id: data.entity_id,
-      unit_amount: data.amount,
-      direction: data.type === 'input' ? 'increase' : 'decrease',
-      status: 'deferred',
-      notes: data.notes || 'Adjustment request',
-      // Forward activity_id when provided (callers inside an activity context pass this)
-      activity_id: data.activity_id ?? null,
-    };
-
-    if (data.channel_label) {
-      recordData.channel_label = data.channel_label;
-    }
-
-    const { error } = await supabase!.from('records').insert([recordData]);
-    if (error) throw error;
-    await fetchData();
+    const key = `adjust:${orgId}:${data.entity_id}:${data.type}:${data.amount}`;
+    return withInflight(key, async () => {
+      const recordData: any = {
+        org_id: orgId,
+        entity_id: data.entity_id,
+        unit_amount: data.amount,
+        direction: data.type === 'input' ? 'increase' : 'decrease',
+        status: 'deferred',
+        notes: data.notes || 'Adjustment request',
+        activity_id: data.activity_id ?? null,
+      };
+      if (data.channel_label) recordData.channel_label = data.channel_label;
+      const { error } = await supabase!.from('records').insert([recordData]);
+      if (error) throw error;
+      await refreshRecordsAndBalances(orgId);
+    });
   };
 
   const addChannelRecord = async (data: any) => {
     const orgId = requireOrgScope();
     const activityId = await ensureWorkspaceLedgerActivityId();
-    const { error } = await supabase!
-      .from('records')
-      .insert([{
-        org_id: orgId,
-        activity_id: activityId,
-        direction: data.type === 'increment' ? 'increase' : 'decrease',
-        status: data.status || 'applied',
-        unit_amount: data.amount,
-        transfer_group_id: data.transfer_group_id,
-        channel_label: data.method,
-        notes: data.notes || `Channel entry: ${data.method}`,
-      }]);
-    if (error) throw error;
-    await fetchData();
+    const key = `channelRecord:${orgId}:${data.type}:${data.amount}:${data.method}`;
+    return withInflight(key, async () => {
+      const { error } = await supabase!
+        .from('records')
+        .insert([{
+          org_id: orgId,
+          activity_id: activityId,
+          direction: data.type === 'increment' ? 'increase' : 'decrease',
+          status: data.status || 'applied',
+          unit_amount: data.amount,
+          transfer_group_id: data.transfer_group_id,
+          channel_label: data.method,
+          notes: data.notes || `Channel entry: ${data.method}`,
+        }]);
+      if (error) throw error;
+      await refreshRecordsAndBalances(orgId);
+    });
   };
 
   const transferUnits = async (data: any) => {
     const orgId = requireOrgScope();
     const activityId = data.activity_id || await ensureWorkspaceLedgerActivityId();
-    await insertTransferPair({
-      org_id: orgId,
-      activity_id: activityId,
-      from_entity_id: data.from_entity_id,
-      to_entity_id: data.to_entity_id,
-      unit_amount: data.amount,
-      status: data.status || 'applied',
-      transfer_group_id: data.transfer_group_id,
-      channel_label: data.channel_label,
-      source_note: data.from_note || `Transfer to ${data.to_entity_name || data.to_entity_id}`,
-      target_note: data.to_note || `Transfer from ${data.from_entity_name || data.from_entity_id}`,
+    const tgId = data.transfer_group_id || crypto.randomUUID();
+    const key = `transfer:${orgId}:${data.from_entity_id}:${data.to_entity_id}:${data.amount}:${tgId}`;
+    return withInflight(key, async () => {
+      await insertTransferPair({
+        org_id: orgId,
+        activity_id: activityId,
+        from_entity_id: data.from_entity_id,
+        to_entity_id: data.to_entity_id,
+        unit_amount: data.amount,
+        status: data.status || 'applied',
+        transfer_group_id: tgId,
+        channel_label: data.channel_label,
+        source_note: data.from_note || `Transfer to ${data.to_entity_name || data.to_entity_id}`,
+        target_note: data.to_note || `Transfer from ${data.from_entity_name || data.from_entity_id}`,
+      });
+      await refreshRecordsAndBalances(orgId);
     });
-    await fetchData();
   };
 
+  // ─── Team member mutations (optimistic local update) ─────────────────────
   const addTeamMember = async (data: any) => {
     const orgId = requireOrgScope();
-    const { error } = await supabase!
-      .from('team_members')
-      .insert([{ 
-        org_id: orgId,
-        name: data.name,
-        staff_role: data.role,
-        user_id: data.user_id || null // only include if it's a valid user_id
-      }]);
-    if (error) throw error;
-    await fetchData();
+    const key = `addMember:${orgId}:${String(data.name).toLowerCase()}`;
+    return withInflight(key, async () => {
+      const { data: row, error } = await supabase!
+        .from('team_members')
+        .insert([{ org_id: orgId, name: data.name, staff_role: data.role, user_id: data.user_id || null }])
+        .select('*')
+        .single();
+      if (error) throw error;
+      setTeamMembers(prev => [...prev, { ...row, role: row.staff_role }]);
+    });
   };
 
   const updateTeamMember = async (member: any) => {
-    const { error } = await supabase!
-      .from('team_members')
-      .update({ 
-        name: member.name,
-        staff_role: member.role || member.staff_role,
-        user_id: member.user_id
-      })
-      .eq('id', member.id);
-    if (error) throw error;
-    await fetchData();
+    return withInflight(`updateMember:${member.id}`, async () => {
+      const { data: row, error } = await supabase!
+        .from('team_members')
+        .update({ name: member.name, staff_role: member.role || member.staff_role, user_id: member.user_id })
+        .eq('id', member.id)
+        .select('*')
+        .single();
+      if (error) throw error;
+      if (row) setTeamMembers(prev => prev.map(m => m.id === member.id ? { ...row, role: row.staff_role } : m));
+    });
   };
 
   const deleteTeamMember = async (id: string) => {
-    const { error } = await supabase!
-      .from('team_members')
-      .delete()
-      .eq('id', id);
-    if (error) throw error;
-    await fetchData();
+    return withInflight(`deleteMember:${id}`, async () => {
+      const { error } = await supabase!.from('team_members').delete().eq('id', id);
+      if (error) throw error;
+      setTeamMembers(prev => prev.filter(m => m.id !== id));
+    });
   };
 
+  // ─── Collaboration mutations (optimistic local update) ────────────────────
   const addCollaboration = async (data: any) => {
     const orgId = requireOrgScope();
-    const { data: newCollab, error } = await supabase!
-      .from('collaborations')
-      .insert([{ 
-        org_id: orgId,
-        name: data.name,
-        collaboration_type: data.collaboration_type || 'channel',
-        participation_factor: data.participation_factor ?? 0,
-        overhead_weight_pct: data.overhead_weight_pct ?? 0,
-        rules: data.rules || {}
-      }])
-      .select('id')
-      .single();
-    if (error) throw error;
-    await fetchData();
-    return newCollab.id;
+    const key = `addCollab:${orgId}:${String(data.name).toLowerCase()}`;
+    return withInflight(key, async () => {
+      const { data: row, error } = await supabase!
+        .from('collaborations')
+        .insert([{
+          org_id: orgId,
+          name: data.name,
+          collaboration_type: data.collaboration_type || 'channel',
+          participation_factor: data.participation_factor ?? 0,
+          overhead_weight_pct: data.overhead_weight_pct ?? 0,
+          rules: data.rules || {},
+        }])
+        .select('*')
+        .single();
+      if (error) throw error;
+      setCollaborations(prev => [...prev, row]);
+      return row.id as string;
+    });
   };
 
   const updateCollaboration = async (collab: any) => {
-    const { error } = await supabase!
-      .from('collaborations')
-      .update({ 
-        name: collab.name,
-        collaboration_type: collab.collaboration_type,
-        participation_factor: collab.participation_factor,
-        overhead_weight_pct: collab.overhead_weight_pct,
-        rules: collab.rules
-      })
-      .eq('id', collab.id);
-    if (error) throw error;
-    await fetchData();
+    return withInflight(`updateCollab:${collab.id}`, async () => {
+      const { data: row, error } = await supabase!
+        .from('collaborations')
+        .update({ name: collab.name, collaboration_type: collab.collaboration_type,
+          participation_factor: collab.participation_factor, overhead_weight_pct: collab.overhead_weight_pct,
+          rules: collab.rules })
+        .eq('id', collab.id)
+        .select('*')
+        .single();
+      if (error) throw error;
+      if (row) setCollaborations(prev => prev.map(c => c.id === collab.id ? row : c));
+    });
   };
 
   const deleteCollaboration = async (id: string) => {
-    const { error } = await supabase!
-      .from('collaborations')
-      .delete()
-      .eq('id', id);
-    if (error) throw error;
-    await fetchData();
+    return withInflight(`deleteCollab:${id}`, async () => {
+      const { error } = await supabase!.from('collaborations').delete().eq('id', id);
+      if (error) throw error;
+      setCollaborations(prev => prev.filter(c => c.id !== id));
+    });
   };
 
+  // ─── Channel (transfer account) mutations (optimistic local update) ───────
   const addTransferAccount = async (data: any) => {
     const orgId = requireOrgScope();
-    const { error } = await supabase!
-      .from('channels')
-      .insert([{ 
-        org_id: orgId,
-        name: data.name,
-        notes: data.category, // Store category in notes
-        status: 'active'
-      }]);
-    if (error) throw error;
-    await fetchData();
+    const key = `addChannel:${orgId}:${String(data.name).toLowerCase()}`;
+    return withInflight(key, async () => {
+      const { data: row, error } = await supabase!
+        .from('channels')
+        .insert([{ org_id: orgId, name: data.name, notes: data.category, status: 'active' }])
+        .select('*')
+        .single();
+      if (error) throw error;
+      setChannels(prev => [...prev, { ...row, is_active: row.status === 'active' }]);
+    });
   };
 
   const updateTransferAccount = async (data: any) => {
-    const { error } = await supabase!
-      .from('channels')
-      .update({ 
-        name: data.name,
-        notes: data.category
-      })
-      .eq('id', data.id);
-    if (error) throw error;
-    await fetchData();
+    return withInflight(`updateChannel:${data.id}`, async () => {
+      const { data: row, error } = await supabase!
+        .from('channels')
+        .update({ name: data.name, notes: data.category })
+        .eq('id', data.id)
+        .select('*')
+        .single();
+      if (error) throw error;
+      if (row) setChannels(prev => prev.map(c => c.id === data.id ? { ...row, is_active: row.status === 'active' } : c));
+    });
   };
 
   const deleteTransferAccount = async (id: string) => {
-    const { error } = await supabase!
-      .from('channels')
-      .delete()
-      .eq('id', id);
-    if (error) throw error;
-    await fetchData();
+    return withInflight(`deleteChannel:${id}`, async () => {
+      const { error } = await supabase!.from('channels').delete().eq('id', id);
+      if (error) throw error;
+      setChannels(prev => prev.filter(c => c.id !== id));
+    });
   };
-
   const { refreshAuthority } = useAppRole();
 
   const switchOrg = async (orgId: string) => {
