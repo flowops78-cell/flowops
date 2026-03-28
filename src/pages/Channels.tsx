@@ -52,12 +52,12 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
   const channelEntries = useMemo(() =>
     records.filter(r => r.status === 'applied').map(r => {
-      const activity = activityMap.get(r.activity_id);
+      const activity = r.activity_id ? activityMap.get(r.activity_id) : undefined;
       return {
         ...r,
         date: r.created_at || '',
         amount: r.unit_amount || 0,
-        method: activity?.channel_label || r.notes || 'Activity',
+        method: r.channel_label || r.notes || activity?.channel_label || 'Activity',
       };
     }),
     [records, activityMap]
@@ -115,7 +115,24 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
        status: status === 'approved' ? 'deferred' : 'voided'
     });
   };
-  const transferChannelValues = async (_data: any) => {};
+  const transferChannelValues = async (data: any) => {
+    const transferGroupId = crypto.randomUUID();
+    await addChannelRecord({
+      type: 'decrement',
+      amount: data.amount,
+      method: data.from_method,
+      transfer_group_id: transferGroupId,
+      notes: `Transfer to ${data.to_method}`,
+    });
+    await addChannelRecord({
+      type: 'increment',
+      amount: data.amount,
+      method: data.to_method,
+      transfer_group_id: transferGroupId,
+      notes: `Transfer from ${data.from_method}`,
+    });
+    await refreshData();
+  };
   const recordSystemEvent = async (_data: any) => {};
   const location = useLocation();
   const navigate = useNavigate();
@@ -554,6 +571,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   const totalOutstanding = useMemo(() => {
     const unitAdjustmentTotals: Record<string, number> = {};
     adjustments.forEach(adjustment => {
+      if (!adjustment.entity_id) return;
       if (!unitAdjustmentTotals[adjustment.entity_id]) unitAdjustmentTotals[adjustment.entity_id] = 0;
       const multiplier = adjustment.type === 'input' ? 1 : -1;
       unitAdjustmentTotals[adjustment.entity_id] += adjustment.amount * multiplier;
@@ -601,6 +619,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   const settledAdjustmentActivityRecordIds = useMemo(() => {
     const unitTotals = new Map<string, number>();
     activeAdjustments.forEach(adjustment => {
+      if (!adjustment.entity_id) return;
       const current = unitTotals.get(adjustment.entity_id) || 0;
       const multiplier = adjustment.type === 'input' ? 1 : -1;
       const next = current + (adjustment.amount * multiplier);
@@ -611,7 +630,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
         .filter(([, total]) => Math.abs(total) < 0.01)
         .map(([unitId]) => unitId)
     );
-    return activeAdjustments.filter(adjustment => settledUnits.has(adjustment.entity_id)).map(adjustment => adjustment.id);
+    return activeAdjustments.filter(adjustment => adjustment.entity_id && settledUnits.has(adjustment.entity_id)).map(adjustment => adjustment.id);
   }, [activeAdjustments]);
 
   const pendingAdjustmentRequests = useMemo(
@@ -663,7 +682,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     return account ? `${label} • ${account}` : label;
   };
 
-  const isTransferActivityRecord = (record: any) => record.direction === 'transfer';
+  const isTransferActivityRecord = (record: any) => record.direction === 'transfer' || Boolean(record.transfer_group_id);
 
   const handleTotalCardClick = (base: string) => {
     recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -902,7 +921,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
         setRecordSaveState('idle');
         saveActivityRecordSuccessResetTimerRef.current = null;
       }, 2000);
-      notify({ type: 'success', message: 'ActivityRecord saved.' });
+      notify({ type: 'success', message: 'Record saved.' });
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to save record.' });
     } finally {
@@ -1068,7 +1087,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       entity_id: id,
       details: 'Channel record moved to archive list',
     });
-    notify({ type: 'success', message: 'ActivityRecord archived.' });
+    notify({ type: 'success', message: 'Record archived.' });
   };
 
   const handleUnarchiveChannelActivityRecord = (id: string) => {
@@ -1079,7 +1098,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       entity_id: id,
       details: 'Channel record restored from archive list',
     });
-    notify({ type: 'success', message: 'ActivityRecord restored from archive.' });
+    notify({ type: 'success', message: 'Record restored from archive.' });
   };
 
   const handleArchiveChannelByDateRange = () => {
@@ -1183,7 +1202,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       setSettleAccountBase('channel_account');
       setSettleAccountCustom('');
       setSettleAccountLabel('');
-      notify({ type: 'success', message: 'ActivityRecord settled.' });
+      notify({ type: 'success', message: 'Entry settled.' });
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Failed to settle record.' });
     } finally {
@@ -1263,8 +1282,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   return (
     <div className={cn(embedded ? 'space-y-6' : 'page-shell', 'w-full min-w-0 overflow-x-hidden')}>
       {!canOperateValue && (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-400 px-4 py-2 text-sm">
-          {tx('Read-only mode: only admin can post live deferred records or approve pending ones.')}
+        <div className="section-card border-amber-200 dark:border-amber-800 bg-amber-50/70 dark:bg-amber-900/20 px-4 py-2.5 text-sm text-amber-700 dark:text-amber-400">
+          {tx('View-only — only admins can post or approve records.')}
         </div>
       )}
       {!embedded ? (
@@ -1460,19 +1479,19 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                       type="button"
                       onClick={() => { setTransType('increment'); setIsAddingActivityRecord(true); recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
                       className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50"
-                      title="ActivityRecord Inflow (I)"
+                      title="Record Inflow (I)"
                     >
                       <Plus size={13} />
-                      ActivityRecord Inflow
+                      Inflow
                     </button>
                     <button
                       type="button"
                       onClick={() => { setTransType('decrement'); setIsAddingActivityRecord(true); recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
                       className="inline-flex items-center gap-1.5 rounded-md border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/30 px-2.5 py-1.5 text-xs font-medium text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50"
-                      title="ActivityRecord Outflow (O)"
+                      title="Record Outflow (O)"
                     >
                       <ArrowDownLeft size={13} />
-                      ActivityRecord Outflow
+                      Outflow
                     </button>
                   </>
                 )}
@@ -1482,7 +1501,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
                     {
                       key: 'transfer-internal-channel',
-                      label: 'Internal -> Channel',
+                      label: 'Move to Channel',
                       onClick: () => {
                         setIsTransferringToChannel(true);
                         if (!transferFromMethod && p2pChannelOptions.length > 0) {
@@ -1591,8 +1610,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     onChange={e => setTransType(e.target.value as any)}
                     disabled={!canOperateValue || isSavingActivityRecord}
                   >
-                    <option value="increment">{tx('ActivityRecord Inflow')} (+)</option>
-                    <option value="decrement">{tx('ActivityRecord Outflow')} (-)</option>
+                    <option value="increment">{tx('Inflow')} (+)</option>
+                    <option value="decrement">{tx('Outflow')} (-)</option>
                   </select>
                   <select 
                     className="control-input"
@@ -1668,7 +1687,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     disabled={!canOperateValue || isSavingActivityRecord}
                     className="px-3 py-1.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-md text-xs hover:bg-stone-800 dark:hover:bg-stone-200 disabled:opacity-70 disabled:cursor-not-allowed"
                   >
-                    {isSavingActivityRecord ? tx('Saving…') : recordSaveState === 'saved' ? tx('Saved ✓') : tx('Save ActivityRecord')}
+                    {isSavingActivityRecord ? tx('Saving…') : recordSaveState === 'saved' ? tx('Saved ✓') : tx('Save Record')}
                   </button>
                 </div>
                 {isSavingActivityRecord && (
@@ -1692,7 +1711,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                   <input
                     list="p2p-source-account-suggestions"
                     className="control-input"
-                    placeholder="From TransferAmount Channel (type to search)"
+                    placeholder="From Channel (type to search)"
                     value={transferFromQuery}
                     onChange={e => {
                       const nextValue = e.target.value;
@@ -1762,7 +1781,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     disabled={!canOperateValue || isSavingTransfer || !transferFromMethod || (Number.isFinite(parseFloat(transferAmount)) && parseFloat(transferAmount) > (channelTotals[transferFromMethod] || 0))}
                     className="px-3 py-1.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-md text-xs hover:bg-stone-800 dark:hover:bg-stone-200 disabled:opacity-70 disabled:cursor-not-allowed"
                   >
-                    {isSavingTransfer ? 'Transferring…' : transferSaveState === 'saved' ? 'Transferred ✓' : 'TransferAmount to Account'}
+                    {isSavingTransfer ? 'Transferring…' : transferSaveState === 'saved' ? 'Transferred ✓' : 'Move to Account'}
                   </button>
                 </div>
 
@@ -1835,7 +1854,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
             {archivedChannelEntries.length > 0 && (
               <div className="mt-4 rounded-lg border border-stone-200 dark:border-stone-700 bg-stone-50/60 dark:bg-stone-800/40 p-3 md:hidden">
                 <div className="flex items-center justify-between gap-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">Archived ActivityRecords</h4>
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">Archived Records</h4>
                   <button
                     type="button"
                     onClick={() => setIsArchivedActivityRecordsExpanded(prev => !prev)}
@@ -1902,8 +1921,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                   <tr>
                     <th className="sticky-col px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Date</th>
                     <th className="px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Type</th>
-                    <th className="px-6 py-2.5 w-[170px] text-[11px] font-semibold uppercase tracking-wide">Channel</th>
-                    <th className="px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Account</th>
+                    <th className="px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Channel</th>
                     <th className="px-6 py-2.5 w-[150px] text-right text-[11px] font-semibold uppercase tracking-wide">Amount</th>
                     <th className="sticky-col-right px-6 py-2.5 w-[170px] text-right text-[11px] font-semibold uppercase tracking-wide">Actions</th>
                   </tr>
@@ -1935,9 +1953,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                           </span>
                         </div>
                       </td>
-                      <td className="px-6 py-2.5 text-stone-900 dark:text-stone-100">{formatMethodLabel(t.notes)}</td>
-                      <td className="px-6 py-2.5 text-stone-500 dark:text-stone-400">
-                      </td>
+                      <td className="px-6 py-2.5 text-stone-900 dark:text-stone-100">{formatMethodLabel(t.method ?? t.notes ?? '')}</td>
                       <td className={cn(
                         "px-6 py-2.5 text-right font-mono font-medium",
                         t.direction === 'increase' ? "amount-positive" : "amount-negative"
@@ -1951,7 +1967,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                               type="button"
                               onClick={() => handleArchiveChannelActivityRecord(t.id)}
                               className="action-btn-tertiary px-2 py-1 text-[11px] mr-1.5"
-                              title="Archive ActivityRecord"
+                              title="Archive"
                             >
                               Archive
                             </button>
@@ -1960,7 +1976,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                               onClick={() => { void handleDeleteChannelActivityRecord(t.id); }}
                               disabled={deletingChannelActivityRecordId === t.id}
                               className="inline-flex items-center justify-center p-1.5 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                              title={deletingChannelActivityRecordId === t.id ? 'Deleting…' : 'Delete ActivityRecord'}
+                              title={deletingChannelActivityRecordId === t.id ? 'Deleting…' : 'Delete'}
                             >
                               <Trash2 size={14} />
                             </button>
@@ -1971,7 +1987,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                   ))}
                   {filteredActiveChannelEntries.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="px-6 py-8 text-center text-stone-400">
+                      <td colSpan={5} className="px-6 py-8 text-center text-stone-400">
                         No records recorded.
                       </td>
                     </tr>
@@ -2040,7 +2056,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                                     onClick={() => { void handleDeleteChannelActivityRecord(t.id); }}
                                     disabled={deletingChannelActivityRecordId === t.id}
                                     className="inline-flex items-center justify-center p-1.5 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title={deletingChannelActivityRecordId === t.id ? 'Deleting…' : 'Delete ActivityRecord'}
+                                    title={deletingChannelActivityRecordId === t.id ? 'Deleting…' : 'Delete'}
                                   >
                                     <Trash2 size={14} />
                                   </button>
@@ -2051,7 +2067,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                         ))}
                         {filteredArchivedChannelEntries.length === 0 && (
                           <tr>
-                            <td colSpan={6} className="px-6 py-8 text-center text-stone-400">No archived records match current filters.</td>
+                            <td colSpan={5} className="px-6 py-8 text-center text-stone-400">No archived records match current filters.</td>
                           </tr>
                         )}
                       </tbody>
@@ -2168,8 +2184,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                       onChange={event => setAdjustmentTypeFilter(event.target.value as typeof adjustmentTypeFilter)}
                     >
                       <option value="all">All directions</option>
-                      <option value="input">Outflow</option>
-                      <option value="output">Inflow</option>
+                      <option value="input">Inflow</option>
+                      <option value="output">Outflow</option>
                     </select>
                   </div>
                 </div>
@@ -2248,7 +2264,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     disabled={!canOperateValue || isSavingAdjustment}
                     className="px-3 py-1.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-md text-xs hover:bg-stone-800 dark:hover:bg-stone-200 disabled:opacity-70 disabled:cursor-not-allowed"
                   >
-                    {isSavingAdjustment ? 'ActivityRecording…' : adjustmentSaveState === 'saved' ? 'ActivityRecorded ✓' : 'ActivityRecord ActivityRecord'}
+                    {isSavingAdjustment ? 'Saving…' : adjustmentSaveState === 'saved' ? 'Saved ✓' : 'Save Entry'}
                   </button>
                 </div>
                 {isSavingAdjustment && (
@@ -2259,7 +2275,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                         style={{ width: `${saveAdjustmentProgress}%` }}
                       />
                     </div>
-                    <div className="text-[11px] text-stone-500 dark:text-stone-400">ActivityRecording live deferred record… {Math.max(8, Math.round(saveAdjustmentProgress))}%</div>
+                    <div className="text-[11px] text-stone-500 dark:text-stone-400">Saving… {Math.max(8, Math.round(saveAdjustmentProgress))}%</div>
                   </div>
                 )}
               </form>
@@ -2330,7 +2346,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                               onClick={() => { setSettlingActivityRecordId(l.id); setSettleAccountBase('channel_account'); setSettleAccountLabel(''); }}
                               className="action-btn-tertiary px-2.5 py-1 text-xs text-emerald-700 dark:text-emerald-400"
                             >
-                              Settle ActivityRecord
+                              Settle
                             </button>
                           )}
                           <button
@@ -2501,7 +2517,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                                     onClick={() => { setSettlingActivityRecordId(l.id); setSettleAccountBase('channel_account'); setSettleAccountLabel(''); }}
                                     className="action-btn-tertiary px-2 py-1 text-[11px] mr-1.5 text-emerald-700 dark:text-emerald-400"
                                   >
-                                    Settle ActivityRecord
+                                    Settle
                                   </button>
                                   <button
                                     type="button"
@@ -2515,7 +2531,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                                     onClick={() => { void handleDeleteAdjustment(l.id); }}
                                     disabled={deletingAdjustmentId === l.id}
                                     className="inline-flex items-center justify-center p-1.5 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title={deletingAdjustmentId === l.id ? 'Removing…' : 'Remove ActivityRecord'}
+                                    title={deletingAdjustmentId === l.id ? 'Removing…' : 'Remove'}
                                   >
                                     <Trash2 size={14} />
                                   </button>
@@ -2561,7 +2577,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                       <thead className="sticky top-0 z-10 bg-stone-50 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-700">
                         <tr>
                           <th className="sticky-col px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Date</th>
-                          <th className="px-6 py-2.5 w-[220px] text-[11px] font-semibold uppercase tracking-wide">User</th>
+                          <th className="px-6 py-2.5 w-[220px] text-[11px] font-semibold uppercase tracking-wide">Entity</th>
                           <th className="px-6 py-2.5 w-[170px] text-[11px] font-semibold uppercase tracking-wide">Action</th>
                           <th className="px-6 py-2.5 w-[150px] text-right text-[11px] font-semibold uppercase tracking-wide">Amount</th>
                           <th className="sticky-col-right px-6 py-2.5 w-[170px] text-right text-[11px] font-semibold uppercase tracking-wide">Actions</th>
