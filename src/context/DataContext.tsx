@@ -1,6 +1,21 @@
 import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { Entity, Activity, ActivityRecord, TeamMember, Collaboration, SystemEvent, Channel, OperatorActivity, Organization, Cluster } from '../types';
+import {
+  Entity,
+  Activity,
+  ActivityRecord,
+  TeamMember,
+  Collaboration,
+  SystemEvent,
+  Channel,
+  OperatorActivity,
+  Organization,
+  AuditActivityIntegrity,
+  AuditEntityHealth,
+  AuditOrgIntegrity,
+  AuditChannelIntegrity,
+  AuditAnomaly,
+} from '../types';
 import { dbRoleToAppRole } from '../lib/roles';
 import { useAppRole } from './AppRoleContext';
 import { useAuth } from './AuthContext';
@@ -22,6 +37,11 @@ interface DataContextType {
   entityBalances: Map<string, EntityBalance>;
   activities: Activity[];
   records: ActivityRecord[];
+  auditActivities: AuditActivityIntegrity[];
+  auditEntities: AuditEntityHealth[];
+  auditOrgs: AuditOrgIntegrity[];
+  auditChannels: AuditChannelIntegrity[];
+  auditAnomalies: AuditAnomaly[];
   teamMembers: TeamMember[];
   collaborations: Collaboration[];
   channels: Channel[];
@@ -84,6 +104,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [entityBalances, setEntityBalances] = useState<Map<string, EntityBalance>>(new Map());
   const [activities, setActivities] = useState<Activity[]>([]);
   const [records, setRecords] = useState<ActivityRecord[]>([]);
+  const [auditActivities, setAuditActivities] = useState<AuditActivityIntegrity[]>([]);
+  const [auditEntities, setAuditEntities] = useState<AuditEntityHealth[]>([]);
+  const [auditOrgs, setAuditOrgs] = useState<AuditOrgIntegrity[]>([]);
+  const [auditChannels, setAuditChannels] = useState<AuditChannelIntegrity[]>([]);
+  const [auditAnomalies, setAuditAnomalies] = useState<AuditAnomaly[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [collaborations, setCollaborations] = useState<Collaboration[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
@@ -104,8 +129,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const resetClientDataState = useCallback(() => {
     setEntities([]);
+    setEntityBalances(new Map());
     setActivities([]);
     setRecords([]);
+    setAuditActivities([]);
+    setAuditEntities([]);
+    setAuditOrgs([]);
+    setAuditChannels([]);
+    setAuditAnomalies([]);
     setTeamMembers([]);
     setCollaborations([]);
     setChannels([]);
@@ -140,6 +171,88 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     );
   }, []);
 
+  const ensureWorkspaceLedgerActivityId = useCallback(async () => {
+    const orgId = requireOrgScope();
+    const existingActivity = activities.find(activity => activity.label === 'Workspace ledger');
+    if (existingActivity?.id) {
+      return existingActivity.id;
+    }
+
+    const { data: existingRows, error: lookupError } = await supabase!
+      .from('activities')
+      .select('id')
+      .eq('org_id', orgId)
+      .eq('label', 'Workspace ledger')
+      .order('created_at', { ascending: true })
+      .limit(1);
+
+    if (lookupError) throw lookupError;
+    if (existingRows && existingRows.length > 0) {
+      return existingRows[0].id as string;
+    }
+
+    const { data, error } = await supabase!
+      .from('activities')
+      .insert([{
+        org_id: orgId,
+        label: 'Workspace ledger',
+        status: 'active',
+        channel_label: 'Workspace ledger',
+        date: new Date().toISOString(),
+        start_time: new Date().toISOString(),
+      }])
+      .select('id')
+      .single();
+
+    if (error) throw error;
+    return data.id as string;
+  }, [activities]);
+
+  const insertTransferPair = useCallback(async (data: {
+    org_id: string;
+    activity_id: string;
+    from_entity_id: string;
+    to_entity_id: string;
+    unit_amount: number;
+    status: ActivityRecord['status'];
+    transfer_group_id?: string | null;
+    channel_label?: string;
+    source_note?: string;
+    target_note?: string;
+  }) => {
+    const transferGroupId = data.transfer_group_id || crypto.randomUUID();
+    const { error } = await supabase!
+      .from('records')
+      .insert([
+        {
+          org_id: data.org_id,
+          activity_id: data.activity_id,
+          entity_id: data.from_entity_id,
+          target_entity_id: data.to_entity_id,
+          direction: 'decrease',
+          status: data.status,
+          unit_amount: data.unit_amount,
+          transfer_group_id: transferGroupId,
+          channel_label: data.channel_label,
+          notes: data.source_note,
+        },
+        {
+          org_id: data.org_id,
+          activity_id: data.activity_id,
+          entity_id: data.to_entity_id,
+          target_entity_id: data.from_entity_id,
+          direction: 'increase',
+          status: data.status,
+          unit_amount: data.unit_amount,
+          transfer_group_id: transferGroupId,
+          channel_label: data.channel_label,
+          notes: data.target_note,
+        },
+      ]);
+
+    if (error) throw error;
+  }, []);
+
   const fetchData = async () => {
     if (!supabase || !activeOrgId || isDemoMode) {
       setLoading(false);
@@ -149,7 +262,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setLoading(true);
 
-      const [eRes, aRes, rRes, tRes, cRes, chRes, sRes, lRes, ebRes] = await Promise.all([
+      const [eRes, aRes, rRes, tRes, cRes, chRes, sRes, lRes, ebRes, aaRes, aeRes, aoRes, acRes, anRes] = await Promise.all([
         supabase.from('entities').select('*').eq('org_id', activeOrgId).order('name'),
         supabase.from('activities').select('*').eq('org_id', activeOrgId).order('date', { ascending: false }),
         supabase.from('records').select('*').eq('org_id', activeOrgId).order('created_at', { ascending: false }),
@@ -159,9 +272,14 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         supabase.from('audit_events').select('*').eq('org_id', activeOrgId).order('created_at', { ascending: false }).limit(100),
         supabase.from('operator_activities').select('*').eq('org_id', activeOrgId).order('started_at', { ascending: false }),
         supabase.from('entity_balances').select('*').eq('org_id', activeOrgId),
+        supabase.from('audit_activity_integrity').select('*').eq('org_id', activeOrgId).order('status').order('net_amount', { ascending: false }),
+        supabase.from('audit_entity_health').select('*').eq('org_id', activeOrgId).order('net_amount', { ascending: true }),
+        supabase.from('audit_org_integrity').select('*').eq('org_id', activeOrgId),
+        supabase.from('audit_channel_integrity').select('*').eq('org_id', activeOrgId).order('status').order('net_amount', { ascending: false }),
+        supabase.from('audit_record_anomalies').select('*').eq('org_id', activeOrgId).order('severity').order('anomaly_type'),
       ]);
 
-      const responses = [eRes, aRes, rRes, tRes, cRes, chRes, sRes, lRes, ebRes];
+      const responses = [eRes, aRes, rRes, tRes, cRes, chRes, sRes, lRes, ebRes, aaRes, aeRes, aoRes, acRes, anRes];
       const authError = responses.map((response) => response.error).find((error) => isAuthFailure(error));
       if (authError) {
         console.warn('Authentication failed during org fetch. Resetting local session state.', authError);
@@ -212,6 +330,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setEntityBalances(balanceMap);
       }
 
+      if (aaRes.data) setAuditActivities(aaRes.data as AuditActivityIntegrity[]);
+      if (aeRes.data) setAuditEntities(aeRes.data as AuditEntityHealth[]);
+      if (aoRes.data) setAuditOrgs(aoRes.data as AuditOrgIntegrity[]);
+      if (acRes.data) setAuditChannels(acRes.data as AuditChannelIntegrity[]);
+      if (anRes.data) setAuditAnomalies(anRes.data as AuditAnomaly[]);
+
       // Fetch organization metadata for managedOrgIds is handled in its own effect below
 
     } catch (err) {
@@ -237,26 +361,33 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     resetClientDataState();
   }, [authLoading, resetClientDataState, user]);
 
-  // Effect: Synchronize activeOrgId with serverActiveOrgId on first load or fallback to first managed org
+  // Effect: Synchronize activeOrgId with server on every role-load.
+  // Strategy:
+  //   1. localStorage gives us an instant first value (no flicker on reload).
+  //   2. Once managedOrgIds resolves we validate it: if the cached ID is still in
+  //      our allowed set we keep it (zero extra fetch). If it's stale (org removed,
+  //      session switched) we fall through to serverActiveOrgId → first managed org.
   useEffect(() => {
-    if (roleLoading || authLoading || activeOrgId || isDemoMode) return;
+    if (roleLoading || authLoading || isDemoMode || managedOrgIds.length === 0) return;
 
-    if (serverActiveOrgId) {
-      setActiveOrgId(serverActiveOrgId);
-      localStorage.setItem('flow_ops_last_org_id', serverActiveOrgId);
-    } else if (managedOrgIds.length > 0) {
-      // Auto-bootstrap: choose first organization
-      const firstOrgId = managedOrgIds[0];
-      console.log('Auto-bootstrapping workspace context:', firstOrgId);
-      setActiveOrgId(firstOrgId);
-      localStorage.setItem('flow_ops_last_org_id', firstOrgId);
-      
-      // Update server profile to persist this choice
-      if (supabase && user?.id) {
-        supabase.from('profiles').update({ active_org_id: firstOrgId }).eq('id', user.id).then(({ error }) => {
-          if (error) console.error('Error persisting bootstrapped context:', error);
-        });
-      }
+    // Fast path: cached value is still valid — nothing to do.
+    if (activeOrgId && managedOrgIds.includes(activeOrgId)) return;
+
+    // Slow / stale path: resolve a valid target.
+    const target = serverActiveOrgId && managedOrgIds.includes(serverActiveOrgId)
+      ? serverActiveOrgId
+      : managedOrgIds[0];
+
+    if (!target) return;
+
+    setActiveOrgId(target);
+    localStorage.setItem('flow_ops_last_org_id', target);
+
+    // Persist to server so the next session resolves instantly too.
+    if (supabase && user?.id) {
+      supabase.from('profiles').update({ active_org_id: target }).eq('id', user.id).then(({ error }) => {
+        if (error) console.error('Error persisting org context:', error);
+      });
     }
   }, [roleLoading, authLoading, serverActiveOrgId, managedOrgIds.join(','), activeOrgId, user?.id, isDemoMode]);
 
@@ -382,9 +513,36 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const addRecord = async (data: any) => {
     const orgId = requireOrgScope();
+    const activityId = data.activity_id || await ensureWorkspaceLedgerActivityId();
+
+    if (data.direction === 'transfer') {
+      if (!data.entity_id || !data.target_entity_id) {
+        throw new Error('Transfers must include both source and destination entities.');
+      }
+
+      if (data.entity_id === data.target_entity_id) {
+        throw new Error('Transfers must move between different entities.');
+      }
+
+      await insertTransferPair({
+        org_id: orgId,
+        activity_id: activityId,
+        from_entity_id: data.entity_id,
+        to_entity_id: data.target_entity_id,
+        unit_amount: data.unit_amount,
+        status: data.status || 'pending',
+        transfer_group_id: data.transfer_group_id,
+        channel_label: data.channel_label,
+        source_note: data.notes || 'Transfer out',
+        target_note: data.target_notes || 'Transfer in',
+      });
+      await fetchData();
+      return;
+    }
+
     const recordData: any = { 
       org_id: orgId,
-      activity_id: data.activity_id,
+      activity_id: activityId,
       entity_id: data.entity_id,
       direction: data.direction,
       status: data.status || 'pending',
@@ -479,24 +637,39 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const addChannelRecord = async (data: any) => {
-    console.log("Channel record added:", data);
+    const orgId = requireOrgScope();
+    const activityId = await ensureWorkspaceLedgerActivityId();
+    const { error } = await supabase!
+      .from('records')
+      .insert([{
+        org_id: orgId,
+        activity_id: activityId,
+        direction: data.type === 'increment' ? 'increase' : 'decrease',
+        status: data.status || 'applied',
+        unit_amount: data.amount,
+        transfer_group_id: data.transfer_group_id,
+        channel_label: data.method,
+        notes: data.notes || `Channel entry: ${data.method}`,
+      }]);
+    if (error) throw error;
+    await fetchData();
   };
 
   const transferUnits = async (data: any) => {
     const orgId = requireOrgScope();
-    // Inter-entity transfer creates two records or one 'transfer' record
-    const { error } = await supabase!
-      .from('records')
-      .insert([{ 
-        org_id: orgId,
-        entity_id: data.from_entity_id,
-        target_entity_id: data.to_entity_id,
-        unit_amount: data.amount,
-        direction: 'transfer',
-        status: 'applied',
-        notes: `Transfer to ${data.to_entity_name}`
-      }]);
-    if (error) throw error;
+    const activityId = data.activity_id || await ensureWorkspaceLedgerActivityId();
+    await insertTransferPair({
+      org_id: orgId,
+      activity_id: activityId,
+      from_entity_id: data.from_entity_id,
+      to_entity_id: data.to_entity_id,
+      unit_amount: data.amount,
+      status: data.status || 'applied',
+      transfer_group_id: data.transfer_group_id,
+      channel_label: data.channel_label,
+      source_note: data.from_note || `Transfer to ${data.to_entity_name || data.to_entity_id}`,
+      target_note: data.to_note || `Transfer from ${data.from_entity_name || data.from_entity_id}`,
+    });
     await fetchData();
   };
 
@@ -657,6 +830,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const recordsByEntityId = React.useMemo(() => {
     const map: Record<string, ActivityRecord[]> = {};
     records.forEach(r => {
+      if (!r.entity_id) return;
       if (!map[r.entity_id]) map[r.entity_id] = [];
       map[r.entity_id].push(r);
     });
@@ -668,6 +842,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     entityBalances,
     activities,
     records,
+    auditActivities,
+    auditEntities,
+    auditOrgs,
+    auditChannels,
+    auditAnomalies,
     teamMembers,
     collaborations,
     channels,
