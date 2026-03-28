@@ -11,6 +11,7 @@ import LoadingLine from '../components/LoadingLine';
 import CollapsibleActivitySection from '../components/CollapsibleActivitySection';
 import LiveOperatorsTracker from '../components/LiveOperatorsTracker';
 import IdentityBadge from '../components/IdentityBadge';
+import { LABELS, getRoleLabel, sanitizeLabel } from '../lib/labels';
 
 type AccessRequestRow = {
   id: string;
@@ -129,10 +130,10 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       notify({ type: 'error', message: 'Not ready: client not initialized.' });
       return;
     }
-    if (!window.confirm('Bootstrap a new cluster and make yourself cluster admin? This is a one-time operation.')) return;
+    if (!window.confirm('Create a new group and make yourself the group manager? This is a one-time operation.')) return;
     const { data, error } = await invokeSafe('manage-organizations', { action: 'bootstrap-cluster-admin' });
     if (error) { notify({ type: 'error', message: `Bootstrap failed: ${String(error)}` }); return; }
-    notify({ type: 'success', message: (data as any)?.message ?? 'Cluster bootstrapped! Reload to activate your new cluster.' });
+    notify({ type: 'success', message: (data as any)?.message ?? 'Group created. Reload to activate it.' });
     await refreshData();
     await fetchClusterAdmins();
   };
@@ -153,6 +154,14 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const { notify } = useNotification();
   const { user, loading: authLoading, signOut: supabaseSignOut, updatePassword: supabaseUpdatePassword } = useAuth();
   const refreshPromiseRef = React.useRef<Promise<any> | null>(null);
+
+  const toDisplayMessage = React.useCallback((message: string) => sanitizeLabel(message), []);
+  const toDisplayError = React.useCallback((error: unknown, fallback = 'Something went wrong.') => {
+    if (error instanceof Error && error.message) return sanitizeLabel(error.message);
+    if (typeof error === 'string' && error.trim()) return sanitizeLabel(error);
+    if (error !== null && error !== undefined) return sanitizeLabel(String(error));
+    return fallback;
+  }, []);
 
   const handleSignOutAll = async () => {
     try {
@@ -290,7 +299,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         slug: editOrgSlug
       });
       if (error) throw error;
-      notify({ type: 'success', message: 'Organization identity updated.' });
+      notify({ type: 'success', message: 'Workspace identity updated.' });
       await refreshData();
       await refreshAuthority();
     } catch (err) {
@@ -392,12 +401,12 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         const normalizedErrorMessage = (error.message ?? '').toLowerCase();
         setRequestsNotice(normalizedErrorMessage.includes('access_requests')
           ? 'access_requests activity not found yet. Run supabase/migrations/20260322230000_flow_ops_schema.sql.'
-          : `Unable to load access requests: ${error.message}`);
+          : `Unable to load access requests: ${toDisplayError(error.message)}`);
         return;
       }
       setAccessRequests((data ?? []) as AccessRequestRow[]);
     } catch (error) {
-      const detailedError = error instanceof Error ? error.message : 'Transport request failed.';
+      const detailedError = toDisplayError(error, 'Transport request failed.');
       setAccessRequests([]);
       setRequestsNotice(`Unable to load access requests: ${detailedError}`);
     } finally {
@@ -420,13 +429,13 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         const normalizedErrorMessage = (error.message ?? '').toLowerCase();
         setInviteNotice(normalizedErrorMessage.includes('access_invites')
           ? 'access_invites activity not found yet. Run supabase/migrations/20260322230000_flow_ops_schema.sql.'
-          : `Unable to load invite tokens: ${error.message}`);
+          : `Unable to load invite tokens: ${toDisplayError(error.message)}`);
         return;
       }
 
       setAccessInvites((data ?? []) as AccessInviteRow[]);
     } catch (error) {
-      const detailedError = error instanceof Error ? error.message : 'Transport request failed.';
+      const detailedError = toDisplayError(error, 'Transport request failed.');
       setAccessInvites([]);
       setInviteNotice(`Unable to load invite tokens: ${detailedError}`);
     } finally {
@@ -450,7 +459,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       });
 
       if (error) {
-        setClusterAdminsNotice(`Unable to load cluster admins: ${String(error)}`);
+        setClusterAdminsNotice(`Unable to load group managers: ${toDisplayError(error)}`);
         return;
       }
 
@@ -458,7 +467,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       setManagedClusterId(data?.cluster_id ?? null);
       setClusterManagedOrgIds(data?.managed_org_ids ?? []);
     } catch (error) {
-      setClusterAdminsNotice(`Transport error: ${error instanceof Error ? error.message : String(error)}`);
+      setClusterAdminsNotice(`Transport error: ${toDisplayError(error)}`);
     } finally {
       setClusterAdminsLoading(false);
     }
@@ -513,7 +522,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         approved_role: pendingApprovedRoles[request.id] || request.requested_role,
       });
       if (error) {
-        const detailedError = (error as any)?.message ?? String(error);
+        const detailedError = toDisplayError(error);
         setRequestsNotice(`Approval failed: ${detailedError}`);
         notify({ type: 'error', message: `Approval failed: ${detailedError}` });
         setBusyRequestId(null);
@@ -554,8 +563,9 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       reviewed_at: new Date().toISOString(),
     }).eq('id', request.id);
     if (error) {
-      setRequestsNotice(`Unable to update request: ${error.message}`);
-      notify({ type: 'error', message: `Unable to update request: ${error.message}` });
+      const detailedError = toDisplayError(error.message);
+      setRequestsNotice(`Unable to update request: ${detailedError}`);
+      notify({ type: 'error', message: `Unable to update request: ${detailedError}` });
       setBusyRequestId(null);
       return;
     }
@@ -585,7 +595,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     });
 
     if (error) {
-      setClusterAdminsNotice(`Update failed: ${String(error)}`);
+      setClusterAdminsNotice(`Update failed: ${toDisplayError(error)}`);
       setBusyClusterUserId(null);
       return;
     }
@@ -688,15 +698,16 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     ]);
 
     if (error) {
-      setInviteNotice(`Unable to create invite token: ${error.message}`);
-      notify({ type: 'error', message: `Unable to create invite token: ${error.message}` });
+      const detailedError = toDisplayError(error.message);
+      setInviteNotice(`Unable to create invite token: ${detailedError}`);
+      notify({ type: 'error', message: `Unable to create invite token: ${detailedError}` });
       return;
     }
 
     setInviteLabel('');
     setInviteExpiryDays('7');
     setInviteMaxUses('1');
-    setInviteNotice('Invite token created. Copy it now; the raw token is not stored.');
+    setInviteNotice(toDisplayMessage('Invite token created. Copy it now; the raw token is not stored.'));
     setInviteTokenValue(rawToken);
     setInviteMessageCopied(false);
     notify({ type: 'success', message: 'Invite token created.' });
@@ -712,8 +723,9 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       .eq('id', inviteId);
 
     if (error) {
-      setInviteNotice(`Unable to revoke invite token: ${error.message}`);
-      notify({ type: 'error', message: `Unable to revoke invite token: ${error.message}` });
+      const detailedError = toDisplayError(error.message);
+      setInviteNotice(`Unable to revoke invite token: ${detailedError}`);
+      notify({ type: 'error', message: `Unable to revoke invite token: ${detailedError}` });
       setBusyInviteId(null);
       return;
     }
@@ -730,16 +742,14 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       : 'Not configured';
   
   const roleLabel = React.useMemo(() => {
-    // Priority: Platforms Admin > Cluster Admin > Org Admin
-    if (isPlatformAdmin) return 'Platform Admin';
-    if (isClusterAdmin || clusterRole === 'cluster_admin') return 'Cluster Admin';
-    if (clusterRole === 'cluster_operator') return 'Cluster Operator';
-    if (role === 'admin') return 'Org Admin';
-    return role.charAt(0).toUpperCase() + role.slice(1);
+    if (isPlatformAdmin) return getRoleLabel('platform_admin');
+    if (isClusterAdmin || clusterRole === 'cluster_admin') return getRoleLabel('cluster_admin');
+    if (clusterRole === 'cluster_operator') return getRoleLabel('cluster_operator');
+    return getRoleLabel(role);
   }, [isPlatformAdmin, isClusterAdmin, clusterRole, role]);
   const provisionOrganization = async () => {
     if (!supabase || !activeOrgId || !clusterId) return;
-    if (!window.confirm('Add a new organization to this cluster?')) return;
+    if (!window.confirm('Add a new workspace to this group?')) return;
 
     await refreshAuthority();
     setIsProvisioning(true);
@@ -765,11 +775,11 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
           target_role: 'admin',
         });
         if (assignError) {
-          console.warn('Organization created but admin assignment failed:', assignError);
+          console.warn('Workspace created but manager assignment failed:', assignError);
         }
       }
 
-      notify({ type: 'success', message: 'New organization provisioned.' });
+      notify({ type: 'success', message: 'New workspace created.' });
       setNewOrgAdminEmail('');
       await refreshAuthority();
       await refreshData();
@@ -827,13 +837,13 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               <div className="space-y-4">
                 <div className="flex items-center gap-2 mb-1">
                   <Globe size={16} className="text-stone-400" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Authority Info</span>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Your role</span>
                 </div>
                 <div className="space-y-2 text-sm">
                   {[
-                    { label: 'Cloud Identity', value: user ? 'Authenticated' : 'None', highlight: true, color: 'text-emerald-600 dark:text-emerald-400' },
-                    { label: 'Active Role', value: roleLabel, bold: true },
-                    { label: 'Session Detail', value: backendStatus, italic: true, color: 'text-stone-400' }
+                    { label: 'Identity', value: user ? 'Authenticated' : 'None', highlight: true, color: 'text-emerald-600 dark:text-emerald-400' },
+                    { label: 'Role', value: roleLabel, bold: true },
+                    { label: 'Status', value: backendStatus, italic: true, color: 'text-stone-400' }
                   ].map((item, idx) => (
                     <div key={idx} className="flex justify-between items-center bg-stone-50/50 dark:bg-stone-800/40 px-3 py-2.5 rounded-lg border border-stone-100/50 dark:border-stone-800">
                       <span className="text-xs font-medium text-stone-500">{item.label}</span>
@@ -901,40 +911,44 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         <div className="section border-t border-stone-200 dark:border-stone-800 pt-8">
           <div className="flex items-center gap-2 mb-6">
             <Globe size={20} className="text-stone-400" />
-            <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Hierarchy & Context</h3>
+            <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Where you’re working</h3>
           </div>
           
           <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm">
             {/* Header / Active Identity */}
             <div className="p-5 border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30 flex items-center justify-between">
               <div>
-                <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-400 mb-2">Administrative Context</h4>
-                <div className="flex items-center gap-3">
-                  {contextClusterId ? (
-                    <IdentityBadge
-                      type="cluster"
-                      size="sm"
-                      id={contextClusterId}
-                      name={manageableClusters.find(c => c.id === contextClusterId)?.name || undefined}
-                      tag={manageableClusters.find(c => c.id === contextClusterId)?.tag || undefined}
-                      showShortId={false}
-                    />
+                <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-400 mb-2">Where you’re working</h4>
+                <div className="flex flex-wrap items-start gap-4">
+                  {(isPlatformAdmin || isClusterAdmin) && contextClusterId ? (
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">{LABELS.group}</p>
+                      <IdentityBadge
+                        type="cluster"
+                        size="sm"
+                        id={contextClusterId}
+                        name={manageableClusters.find(c => c.id === contextClusterId)?.name || undefined}
+                        tag={manageableClusters.find(c => c.id === contextClusterId)?.tag || undefined}
+                        showShortId={false}
+                      />
+                    </div>
                   ) : null}
-                  
-                  {contextClusterId && activeOrgId && <span className="text-stone-300 dark:text-stone-700">/</span>}
-                  
+
                   {activeOrgId ? (
-                    <IdentityBadge
-                      type="org"
-                      size="sm"
-                      id={activeOrgId}
-                      name={availableOrgs[activeOrgId]?.name}
-                      slug={availableOrgs[activeOrgId]?.slug}
-                      tag={availableOrgs[activeOrgId]?.tag}
-                      showShortId={false}
-                    />
+                    <div className="space-y-1">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">{LABELS.workspace}</p>
+                      <IdentityBadge
+                        type="org"
+                        size="sm"
+                        id={activeOrgId}
+                        name={availableOrgs[activeOrgId]?.name}
+                        tag={availableOrgs[activeOrgId]?.tag}
+                        showShortId={false}
+                        hideCopy={true}
+                      />
+                    </div>
                   ) : (!contextClusterId && !activeOrgId) ? (
-                    <span className="text-xs font-bold text-stone-400 italic">No Active Context Resolved</span>
+                    <span className="text-xs font-bold text-stone-400 italic">{LABELS.states.noWorkspace}</span>
                   ) : null}
                 </div>
               </div>
@@ -945,7 +959,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                     ? "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800" 
                     : "bg-stone-100 text-stone-600 border-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:border-stone-700"
                 )}>
-                  {isPlatformAdmin ? 'Platform Scope' : isClusterAdmin ? 'Cluster Scope' : 'Org Scope'}
+                  {isPlatformAdmin ? 'System Admin' : isClusterAdmin ? LABELS.group : LABELS.workspace}
                 </span>
               </div>
             </div>
@@ -953,10 +967,10 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
             <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* Selector 1: Cluster */}
               <div className="space-y-3">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 block">1. Target Cluster Selection</label>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 block">1. {LABELS.group}</label>
                 {(!isClusterAdmin && !isPlatformAdmin) ? (
                   <div className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 text-[11px] text-stone-500 italic">
-                    Cluster switching restricted for Organization members.
+                    Group switching is available to managers only.
                   </div>
                 ) : manageableClusters.length <= 1 ? (
                   <div className="flex items-center gap-3 p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700">
@@ -964,10 +978,10 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                       type="cluster"
                       size="sm"
                       id={manageableClusters[0]?.id || ''}
-                      name={manageableClusters[0]?.name || 'Current Cluster'}
+                      name={manageableClusters[0]?.name || 'Current Group'}
                       tag={manageableClusters[0]?.tag || 'N/A'}
                     />
-                    <span className="text-[10px] font-bold text-stone-400 uppercase ml-auto">Fixed Context</span>
+                    <span className="text-[10px] font-bold text-stone-400 uppercase ml-auto">Set automatically</span>
                   </div>
                 ) : (
                   <select 
@@ -975,9 +989,9 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                     value={scopeClusterId || contextClusterId || ''}
                     onChange={(e) => setScopeClusterId(e.target.value)}
                   >
-                    <option value="" disabled>Choose a cluster...</option>
+                    <option value="" disabled>{LABELS.actions.chooseGroup}...</option>
                     {manageableClusters.map(cluster => (
-                      <option key={cluster.id} value={cluster.id}>{cluster.tag || cluster.name} ({cluster.slug})</option>
+                      <option key={cluster.id} value={cluster.id}>{cluster.name || cluster.tag || cluster.id.slice(0, 8)}</option>
                     ))}
                   </select>
                 )}
@@ -985,7 +999,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
               {/* Selector 2: Organization */}
               <div className="space-y-3">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 block">2. Operational Organization</label>
+                <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 block">2. {LABELS.workspace}</label>
                 {(() => {
                   const effectiveClusterId = scopeClusterId || contextClusterId;
                   const orgsInCluster = (effectiveClusterId && manageableOrgsByCluster[effectiveClusterId]) 
@@ -997,7 +1011,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                       <div className="p-3 rounded-xl border border-stone-100 dark:border-stone-800 bg-stone-50/30 dark:bg-stone-800/20 flex items-center gap-3">
                         <AlertTriangle size={14} className="text-stone-400" />
                         <span className="text-[11px] text-stone-500 italic">
-                          {isPlatformAdmin ? "Select a cluster to browse organizations." : "Account has no associated organizations."}
+                          {isPlatformAdmin ? "Choose a group to browse workspaces." : "This account has no workspace access yet."}
                         </span>
                       </div>
                     );
@@ -1017,7 +1031,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                           slug={fixedOrg?.slug || undefined}
                         />
                         <span className="text-[9px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-100 dark:border-emerald-800 shadow-sm">
-                          Fixed Context
+                          Set automatically
                         </span>
                       </div>
                     );
@@ -1029,9 +1043,9 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                       value={activeOrgId || ''}
                       onChange={(e) => typeof switchOrg === 'function' && switchOrg(e.target.value)}
                     >
-                      <option value="" disabled>{activeOrgId ? 'Change organization...' : 'Select organization...'}</option>
+                      <option value="" disabled>{activeOrgId ? 'Change workspace...' : 'Select workspace...'}</option>
                       {orgsInCluster.map(org => (
-                        <option key={org.id} value={org.id}>{org.name} ({org.tag || org.slug || org.id.slice(0, 4)})</option>
+                        <option key={org.id} value={org.id}>{org.name || org.tag || org.id.slice(0, 8)}</option>
                       ))}
                     </select>
                   );
@@ -1042,18 +1056,18 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
           </div>
         </div>
 
-        {/* SECTION 2.5: ORGANIZATION IDENTITY (Identity Governance) */}
+        {/* SECTION 2.5: WORKSPACE IDENTITY */}
         {(isPlatformAdmin || isClusterAdmin) && activeOrgId && (
           <div className="section border-t border-stone-200 dark:border-stone-800 pt-8">
             <div className="flex items-center gap-2 mb-6">
               <ShieldCheck size={20} className="text-stone-400" />
-              <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Organization Identity</h3>
+              <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Workspace Identity</h3>
             </div>
 
             <div className="section-card p-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
                 <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Organization Name</label>
+                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Workspace Name</label>
                   <input
                     type="text"
                     className="control-input"
@@ -1087,7 +1101,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
               <div className="flex items-center justify-between pt-6 border-t border-stone-100 dark:border-stone-800">
                 <p className="text-[11px] text-stone-500 italic max-w-md">
-                  Updates to organizational identity propagate across the platform instantly. Ensure slugs and tags align with unified naming conventions.
+                  Updates to workspace identity appear across the app immediately. Keep names, tags, and slugs simple and consistent.
                 </p>
                 <button
                   type="button"
@@ -1127,7 +1141,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm flex flex-col">
                 <div className="p-5 border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30">
                   <h4 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100 mb-1">Invite Issuance</h4>
-                  <p className="text-[11px] text-stone-500">Generate secure, multi-use invite tokens for the current organization.</p>
+                  <p className="text-[11px] text-stone-500">Generate secure, multi-use invite tokens for the current workspace.</p>
                 </div>
                 <div className="p-5 space-y-4 flex-1">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -1199,12 +1213,12 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-2">
                 <Globe size={20} className="text-emerald-500" />
-                <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Global Platform Directory</h3>
+                <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">System Directory</h3>
               </div>
               <div className="flex items-center gap-3">
                 <input 
                   type="text" 
-                  placeholder="Seach users across all clusters..." 
+                  placeholder="Search users across all groups..." 
                   className="w-64 text-[11px] bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500"
                   value={platformDirectorySearch}
                   onChange={e => setPlatformDirectorySearch(e.target.value)}
@@ -1224,8 +1238,8 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                   <thead>
                     <tr className="bg-stone-50/50 dark:bg-stone-800/30 border-b border-stone-100 dark:border-stone-800">
                       <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400">Account / email</th>
-                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400">Cluster roles</th>
-                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400">Org memberships</th>
+                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400">Group roles</th>
+                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400">Workspace access</th>
                       <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400 text-right">Actions</th>
                     </tr>
                   </thead>
@@ -1308,12 +1322,12 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
           </div>
         )}
 
-        {/* SECTION 5: CLUSTER MANAGEMENT (Cluster Admin Only) */}
+        {/* SECTION 5: GROUP MANAGEMENT */}
         {(isClusterAdmin || isPlatformAdmin) && (
           <div className="section border-t border-stone-200 dark:border-stone-800 pt-8">
             <div className="flex items-center gap-2 mb-6">
               <ShieldCheck size={20} className="text-stone-400" />
-              <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Cluster Administration</h3>
+              <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Group Administration</h3>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -1321,19 +1335,19 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm">
                 <div className="p-5 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between bg-stone-50/50 dark:bg-stone-800/30">
                   <div>
-                    <h4 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100 mb-1">Administrative Hierarchy</h4>
-                    <p className="text-[11px] text-stone-500">Manage high-privilege cluster accounts and system roles.</p>
+                    <h4 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100 mb-1">Group Managers</h4>
+                    <p className="text-[11px] text-stone-500">Manage group-level access and elevated roles.</p>
                   </div>
                 </div>
                 <div className="p-5">
                   <div className="mb-4">
-                    <input type="text" placeholder="Filter admins..." className="w-full text-[11px] bg-stone-50 dark:bg-stone-800 border-none rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500" value={clusterSearch} onChange={e => setClusterSearch(e.target.value)} />
+                    <input type="text" placeholder="Filter managers..." className="w-full text-[11px] bg-stone-50 dark:bg-stone-800 border-none rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500" value={clusterSearch} onChange={e => setClusterSearch(e.target.value)} />
                   </div>
                   <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 app-scroll">
                     {clusterAdminsLoading ? (
-                      <LoadingLine label="Fetching hierarchy..." compact />
+                      <LoadingLine label="Loading managers..." compact />
                     ) : filteredClusterAdmins.length === 0 ? (
-                      <p className="text-[11px] text-stone-400 italic text-center py-8">No results in this scope.</p>
+                      <p className="text-[11px] text-stone-400 italic text-center py-8">No results in this view.</p>
                     ) : filteredClusterAdmins.map(admin => {
                       const isSelf = admin.user_id === user?.id;
                       const isLastAdmin = admin.role === 'cluster_admin' && clusterAdmins.filter(a => a.role === 'cluster_admin').length === 1;
@@ -1343,12 +1357,12 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                             <p className="text-xs font-bold text-stone-900 dark:text-stone-100 truncate">{admin.email} {isSelf && '(You)'}</p>
                             <div className="flex flex-wrap items-center gap-1.5 mt-1">
                               {admin.type === 'cluster' ? (
-                                <span className="text-[9px] font-black uppercase tracking-tighter text-emerald-600 dark:text-emerald-400">CLUSTER {admin.role.replace('_', ' ')}</span>
+                                <span className="text-[9px] font-black uppercase tracking-tighter text-emerald-600 dark:text-emerald-400">GROUP {admin.role.replace('_', ' ')}</span>
                               ) : (
-                                <span className="text-[9px] font-black uppercase tracking-tighter text-violet-600 dark:text-violet-400">ORG {admin.role}</span>
+                                <span className="text-[9px] font-black uppercase tracking-tighter text-violet-600 dark:text-violet-400">WORKSPACE {admin.role}</span>
                               )}
                               {admin.org_role && (
-                                <span className="text-[9px] font-black uppercase tracking-tighter text-stone-400">• ORG {admin.org_role}</span>
+                                <span className="text-[9px] font-black uppercase tracking-tighter text-stone-400">• WORKSPACE {admin.org_role}</span>
                               )}
                             </div>
                           </div>
@@ -1367,7 +1381,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                           )}
                           {isSelf && <span className="text-[9px] font-bold text-stone-400 uppercase tracking-widest">Fixed</span>}
                           {admin.type === 'organization' && !isSelf && (
-                            <span className="text-[9px] font-bold text-stone-300 dark:text-stone-600 uppercase italic">Org Managed</span>
+                            <span className="text-[9px] font-bold text-stone-300 dark:text-stone-600 uppercase italic">Workspace managed</span>
                           )}
                         </div>
                       );
@@ -1379,12 +1393,12 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               {/* Provisioning Card */}
               <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm">
                 <div className="p-5 border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30 font-bold">
-                  <h4 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100 mb-1">Deterministic Provisioning</h4>
-                  <p className="text-[11px] text-stone-500">Deploy new work environments within this cluster hierarchy.</p>
+                  <h4 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100 mb-1">Create Workspace</h4>
+                  <p className="text-[11px] text-stone-500">Add a new workspace inside this group.</p>
                 </div>
                 <div className="p-5 space-y-4">
                   <p className="text-[11px] text-stone-600 dark:text-stone-400 leading-relaxed italic">
-                    All provisioned organizations use deterministic UUID mapping to ensure secondary systems and edge functions recognize the new context without manual configuration.
+                    New workspaces are created with the platform defaults so they are ready to use without extra setup.
                   </p>
                   <div className="flex flex-col gap-4">
                     <div className="space-y-1">
@@ -1406,11 +1420,11 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                         disabled={isProvisioning}
                         className="action-btn-primary w-full h-11 text-xs justify-center font-bold"
                       >
-                        {isProvisioning ? <LoadingLine label="Provisioning..." compact /> : 'Add Organization to Cluster'}
+                        {isProvisioning ? <LoadingLine label="Creating workspace..." compact /> : 'Add workspace'}
                       </button>
                     ) : (
                       <button onClick={() => void bootstrapClusterAdmin()} className="w-full h-11 rounded-xl border-2 border-amber-200 bg-amber-50 text-amber-800 text-[11px] font-bold uppercase tracking-widest hover:bg-amber-100 transition-colors">
-                        Self-Bootstrap Cluster
+                        Create group
                       </button>
                     )}
                   </div>
@@ -1464,7 +1478,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 <div className="space-y-4">
                   <div className="space-y-1">
-                    <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Export Scope</label>
+                      <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Export level</label>
                     {(isClusterAdmin || isPlatformAdmin) ? (
                       <div className="flex gap-1 bg-stone-100 dark:bg-stone-800 p-1 rounded-xl border border-stone-200 dark:border-stone-700">
                         <button 
@@ -1476,7 +1490,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                               : "text-stone-400 hover:text-stone-600 dark:hover:text-stone-300"
                           )}
                         >
-                          Entire Cluster
+                          Entire group
                         </button>
                         <button 
                           onClick={() => setExportScope('org')} 
@@ -1487,19 +1501,19 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                               : "text-stone-400 hover:text-stone-600 dark:hover:text-stone-300"
                           )}
                         >
-                          Organization
+                          Workspace
                         </button>
                       </div>
                     ) : (
                       <div className="py-2.5 px-4 bg-stone-50 dark:bg-stone-800 rounded-lg border border-stone-100 dark:border-stone-700">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-stone-400">Fixed: Organization</span>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-stone-400">Fixed: Workspace</span>
                       </div>
                     )}
                   </div>
                   
                   {isPlatformAdmin && exportScope === 'cluster' && (
                     <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Target Cluster</label>
+                      <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Target Group</label>
                       <select 
                         value={exportClusterId || contextClusterId || ''} 
                         onChange={e => setExportClusterId(e.target.value)} 
@@ -1524,15 +1538,15 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                 <div className="bg-stone-50 dark:bg-stone-800/50 rounded-xl p-4 border border-stone-100 dark:border-stone-700 flex flex-col justify-center gap-2">
                   <div className="flex items-center gap-2 text-stone-400">
                     <Globe size={14} />
-                    <span className="text-[10px] font-bold uppercase tracking-widest">Resolution Preview</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest">Export Preview</span>
                   </div>
                   <div className="space-y-1.5 mt-1">
                     <p className="text-[10px] flex justify-between font-medium">
                       <span>Target:</span> 
                       <span className="text-stone-900 dark:text-stone-100 font-bold">
                         {exportScope === 'cluster' 
-                          ? (manageableClusters.find(c => c.id === (exportClusterId || contextClusterId))?.tag || 'Entire Cluster')
-                          : (Object.values(availableOrgs).find(o => o.id === (exportOrgId || activeOrgId))?.name || 'Selected Org')}
+                          ? (manageableClusters.find(c => c.id === (exportClusterId || contextClusterId))?.tag || 'Entire group')
+                          : (Object.values(availableOrgs).find(o => o.id === (exportOrgId || activeOrgId))?.name || 'Selected workspace')}
                       </span>
                     </p>
                     <p className="text-[10px] flex justify-between font-medium"><span>Auth:</span> <span className="text-emerald-600 uppercase font-black tracking-tighter">{roleLabel} Verified</span></p>
@@ -1591,7 +1605,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               <div className="max-w-md">
                 <h4 className="text-xs font-bold uppercase tracking-widest text-red-700 dark:text-red-400 mb-1">Irreversible System Reset</h4>
                 <p className="text-[11px] text-stone-500 dark:text-stone-400 leading-relaxed">
-                  Executing a reset permanently purges all operational data, entities, and activity histories for the current organization. This action cannot be undone.
+                  Executing a reset permanently purges all operational data, entities, and activity histories for the current workspace. This action cannot be undone.
                 </p>
               </div>
               <button
