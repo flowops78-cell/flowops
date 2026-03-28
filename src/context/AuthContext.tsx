@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { AUTH_PERSIST_ACTIVITY_KEY, isSupabaseConfigured, supabase } from '../lib/supabase';
 
@@ -12,6 +12,37 @@ type AuthContextType = {
 };
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+const isIgnorableAuthError = (error: unknown) => {
+  if (!error || typeof error !== 'object') return false;
+
+  const candidate = error as { status?: unknown; message?: unknown; name?: unknown };
+  const status = typeof candidate.status === 'number' ? candidate.status : undefined;
+  const message = typeof candidate.message === 'string' ? candidate.message.toLowerCase() : '';
+  const name = typeof candidate.name === 'string' ? candidate.name.toLowerCase() : '';
+
+  return (
+    status === 401 ||
+    status === 403 ||
+    message.includes('session') ||
+    message.includes('jwt') ||
+    message.includes('token') ||
+    message.includes('auth') ||
+    name.includes('timeout')
+  );
+};
+
+const clearStorageKeys = (storage: Storage, matcher: (key: string) => boolean) => {
+  const keysToRemove: string[] = [];
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (key && matcher(key)) {
+      keysToRemove.push(key);
+    }
+  }
+
+  keysToRemove.forEach((key) => storage.removeItem(key));
+};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [activity, setActivity] = useState<Session | null>(null);
@@ -27,6 +58,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     return id;
   });
+
+  const clearClientSessionState = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      clearStorageKeys(sessionStorage, (key) => key === 'flow_ops_session_id' || key.startsWith('sb-') || key.startsWith('supabase.auth.'));
+      clearStorageKeys(localStorage, (key) => key === 'flow_ops_last_org_id' || key.startsWith('sb-') || key.startsWith('supabase.auth.'));
+    }
+
+    setActivity(null);
+    setLoading(false);
+  }, []);
+
+  const performSignOut = useCallback(async (scope: 'local' | 'global') => {
+    if (!supabase) {
+      clearClientSessionState();
+      return;
+    }
+
+    let signOutError: unknown = null;
+
+    try {
+      const result = await Promise.race([
+        supabase.auth.signOut({ scope }),
+        new Promise<{ error: Error }>((resolve) => {
+          globalThis.setTimeout(() => resolve({ error: new Error('Sign out timed out') }), 3000);
+        }),
+      ]);
+
+      if (result.error) {
+        signOutError = result.error;
+      }
+    } catch (error) {
+      signOutError = error;
+    } finally {
+      clearClientSessionState();
+    }
+
+    if (signOutError && scope === 'global' && !isIgnorableAuthError(signOutError)) {
+      throw signOutError;
+    }
+  }, [clearClientSessionState]);
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) {
@@ -56,10 +127,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!mounted) return;
 
       if (authUserError || !authUserData.user) {
-        await client.auth.signOut({ scope: 'local' });
+        await performSignOut('local');
         if (!mounted) return;
-        setActivity(null);
-        setLoading(false);
         return;
       }
 
@@ -76,8 +145,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const { data } = supabase.auth.onAuthStateChange(async (event, nextSession) => {
       if (event === 'SIGNED_OUT') {
-        setActivity(null);
-        setLoading(false);
+        clearClientSessionState();
         return;
       }
 
@@ -101,9 +169,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           (payload: any) => {
             const remoteSessionId = payload.new.current_session_id;
             if (remoteSessionId && remoteSessionId !== sessionId) {
-              // Remote login detected! Force logout local session
               console.warn('Concurrent session detected. Signing out...');
-              void client.auth.signOut({ scope: 'local' });
+              void performSignOut('local');
             }
           }
         )
@@ -115,7 +182,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       data.subscription.unsubscribe();
       if (channel && client) client.removeChannel(channel);
     };
-  }, [activity?.user?.id]);
+  }, [activity?.user?.id, clearClientSessionState, performSignOut, sessionId]);
 
   const signInWithPassword = async (email: string, password: string, options?: { keepSignedIn?: boolean }) => {
     if (!supabase) throw new Error('Supabase is not configured.');
@@ -123,15 +190,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       sessionStorage.setItem(AUTH_PERSIST_ACTIVITY_KEY, options.keepSignedIn ? '1' : '0');
     }
 
-    const clearError = await supabase.auth.signOut({ scope: 'local' });
-    if (clearError.error) {
-      const status = typeof (clearError.error as { status?: unknown }).status === 'number'
-        ? (clearError.error as { status: number }).status
-        : undefined;
-      const message = (clearError.error.message ?? '').toLowerCase();
-      const ignorable = status === 401 || status === 403 || message.includes('session') || message.includes('jwt');
-      if (!ignorable) throw clearError.error;
-    }
+    await performSignOut('local');
 
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
@@ -154,26 +213,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const signOut = async (options?: { scope?: 'local' | 'global' }) => {
-    if (!supabase) return;
     const scope = options?.scope || 'local';
-    const { error } = await supabase.auth.signOut({ scope });
-    if (!error) {
-      setActivity(null);
-      return;
-    }
-
-    const status = typeof (error as { status?: unknown }).status === 'number'
-      ? (error as { status: number }).status
-      : undefined;
-    const message = (error.message ?? '').toLowerCase();
-    const isAlreadySignedOut = status === 401 || status === 403 || message.includes('session') || message.includes('jwt');
-
-    if (isAlreadySignedOut) {
-      setActivity(null);
-      return;
-    }
-
-    throw error;
+    await performSignOut(scope);
   };
 
   const updatePassword = async (newPassword: string) => {

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { Entity, Activity, ActivityRecord, TeamMember, Collaboration, SystemEvent, Channel, OperatorActivity, Organization, Cluster } from '../types';
 import { dbRoleToAppRole } from '../lib/roles';
@@ -85,8 +85,46 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
 
   const { loading: roleLoading, managedOrgIds, serverActiveOrgId, isClusterAdmin, clusterId } = useAppRole();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, signOut } = useAuth();
   const isDemoMode = !isSupabaseConfigured;
+
+  const resetClientDataState = useCallback(() => {
+    setEntities([]);
+    setActivities([]);
+    setRecords([]);
+    setTeamMembers([]);
+    setCollaborations([]);
+    setChannels([]);
+    setSystemEvents([]);
+    setActivityLogs([]);
+    setAvailableOrgs({});
+    setActiveOrgId(null);
+    setLoading(false);
+    setLoadingProgress(0);
+
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('flow_ops_last_org_id');
+    }
+  }, []);
+
+  const isAuthFailure = useCallback((error: unknown) => {
+    if (!error || typeof error !== 'object') return false;
+
+    const candidate = error as { status?: unknown; message?: unknown; code?: unknown };
+    const status = typeof candidate.status === 'number' ? candidate.status : undefined;
+    const message = typeof candidate.message === 'string' ? candidate.message.toLowerCase() : '';
+    const code = typeof candidate.code === 'string' ? candidate.code.toLowerCase() : '';
+
+    return (
+      status === 401 ||
+      status === 403 ||
+      message.includes('auth') ||
+      message.includes('jwt') ||
+      message.includes('session') ||
+      message.includes('token') ||
+      code.includes('jwt')
+    );
+  }, []);
 
   const fetchData = async () => {
     if (!supabase || !activeOrgId || isDemoMode) {
@@ -95,6 +133,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
 
     try {
+      setLoading(true);
+
       const [eRes, aRes, rRes, tRes, cRes, chRes, sRes, lRes] = await Promise.all([
         supabase.from('entities').select('*').eq('org_id', activeOrgId).order('name'),
         supabase.from('activities').select('*').eq('org_id', activeOrgId).order('date', { ascending: false }),
@@ -105,6 +145,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         supabase.from('audit_events').select('*').eq('org_id', activeOrgId).order('created_at', { ascending: false }).limit(100),
         supabase.from('operator_activities').select('*').eq('org_id', activeOrgId).order('started_at', { ascending: false }),
       ]);
+
+      const responses = [eRes, aRes, rRes, tRes, cRes, chRes, sRes, lRes];
+      const authError = responses.map((response) => response.error).find((error) => isAuthFailure(error));
+      if (authError) {
+        console.warn('Authentication failed during org fetch. Resetting local session state.', authError);
+        await signOut({ scope: 'local' });
+        return;
+      }
+
+      const firstError = responses.map((response) => response.error).find(Boolean);
+      if (firstError) {
+        throw firstError;
+      }
 
       if (eRes.data) setEntities(eRes.data);
       if (aRes.data) setActivities(aRes.data);
@@ -141,6 +194,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Fetch organization metadata for managedOrgIds is handled in its own effect below
 
     } catch (err) {
+      if (isAuthFailure(err)) {
+        console.warn('Authentication failed while loading org data. Resetting local session state.', err);
+        await signOut({ scope: 'local' });
+        return;
+      }
       console.error("Fetch error:", err);
     } finally {
       setLoading(false);
@@ -152,6 +210,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       fetchData();
     }
   }, [authLoading, roleLoading, activeOrgId]);
+
+  useEffect(() => {
+    if (authLoading || user) return;
+    resetClientDataState();
+  }, [authLoading, resetClientDataState, user]);
 
   // Effect: Synchronize activeOrgId with serverActiveOrgId on first load or fallback to first managed org
   useEffect(() => {
@@ -183,10 +246,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAvailableOrgs({});
       return;
     }
-    const { data: orgs } = await supabase
+    const { data: orgs, error } = await supabase
       .from('organizations')
       .select('id, name, tag, slug, cluster_id')
       .in('id', managedOrgIds);
+
+    if (error) {
+      if (isAuthFailure(error)) {
+        console.warn('Authentication failed while refreshing available orgs. Resetting local session state.', error);
+        await signOut({ scope: 'local' });
+        return;
+      }
+
+      console.error('Error fetching available organizations:', error);
+      return;
+    }
+
     if (orgs) {
       const orgMap = (orgs as any[]).reduce((acc, org) => ({ ...acc, [org.id]: org }), {} as Record<string, Organization>);
       setAvailableOrgs(orgMap);

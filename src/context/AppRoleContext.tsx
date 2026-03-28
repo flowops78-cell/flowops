@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { getUserAuthorityContext, isSupabaseConfigured, supabase, type ClusterMeta, type OrgMeta } from '../lib/supabase';
 import { AppRole, normalizeAppRole } from '../lib/roles';
 import { useAuth } from './AuthContext';
@@ -50,12 +50,24 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const roleLocked = isSupabaseConfigured && !!user;
   const loading = authLoading || (isSupabaseConfigured && !!user && !metadataRole && profileRoleLoading);
 
+  const resetAuthorityState = useCallback(() => {
+    setProfileRole(null);
+    setClusterRoleState(null);
+    setIsClusterAdminState(false);
+    setIsPlatformAdminState(false);
+    setClusterIdState(null);
+    setManagedOrgIdsState([]);
+    setServerActiveOrgIdState(null);
+    setManageableClustersState([]);
+    setManageableOrgsByClusterState({});
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
     const loadProfileRole = async () => {
       if (!isSupabaseConfigured || !supabase || !user?.id) {
-        setProfileRole(null);
+        resetAuthorityState();
         setProfileRoleLoading(false);
         return;
       }
@@ -70,7 +82,7 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
       if (cancelled) return;
       if (authority.source === 'none') {
-        setProfileRole(null);
+        resetAuthorityState();
         setProfileRoleLoading(false);
         return;
       }
@@ -93,12 +105,15 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => {
       cancelled = true;
     };
-  }, [metadataRole, user?.id]);
+  }, [metadataRole, resetAuthorityState, user?.id]);
 
   const refreshAuthority = async () => {
     if (!supabase || !user?.id) return;
     const authority = await getUserAuthorityContext(user.id);
-    if (authority.source === 'none') return;
+    if (authority.source === 'none') {
+      resetAuthorityState();
+      return;
+    }
     setClusterRoleState(authority.clusterRole);
     setIsPlatformAdminState(authority.isPlatformAdmin);
     setIsClusterAdminState(authority.isPlatformAdmin || authority.clusterRole === 'cluster_admin');
