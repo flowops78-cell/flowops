@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, LogOut, CheckCircle2, AlertTriangle, Key, Globe, Settings as SettingsIcon } from 'lucide-react';
+import { ShieldCheck, LogOut, CheckCircle2, AlertTriangle, Key, Globe, Settings as SettingsIcon, ChevronDown, Pencil, UserPlus, Download } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAppRole } from '../context/AppRoleContext';
 import { useAuth } from '../context/AuthContext';
@@ -253,6 +253,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [editOrgTag, setEditOrgTag] = React.useState('');
   const [editOrgSlug, setEditOrgSlug] = React.useState('');
   const [isUpdatingOrgIdentity, setIsUpdatingOrgIdentity] = React.useState(false);
+  const [showAdvanced, setShowAdvanced] = React.useState(false);
   
   // Platform Directory State
   const [platformAccounts, setPlatformAccounts] = React.useState<PlatformAccount[]>([]);
@@ -260,6 +261,8 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [platformDirectorySearch, setPlatformDirectorySearch] = React.useState('');
 
   const isOrgAdmin = !isClusterAdmin && role === 'admin';
+  const activeOrg = activeOrgId ? availableOrgs[activeOrgId] : null;
+  const canEditIdentity = (isPlatformAdmin || isClusterAdmin || role === 'admin') && !!activeOrgId;
 
   // Sync local scopeClusterId with the global contextClusterId when it changes (e.g. after switchOrg)
   React.useEffect(() => {
@@ -811,567 +814,561 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   return (
     <div className={cn(embedded ? 'space-y-6' : 'page-shell', 'w-full min-w-0 overflow-x-hidden')}>
       {!embedded && (
-        <div className="section-card p-5 lg:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5 mb-8 text-stone-900 dark:text-stone-100">
+        <div className="section-card p-5 lg:p-6 flex items-center justify-between gap-4 mb-8">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-stone-100 dark:bg-stone-800 flex items-center justify-center shrink-0 shadow-sm border border-stone-200 dark:border-stone-700">
-              <SettingsIcon size={24} className="text-stone-900 dark:text-stone-100" />
+            <div className="w-10 h-10 rounded-xl bg-stone-100 dark:bg-stone-800 flex items-center justify-center shrink-0 border border-stone-200 dark:border-stone-700">
+              <SettingsIcon size={20} className="text-stone-900 dark:text-stone-100" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Settings</h2>
+              <h2 className="text-xl font-bold tracking-tight text-stone-900 dark:text-stone-100">
+                {activeOrg?.name || 'Settings'}
+              </h2>
+              <p className="text-xs text-stone-500 mt-0.5 font-medium uppercase tracking-wider">{roleLabel}</p>
             </div>
           </div>
         </div>
       )}
 
-      <div className="space-y-8">
-        {/* SECTION 1: PERSONAL ACCOUNT */}
-        <div className="section">
-          <div className="section-card p-6">
-            <div className="flex items-center gap-2 mb-6">
-              <ShieldCheck size={20} className="text-stone-400" />
-              <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Personal Account</h3>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-10 items-start">
-              {/* Authority Resolution */}
-              <div className="space-y-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <Globe size={16} className="text-stone-400" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Your role</span>
+      <div className="space-y-6">
+
+        {/* ── 4 ACTION CARDS ── */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+
+          {/* 1. Identity */}
+          {canEditIdentity && (
+            <div className="section-card p-5 space-y-4">
+              <div className="flex items-center gap-2">
+                <Pencil size={15} className="text-stone-400" />
+                <span className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Edit workspace</span>
+              </div>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Name</label>
+                  <input
+                    type="text"
+                    className="control-input"
+                    value={editOrgName}
+                    onChange={e => setEditOrgName(e.target.value)}
+                    placeholder="e.g. Beirut Ops"
+                  />
                 </div>
-                <div className="space-y-2 text-sm">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Short tag</label>
+                  <input
+                    type="text"
+                    className="control-input font-mono text-xs"
+                    value={editOrgTag}
+                    onChange={e => setEditOrgTag(e.target.value.toUpperCase())}
+                    placeholder="e.g. OPS"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={handleUpdateOrgIdentity}
+                disabled={isUpdatingOrgIdentity}
+                className="action-btn-primary w-full h-9 text-xs justify-center font-bold"
+              >
+                {isUpdatingOrgIdentity ? 'Saving...' : 'Save'}
+              </button>
+            </div>
+          )}
+
+          {/* 2. Access */}
+          {canViewOperatorLogs && (
+            <div className="section-card p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <UserPlus size={15} className="text-stone-400" />
+                  <span className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Access</span>
+                </div>
+                {accessRequests.length > 0 && (
+                  <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-[9px] font-black uppercase tracking-tighter rounded-full border border-amber-200 dark:border-amber-800">
+                    {accessRequests.length} pending
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={() => void createAccessInvite()}
+                className="action-btn-primary w-full h-9 text-xs justify-center font-bold"
+              >
+                + Invite user
+              </button>
+              {inviteTokenValue && (
+                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/20 space-y-2">
+                  <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">Token ready — copy now</p>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[10px] bg-white dark:bg-stone-800 px-2 py-1 rounded border border-stone-100 dark:border-stone-700 select-all flex-1 truncate">{inviteTokenValue}</span>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(inviteTokenValue); setInviteTokenCopied(true); setTimeout(() => setInviteTokenCopied(false), 2000); }}
+                      className="text-[10px] font-bold text-stone-500 uppercase shrink-0"
+                    >
+                      {inviteTokenCopied ? '✓' : 'Copy'}
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => { navigator.clipboard.writeText(buildInviteShareMessage(inviteTokenValue)); setInviteMessageCopied(true); setTimeout(() => setInviteMessageCopied(false), 2000); }}
+                    className="w-full py-1 text-[10px] font-bold uppercase text-stone-500 bg-stone-100 dark:bg-stone-800 rounded"
+                  >
+                    {inviteMessageCopied ? 'Copied' : 'Copy full invite message'}
+                  </button>
+                </div>
+              )}
+              {inviteNotice && !inviteTokenValue && (
+                <p className="text-[10px] text-red-500">{inviteNotice}</p>
+              )}
+            </div>
+          )}
+
+          {/* 3. Export */}
+          <div className="section-card p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Download size={15} className="text-stone-400" />
+                <span className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Export</span>
+              </div>
+              {lastExportMeta && (
+                <span className="text-[10px] text-stone-400 font-medium">{lastExportMeta.rows} rows</span>
+              )}
+            </div>
+            <p className="text-[11px] text-stone-500 leading-relaxed">Full workspace snapshot as JSON.</p>
+            <button
+              disabled={isExporting}
+              onClick={() => {
+                const runExport = async () => {
+                  if (!window.confirm('Export workspace data? This action is audit-logged.')) return;
+                  setIsExporting(true);
+                  try {
+                    const { data, error } = await invokeSafe('export-data', {
+                      scope: exportScope,
+                      dataset: exportDataset,
+                      org_id: exportOrgId || activeOrgId || '',
+                      cluster_id: contextClusterId || ''
+                    });
+                    if (error) throw error;
+                    const result = data as any;
+                    const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `flow-ops-export-${new Date().toISOString().slice(0, 10)}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                    setLastExportMeta({ rows: result.total_rows ?? 0, ts: result.exported_at ?? new Date().toISOString() });
+                    notify({ type: 'success', message: `Export complete. Audit ID: ${String(result.audit_event_id ?? '').slice(0, 8)}` });
+                  } catch (err) {
+                    notify({ type: 'error', message: `Export failed: ${String(err)}` });
+                  } finally { setIsExporting(false); }
+                };
+                void runExport();
+              }}
+              className="w-full py-2.5 bg-stone-900 dark:bg-white text-white dark:text-stone-900 rounded-xl text-xs font-bold uppercase tracking-widest hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-30"
+            >
+              {isExporting ? 'Exporting...' : 'Export data'}
+            </button>
+          </div>
+
+          {/* 4. Reset */}
+          {canManageGlobalData && (
+            <div className="section-card p-5 space-y-4 border-red-100 dark:border-red-900/20">
+              <div className="flex items-center gap-2">
+                <AlertTriangle size={15} className="text-red-400" />
+                <span className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Reset workspace</span>
+              </div>
+              <p className="text-[11px] text-stone-500 leading-relaxed">Permanently purge all workspace data. Cannot be undone.</p>
+              <button
+                disabled={isClearingGlobalData}
+                onClick={() => void clearGlobalData()}
+                className="w-full h-9 rounded-xl border-2 border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 text-[10px] font-black uppercase tracking-widest hover:bg-red-600 hover:text-white dark:hover:bg-red-900 transition-all disabled:opacity-20"
+              >
+                {isClearingGlobalData ? 'Resetting...' : 'Reset workspace'}
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* ── ADVANCED COLLAPSE ── */}
+        <div className="border-t border-stone-200 dark:border-stone-800 pt-6">
+          <button
+            onClick={() => setShowAdvanced(v => !v)}
+            className="flex items-center gap-2 text-xs font-bold text-stone-400 hover:text-stone-600 dark:hover:text-stone-300 transition-colors uppercase tracking-widest mb-0"
+          >
+            <ChevronDown size={14} className={cn('transition-transform duration-200', showAdvanced && 'rotate-180')} />
+            Advanced
+          </button>
+
+          {showAdvanced && (
+            <div className="mt-6 space-y-6">
+
+              {/* Password */}
+              <div className="section-card p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Key size={16} className="text-stone-400" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Password</h3>
+                </div>
+                <p className="text-[11px] text-stone-500 mb-4">Update security for <span className="font-medium text-stone-900 dark:text-stone-100">{user?.email}</span></p>
+                <div className="space-y-3 max-w-sm">
+                  <input type="password" className="control-input py-2 text-xs" placeholder="New password (min 8 chars)" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
+                  <input type="password" className="control-input py-2 text-xs" placeholder="Confirm password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
+                  <button onClick={() => void handleUpdatePassword()} disabled={isUpdatingPassword} className="action-btn-primary w-full h-9 text-xs justify-center">
+                    {isUpdatingPassword ? 'Updating...' : 'Update password'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Account status */}
+              <div className="section-card p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <ShieldCheck size={16} className="text-stone-400" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Account</h3>
+                </div>
+                <div className="space-y-2 max-w-sm text-sm">
                   {[
-                    { label: 'Identity', value: user ? 'Authenticated' : 'None', highlight: true, color: 'text-emerald-600 dark:text-emerald-400' },
+                    { label: 'Identity', value: user ? 'Authenticated' : 'None', color: 'text-emerald-600 dark:text-emerald-400' },
                     { label: 'Role', value: roleLabel, bold: true },
-                    { label: 'Status', value: backendStatus, italic: true, color: 'text-stone-400' }
+                    { label: 'Status', value: backendStatus, italic: true, color: 'text-stone-400' },
                   ].map((item, idx) => (
                     <div key={idx} className="flex justify-between items-center bg-stone-50/50 dark:bg-stone-800/40 px-3 py-2.5 rounded-lg border border-stone-100/50 dark:border-stone-800">
                       <span className="text-xs font-medium text-stone-500">{item.label}</span>
-                      <span className={cn(
-                        "text-xs",
-                        item.highlight ? "font-semibold" : "font-medium",
-                        item.bold && "font-bold uppercase tracking-tight text-stone-700 dark:text-stone-200",
-                        item.italic && "italic",
-                        item.color || "text-stone-700 dark:text-stone-300"
-                      )}>
-                        {item.value}
-                      </span>
+                      <span className={cn('text-xs', item.bold && 'font-bold uppercase tracking-tight text-stone-700 dark:text-stone-200', item.italic && 'italic', item.color || 'text-stone-700 dark:text-stone-300')}>{item.value}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* Security Credentials */}
-              <div className="md:border-l md:border-stone-100 dark:md:border-stone-800 md:pl-10 space-y-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <Key size={16} className="text-stone-400" />
-                  <span className="text-[10px] font-bold uppercase tracking-widest text-stone-500">Security Access</span>
-                </div>
-                <p className="text-[11px] text-stone-500 leading-relaxed px-1">
-                  Update security for <span className="text-stone-900 dark:text-stone-100 font-medium">{user?.email}</span>
-                </p>
-                
-                <div className="space-y-4">
-                  <div className="grid grid-cols-1 gap-3">
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold uppercase text-stone-400 ml-1">New Password</label>
-                      <input 
-                        type="password" 
-                        className="control-input py-2 text-xs"
-                        placeholder="Min 8 characters"
-                        value={newPassword}
-                        onChange={(e) => setNewPassword(e.target.value)}
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-bold uppercase text-stone-400 ml-1">Confirm Password</label>
-                      <input 
-                        type="password" 
-                        className="control-input py-2 text-xs"
-                        placeholder="Repeat password"
-                        value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
-                      />
-                    </div>
+              {/* Workspace slug */}
+              {canEditIdentity && (
+                <div className="section-card p-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Globe size={16} className="text-stone-400" />
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Slug</h3>
                   </div>
-                  <button
-                    onClick={() => void handleUpdatePassword()}
-                    disabled={isUpdatingPassword}
-                    className="action-btn-primary w-full py-2.5 text-xs font-semibold shadow-sm"
-                  >
-                    {isUpdatingPassword ? 'Updating...' : 'Update Password'}
+                  <div className="space-y-1 max-w-sm">
+                    <label className="text-[10px] font-bold uppercase text-stone-400">ID Slug</label>
+                    <input
+                      type="text"
+                      className="control-input font-mono text-xs"
+                      value={editOrgSlug}
+                      onChange={e => setEditOrgSlug(e.target.value.toLowerCase().replace(/\s+/g, '-'))}
+                      placeholder="e.g. beirut-ops"
+                    />
+                    <p className="text-[9px] text-stone-400 italic">Used for URL paths and deterministic routing.</p>
+                  </div>
+                  <button onClick={handleUpdateOrgIdentity} disabled={isUpdatingOrgIdentity} className="mt-3 action-btn-primary h-8 px-4 text-xs">
+                    {isUpdatingOrgIdentity ? 'Saving...' : 'Save slug'}
                   </button>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
+              )}
 
-        {/* SECTION 2: ACTIVE SCOPE & CONTEXT */}
-        <div className="section border-t border-stone-200 dark:border-stone-800 pt-8">
-          <div className="flex items-center gap-2 mb-6">
-            <Globe size={20} className="text-stone-400" />
-            <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Where you’re working</h3>
-          </div>
-          
-          <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm">
-            {/* Header / Active Identity */}
-            <div className="p-5 border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30 flex items-center justify-between">
-              <div>
-                <h4 className="text-[10px] font-bold uppercase tracking-[0.2em] text-stone-400 mb-2">Where you’re working</h4>
-                <div className="flex flex-wrap items-start gap-4">
-                  {(isPlatformAdmin || isClusterAdmin) && contextClusterId ? (
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">{LABELS.group}</p>
-                      <IdentityBadge
-                        type="cluster"
-                        size="sm"
-                        id={contextClusterId}
-                        name={manageableClusters.find(c => c.id === contextClusterId)?.name || undefined}
-                        tag={manageableClusters.find(c => c.id === contextClusterId)?.tag || undefined}
-                        showShortId={false}
-                      />
-                    </div>
-                  ) : null}
-
-                  {activeOrgId ? (
-                    <div className="space-y-1">
-                      <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">{LABELS.workspace}</p>
-                      <IdentityBadge
-                        type="org"
-                        size="sm"
-                        id={activeOrgId}
-                        name={availableOrgs[activeOrgId]?.name}
-                        tag={availableOrgs[activeOrgId]?.tag}
-                        showShortId={false}
-                        hideCopy={true}
-                      />
-                    </div>
-                  ) : (!contextClusterId && !activeOrgId) ? (
-                    <span className="text-xs font-bold text-stone-400 italic">{LABELS.states.noWorkspace}</span>
-                  ) : null}
-                </div>
-              </div>
-              <div className="text-right">
-                <span className={cn(
-                  "px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-widest border",
-                  isPlatformAdmin 
-                    ? "bg-emerald-50 text-emerald-700 border-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800" 
-                    : "bg-stone-100 text-stone-600 border-stone-200 dark:bg-stone-800 dark:text-stone-400 dark:border-stone-700"
-                )}>
-                  {isPlatformAdmin ? 'System Admin' : isClusterAdmin ? LABELS.group : LABELS.workspace}
-                </span>
-              </div>
-            </div>
-
-            <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
-              {/* Selector 1: Cluster */}
-              <div className="space-y-3">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 block">1. {LABELS.group}</label>
-                {(!isClusterAdmin && !isPlatformAdmin) ? (
-                  <div className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 text-[11px] text-stone-500 italic">
-                    Group switching is available to managers only.
+              {/* Workspace switcher (admin) */}
+              {(isClusterAdmin || isPlatformAdmin) && (
+                <div className="section-card p-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Globe size={16} className="text-stone-400" />
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Switch workspace</h3>
                   </div>
-                ) : manageableClusters.length <= 1 ? (
-                  <div className="flex items-center gap-3 p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700">
-                    <IdentityBadge
-                      type="cluster"
-                      size="sm"
-                      id={manageableClusters[0]?.id || ''}
-                      name={manageableClusters[0]?.name || 'Current Group'}
-                      tag={manageableClusters[0]?.tag || 'N/A'}
-                    />
-                    <span className="text-[10px] font-bold text-stone-400 uppercase ml-auto">Set automatically</span>
-                  </div>
-                ) : (
-                  <select 
-                    className="w-full bg-stone-50 dark:bg-stone-800 border-stone-200 dark:border-stone-700 rounded-xl px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-emerald-500 transition-all outline-none"
-                    value={scopeClusterId || contextClusterId || ''}
-                    onChange={(e) => setScopeClusterId(e.target.value)}
-                  >
-                    <option value="" disabled>{LABELS.actions.chooseGroup}...</option>
-                    {manageableClusters.map(cluster => (
-                      <option key={cluster.id} value={cluster.id}>{cluster.name || cluster.tag || cluster.id.slice(0, 8)}</option>
-                    ))}
-                  </select>
-                )}
-              </div>
-
-              {/* Selector 2: Organization */}
-              <div className="space-y-3">
-                <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 block">2. {LABELS.workspace}</label>
-                {(() => {
-                  const effectiveClusterId = scopeClusterId || contextClusterId;
-                  const orgsInCluster = (effectiveClusterId && manageableOrgsByCluster[effectiveClusterId]) 
-                    ? manageableOrgsByCluster[effectiveClusterId] 
-                    : Object.values(availableOrgs);
-
-                  if (orgsInCluster.length === 0 && !activeOrgId) {
-                    return (
-                      <div className="p-3 rounded-xl border border-stone-100 dark:border-stone-800 bg-stone-50/30 dark:bg-stone-800/20 flex items-center gap-3">
-                        <AlertTriangle size={14} className="text-stone-400" />
-                        <span className="text-[11px] text-stone-500 italic">
-                          {isPlatformAdmin ? "Choose a group to browse workspaces." : "This account has no workspace access yet."}
-                        </span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {manageableClusters.length > 1 && (
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 block">Group</label>
+                        <select
+                          className="w-full bg-stone-50 dark:bg-stone-800 border-stone-200 dark:border-stone-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-500"
+                          value={scopeClusterId || contextClusterId || ''}
+                          onChange={e => setScopeClusterId(e.target.value)}
+                        >
+                          <option value="" disabled>Choose group...</option>
+                          {manageableClusters.map(cluster => (
+                            <option key={cluster.id} value={cluster.id}>{cluster.name || cluster.tag || cluster.id.slice(0, 8)}</option>
+                          ))}
+                        </select>
                       </div>
-                    );
-                  }
-
-                  if ((orgsInCluster.length === 1 && !isPlatformAdmin) || (activeOrgId && orgsInCluster.length === 0)) {
-                    const fixedOrgId = activeOrgId || orgsInCluster[0]?.id;
-                    const fixedOrg = availableOrgs[fixedOrgId || ''] || orgsInCluster[0];
-                    return (
-                      <div className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 flex items-center justify-between">
-                        <IdentityBadge
-                          type="org"
-                          size="sm"
-                          id={fixedOrgId || ''}
-                          name={fixedOrg?.name || undefined}
-                          tag={fixedOrg?.tag || undefined}
-                          slug={fixedOrg?.slug || undefined}
-                        />
-                        <span className="text-[9px] font-black uppercase tracking-widest text-emerald-600 dark:text-emerald-400 px-2 py-0.5 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg border border-emerald-100 dark:border-emerald-800 shadow-sm">
-                          Set automatically
-                        </span>
-                      </div>
-                    );
-                  }
-
-                  return (
-                    <select 
-                      className="w-full bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-emerald-500 shadow-sm transition-all outline-none"
-                      value={activeOrgId || ''}
-                      onChange={(e) => typeof switchOrg === 'function' && switchOrg(e.target.value)}
-                    >
-                      <option value="" disabled>{activeOrgId ? 'Change workspace...' : 'Select workspace...'}</option>
-                      {orgsInCluster.map(org => (
-                        <option key={org.id} value={org.id}>{org.name || org.tag || org.id.slice(0, 8)}</option>
-                      ))}
-                    </select>
-                  );
-                })()}
-              </div>
-            </div>
-
-          </div>
-        </div>
-
-        {/* SECTION 2.5: WORKSPACE IDENTITY */}
-        {(isPlatformAdmin || isClusterAdmin) && activeOrgId && (
-          <div className="section border-t border-stone-200 dark:border-stone-800 pt-8">
-            <div className="flex items-center gap-2 mb-6">
-              <ShieldCheck size={20} className="text-stone-400" />
-              <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Workspace Identity</h3>
-            </div>
-
-            <div className="section-card p-6">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Workspace Name</label>
-                  <input
-                    type="text"
-                    className="control-input"
-                    value={editOrgName}
-                    onChange={(e) => setEditOrgName(e.target.value)}
-                    placeholder="e.g. Acme Corporation"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Identity Tag</label>
-                  <input
-                    type="text"
-                    className="control-input font-mono text-xs"
-                    value={editOrgTag}
-                    onChange={(e) => setEditOrgTag(e.target.value.toUpperCase())}
-                    placeholder="e.g. OPS"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 font-mono">ID Slug</label>
-                  <input
-                    type="text"
-                    className="control-input font-mono text-xs"
-                    value={editOrgSlug}
-                    onChange={(e) => setEditOrgSlug(e.target.value.toLowerCase().replace(/\s+/g, '-'))}
-                    placeholder="e.g. acme-ops"
-                  />
-                  <p className="text-[9px] text-stone-400 mt-1 italic font-medium leading-tight">Used for URL paths and deterministic routing.</p>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-6 border-t border-stone-100 dark:border-stone-800">
-                <p className="text-[11px] text-stone-500 italic max-w-md">
-                  Updates to workspace identity appear across the app immediately. Keep names, tags, and slugs simple and consistent.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleUpdateOrgIdentity}
-                  disabled={isUpdatingOrgIdentity}
-                  className="px-4 py-2 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-xl text-xs font-bold hover:opacity-90 transition-all disabled:opacity-50"
-                >
-                  {isUpdatingOrgIdentity ? 'Updating...' : 'Update Identity'}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* SECTION 3: ADMINISTRATION (Invites & Requests) */}
-        {canViewOperatorLogs && (
-          <div className="section border-t border-stone-200 dark:border-stone-800 pt-8">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2">
-                <ShieldCheck size={20} className="text-stone-400" />
-                <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Access Administration</h3>
-              </div>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => { void fetchAccessInvites(); void fetchAccessRequests(); }}
-                  disabled={inviteLoading || requestsLoading}
-                  className="px-3 py-1.5 rounded-lg border border-stone-200 dark:border-stone-800 text-[11px] font-bold uppercase tracking-wider text-stone-500 hover:bg-stone-50 dark:hover:bg-stone-900 transition-all"
-                >
-                  {(inviteLoading || requestsLoading) ? 'Syncing...' : 'Refresh Queue'}
-                </button>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Invites Card */}
-              <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm flex flex-col">
-                <div className="p-5 border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30">
-                  <h4 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100 mb-1">Invite Issuance</h4>
-                  <p className="text-[11px] text-stone-500">Generate secure, multi-use invite tokens for the current workspace.</p>
-                </div>
-                <div className="p-5 space-y-4 flex-1">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-stone-400">Token Label</label>
-                      <input type="text" placeholder="e.g. Q2 Operations" className="control-input py-1.5" value={inviteLabel} onChange={e => setInviteLabel(e.target.value)} />
-                    </div>
-                    <div className="flex gap-3">
-                      <div className="space-y-1 flex-1">
-                        <label className="text-[10px] font-bold uppercase text-stone-400">Expiry (Days)</label>
-                        <input type="number" className="control-input py-1.5" value={inviteExpiryDays} onChange={e => setInviteExpiryDays(e.target.value)} />
-                      </div>
-                      <div className="space-y-1 flex-1">
-                        <label className="text-[10px] font-bold uppercase text-stone-400">Max Uses</label>
-                        <input type="number" className="control-input py-1.5" value={inviteMaxUses} onChange={e => setInviteMaxUses(e.target.value)} />
-                      </div>
-                    </div>
-                  </div>
-                  <button onClick={() => void createAccessInvite()} className="action-btn-primary w-full h-9 text-xs justify-center font-bold">Create Token</button>
-                  
-                  {inviteNotice && (
-                    <div className="mt-4 p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/20 space-y-3">
-                      <p className="text-[11px] font-bold text-emerald-700 dark:text-emerald-400">{inviteNotice}</p>
-                      {inviteTokenValue && (
-                        <div className="space-y-2">
-                          <div className="flex items-center gap-2">
-                            <span className="font-mono text-[10px] bg-white dark:bg-stone-800 px-2 py-1 rounded border border-stone-100 dark:border-stone-700 select-all flex-1 truncate">{inviteTokenValue}</span>
-                            <button onClick={() => { navigator.clipboard.writeText(inviteTokenValue); setInviteTokenCopied(true); setTimeout(() => setInviteTokenCopied(false), 2000); }} className="text-[10px] font-bold text-stone-500 uppercase">{inviteTokenCopied ? 'Copied' : 'Copy'}</button>
-                          </div>
-                          <button onClick={() => { navigator.clipboard.writeText(buildInviteShareMessage(inviteTokenValue)); setInviteMessageCopied(true); setTimeout(() => setInviteMessageCopied(false), 2000); }} className="w-full py-1 text-[10px] font-bold uppercase tracking-tighter text-stone-500 bg-stone-100 dark:bg-stone-800 rounded">
-                            {inviteMessageCopied ? 'Share Message Copied' : 'Copy Full Invite Message'}
-                          </button>
+                    )}
+                    {(() => {
+                      const effectiveClusterId = scopeClusterId || contextClusterId;
+                      const orgsInCluster = (effectiveClusterId && manageableOrgsByCluster[effectiveClusterId])
+                        ? manageableOrgsByCluster[effectiveClusterId]
+                        : Object.values(availableOrgs);
+                      if (orgsInCluster.length <= 1) return null;
+                      return (
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 block">Workspace</label>
+                          <select
+                            className="w-full bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500"
+                            value={activeOrgId || ''}
+                            onChange={e => typeof switchOrg === 'function' && switchOrg(e.target.value)}
+                          >
+                            <option value="" disabled>Change workspace...</option>
+                            {orgsInCluster.map(org => (
+                              <option key={org.id} value={org.id}>{org.name || org.tag || org.id.slice(0, 8)}</option>
+                            ))}
+                          </select>
                         </div>
-                      )}
+                      );
+                    })()}
+                  </div>
+                  {clusterId && (
+                    <div className="mt-4 pt-4 border-t border-stone-100 dark:border-stone-800">
+                      <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider block mb-2">Add workspace</label>
+                      <div className="flex gap-2 max-w-sm">
+                        <input
+                          type="email"
+                          placeholder="Admin email (optional)"
+                          className="flex-1 text-xs font-bold bg-stone-50 dark:bg-stone-800 border-none rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500"
+                          value={newOrgAdminEmail}
+                          onChange={e => setNewOrgAdminEmail(e.target.value)}
+                          disabled={isProvisioning}
+                        />
+                        <button onClick={() => void provisionOrganization()} disabled={isProvisioning} className="action-btn-primary px-4 text-xs font-bold shrink-0">
+                          {isProvisioning ? '...' : 'Add'}
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
-              </div>
+              )}
 
-              {/* Requests Card */}
-              <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm flex flex-col">
-                <div className="p-5 border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30">
-                  <h4 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100 mb-1">Account Review</h4>
-                  <p className="text-[11px] text-stone-500">Evaluate and approve pending access requests from the portal.</p>
-                </div>
-                <div className="p-5 flex-1 flex flex-col items-center justify-center min-h-[140px]">
-                  {accessRequests.length > 0 ? (
-                    <div className="text-center">
-                      <p className="text-2xl font-light text-stone-900 dark:text-stone-100">{accessRequests.length}</p>
-                      <p className="text-[11px] font-bold uppercase tracking-widest text-stone-400">Pending Review</p>
-                      <p className="text-[10px] text-stone-500 mt-2 italic">Scroll down to the unified queue below for actions.</p>
+              {/* Invite settings */}
+              {canViewOperatorLogs && (
+                <div className="section-card p-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <Key size={16} className="text-stone-400" />
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Invite settings</h3>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3 max-w-sm mb-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-stone-400">Label</label>
+                      <input type="text" placeholder="Q2 Ops" className="control-input py-1.5 text-xs" value={inviteLabel} onChange={e => setInviteLabel(e.target.value)} />
                     </div>
-                  ) : (
-                    <div className="text-center opacity-40">
-                      <CheckCircle2 size={32} className="mx-auto text-stone-300 mb-2" />
-                      <p className="text-xs text-stone-500 font-medium">Clear Queue</p>
-                      <p className="text-[10px] text-stone-400 mt-1">No pending account requests.</p>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-stone-400">Expiry (days)</label>
+                      <input type="number" className="control-input py-1.5 text-xs" value={inviteExpiryDays} onChange={e => setInviteExpiryDays(e.target.value)} />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-stone-400">Max uses</label>
+                      <input type="number" className="control-input py-1.5 text-xs" value={inviteMaxUses} onChange={e => setInviteMaxUses(e.target.value)} />
+                    </div>
+                  </div>
+                  {filteredInvites.length > 0 && (
+                    <div className="space-y-2 max-h-48 overflow-y-auto app-scroll">
+                      <p className="text-[10px] font-bold uppercase text-stone-400 tracking-widest">{filteredInvites.length} active tokens</p>
+                      {filteredInvites.map(inv => (
+                        <div key={inv.id} className="flex items-center justify-between p-2.5 rounded-lg bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700">
+                          <div>
+                            <p className="text-[10px] font-bold text-stone-700 dark:text-stone-300">{inv.label || 'Unlabeled'}</p>
+                            <p className="text-[9px] text-stone-400">{inv.use_count}/{inv.max_uses} uses</p>
+                          </div>
+                          <button onClick={() => void revokeAccessInvite(inv.id)} disabled={busyInviteId === inv.id} className="text-[9px] font-bold text-red-400 uppercase hover:text-red-600 transition-colors">Revoke</button>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
-              </div>
-            </div>
-          </div>
-        )}
+              )}
 
-        {/* SECTION 4: GLOBAL PLATFORM DIRECTORY (Platform Admin Only) */}
-        {isPlatformAdmin && (
-          <div className="section border-t border-stone-200 dark:border-stone-800 pt-8">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2">
-                <Globe size={20} className="text-emerald-500" />
-                <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">System Directory</h3>
+              {/* Pending access requests */}
+              {canViewOperatorLogs && accessRequests.length > 0 && (
+                <div className="section-card p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 size={16} className="text-stone-400" />
+                      <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Pending requests ({accessRequests.length})</h3>
+                    </div>
+                    <button onClick={() => { void fetchAccessInvites(); void fetchAccessRequests(); }} className="text-[10px] font-bold uppercase text-stone-400 hover:text-stone-600 transition-colors">Refresh</button>
+                  </div>
+                  <div className="space-y-3">
+                    {accessRequests.map(req => (
+                      <div key={req.id} className="p-4 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="text-xs font-bold text-stone-900 dark:text-stone-100">{req.login_id}</p>
+                            <p className="text-[10px] text-stone-400">{getRoleLabel(req.requested_role)}</p>
+                          </div>
+                          <span className="text-[9px] font-black uppercase text-amber-600 bg-amber-50 dark:bg-amber-900/10 px-2 py-0.5 rounded-full border border-amber-100 dark:border-amber-800">Pending</span>
+                        </div>
+                        <div className="space-y-2">
+                          <input
+                            type="password"
+                            placeholder="Set initial password (min 8)"
+                            className="control-input py-1.5 text-xs w-full"
+                            value={pendingPasswords[req.id] || ''}
+                            onChange={e => setPendingPasswords(prev => ({ ...prev, [req.id]: e.target.value }))}
+                          />
+                          <div className="flex gap-2">
+                            <button onClick={() => void reviewAccessRequest(req, 'approved')} disabled={busyRequestId === req.id} className="action-btn-primary flex-1 h-8 text-xs justify-center">Approve</button>
+                            <button onClick={() => void reviewAccessRequest(req, 'rejected')} disabled={busyRequestId === req.id} className="flex-1 h-8 rounded-xl border border-stone-200 dark:border-stone-700 text-xs font-bold text-stone-500 hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors">Reject</button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                    {requestsNotice && <p className="text-[10px] text-stone-500 italic">{requestsNotice}</p>}
+                  </div>
+                </div>
+              )}
+
+              {/* Export config */}
+              <div className="section-card p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Download size={16} className="text-stone-400" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Export config</h3>
+                </div>
+                <div className="grid grid-cols-2 gap-4 max-w-sm">
+                  {(isClusterAdmin || isPlatformAdmin) && (
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Level</label>
+                      <div className="flex gap-1 bg-stone-100 dark:bg-stone-800 p-1 rounded-xl">
+                        {(['org', 'cluster'] as const).map(s => (
+                          <button key={s} onClick={() => setExportScope(s)} className={cn('flex-1 py-1.5 text-[10px] font-black uppercase rounded-lg transition-all', exportScope === s ? 'bg-stone-900 dark:bg-white text-white dark:text-stone-900' : 'text-stone-400 hover:text-stone-600')}>
+                            {s === 'org' ? 'Workspace' : 'Group'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Dataset</label>
+                    <select value={exportDataset} onChange={e => setExportDataset(e.target.value)} className="w-full text-xs bg-stone-50 dark:bg-stone-800 border-none rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500">
+                      <option value="all">Full</option>
+                      <option value="entities">Entities</option>
+                      <option value="activities">Activities</option>
+                      <option value="audit_events">Audit trail</option>
+                    </select>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-3">
-                <input 
-                  type="text" 
-                  placeholder="Search users across all groups..." 
-                  className="w-64 text-[11px] bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500"
-                  value={platformDirectorySearch}
-                  onChange={e => setPlatformDirectorySearch(e.target.value)}
-                />
-                <button 
-                  onClick={() => void fetchPlatformDirectory()} 
-                  className="text-[10px] font-bold text-stone-400 uppercase hover:text-stone-600 transition-colors"
+
+              {/* Sessions */}
+              <div className="section-card p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <LogOut size={16} className="text-stone-400" />
+                  <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Sessions</h3>
+                </div>
+                <p className="text-[11px] text-stone-500 mb-4">Sign out of all active sessions across all devices.</p>
+                <button
+                  onClick={() => void handleSignOutAll()}
+                  className="h-10 px-6 rounded-xl bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-[11px] font-bold uppercase tracking-widest hover:opacity-90 transition-opacity flex items-center gap-2"
                 >
-                  Refresh
+                  <LogOut size={14} />
+                  Sign out all devices
                 </button>
               </div>
-            </div>
 
-            <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-stone-50/50 dark:bg-stone-800/30 border-b border-stone-100 dark:border-stone-800">
-                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400">Account / email</th>
-                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400">Group roles</th>
-                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400">Workspace access</th>
-                      <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                    {platformDirectoryLoading ? (
-                      <tr>
-                        <td colSpan={4} className="px-5 py-12">
-                          <LoadingLine label="Syncing platform directory..." compact />
-                        </td>
-                      </tr>
-                    ) : platformAccounts.length === 0 ? (
-                      <tr>
-                        <td colSpan={4} className="px-5 py-12 text-center text-[11px] text-stone-400 italic">No users found in platform directory.</td>
-                      </tr>
-                    ) : platformAccounts
-                        .filter(acc => !platformDirectorySearch || acc.email?.toLowerCase().includes(platformDirectorySearch.toLowerCase()))
-                        .map(acc => (
-                      <tr key={acc.user_id} className="group hover:bg-stone-50/50 dark:hover:bg-stone-800/20 transition-colors">
-                        <td className="px-5 py-4">
-                          <p className="text-xs font-bold text-stone-900 dark:text-stone-100">{acc.email || 'unset'}</p>
-                          <p className="text-[10px] text-stone-400 font-mono mt-0.5">{acc.user_id.slice(0, 8)}...</p>
-                        </td>
-                        <td className="px-5 py-4">
-                          <div className="flex flex-wrap gap-1">
-                            {acc.cluster_roles.length > 0 ? acc.cluster_roles.map((cr, i) => (
-                              <span key={i} className="text-[9px] font-black uppercase tracking-tighter bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-100 dark:border-emerald-900/20">
-                                {cr.role.replace('_', ' ')}
-                              </span>
-                            )) : (
-                              <span className="text-[9px] text-stone-300 dark:text-stone-600 font-bold uppercase italic">None</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-5 py-4">
-                          <div className="flex flex-wrap gap-1">
-                            {acc.org_roles.length > 0 ? acc.org_roles.map((om, i) => (
-                              <span key={i} className="text-[9px] font-black uppercase tracking-tighter bg-violet-50 dark:bg-violet-900/10 text-violet-600 dark:text-violet-400 px-1.5 py-0.5 rounded border border-violet-100 dark:border-violet-900/20">
-                                {om.role}
-                              </span>
-                            )) : (
-                              <span className="text-[9px] text-stone-300 dark:text-stone-600 font-bold uppercase italic">None</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="px-5 py-4 text-right">
-                          <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button 
-                              onClick={() => {
-                                if (acc.email) {
-                                  setNewOrgAdminEmail(acc.email);
-                                  window.scrollTo({ top: document.getElementById('provisioning-card')?.offsetTop || 0, behavior: 'smooth' });
-                                }
-                              }}
-                              className="text-[10px] font-bold text-emerald-600 uppercase hover:underline"
-                            >
-                              Provision Org
-                            </button>
-                            <button 
-                              onClick={() => {
-                                if (acc.user_id === user?.id) {
-                                  notify({ type: 'error', message: 'You cannot reset your own password from here.' });
-                                  return;
-                                }
-                                if (window.confirm(`Send password reset email to ${acc.email}?`)) {
-                                  void resetUserPassword(acc.user_id);
-                                }
-                              }}
-                              className="text-[10px] font-bold text-stone-400 uppercase hover:text-stone-600 transition-colors"
-                            >
-                              Reset
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* SECTION 5: GROUP MANAGEMENT */}
-        {(isClusterAdmin || isPlatformAdmin) && (
-          <div className="section border-t border-stone-200 dark:border-stone-800 pt-8">
-            <div className="flex items-center gap-2 mb-6">
-              <ShieldCheck size={20} className="text-stone-400" />
-              <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Group Administration</h3>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-              {/* Cluster Members Card */}
-              <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm">
-                <div className="p-5 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between bg-stone-50/50 dark:bg-stone-800/30">
-                  <div>
-                    <h4 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100 mb-1">Group Managers</h4>
-                    <p className="text-[11px] text-stone-500">Manage group-level access and elevated roles.</p>
+              {/* System Directory (platform admin only) */}
+              {isPlatformAdmin && (
+                <div className="section-card p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <Globe size={16} className="text-emerald-500" />
+                      <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Directory</h3>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="text"
+                        placeholder="Search users..."
+                        className="text-[11px] bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500 w-48"
+                        value={platformDirectorySearch}
+                        onChange={e => setPlatformDirectorySearch(e.target.value)}
+                      />
+                      <button onClick={() => void fetchPlatformDirectory()} className="text-[10px] font-bold text-stone-400 uppercase hover:text-stone-600 transition-colors">Refresh</button>
+                    </div>
+                  </div>
+                  <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-stone-50/50 dark:bg-stone-800/30 border-b border-stone-100 dark:border-stone-800">
+                            <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400">Email</th>
+                            <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400">Roles</th>
+                            <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
+                          {platformDirectoryLoading ? (
+                            <tr>
+                              <td colSpan={3} className="px-5 py-8">
+                                <LoadingLine label="Loading..." compact />
+                              </td>
+                            </tr>
+                          ) : platformAccounts
+                              .filter(acc => !platformDirectorySearch || acc.email?.toLowerCase().includes(platformDirectorySearch.toLowerCase()))
+                              .map(acc => (
+                            <tr key={acc.user_id} className="group hover:bg-stone-50/50 dark:hover:bg-stone-800/20 transition-colors">
+                              <td className="px-5 py-3">
+                                <p className="text-xs font-bold text-stone-900 dark:text-stone-100">{acc.email || 'unset'}</p>
+                              </td>
+                              <td className="px-5 py-3">
+                                <div className="flex flex-wrap gap-1">
+                                  {acc.cluster_roles.map((cr, i) => (
+                                    <span key={i} className="text-[9px] font-black uppercase bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-100 dark:border-emerald-900/20">{cr.role.replace('_', ' ')}</span>
+                                  ))}
+                                  {acc.org_roles.map((om, i) => (
+                                    <span key={i} className="text-[9px] font-black uppercase bg-violet-50 dark:bg-violet-900/10 text-violet-600 dark:text-violet-400 px-1.5 py-0.5 rounded border border-violet-100 dark:border-violet-900/20">{om.role}</span>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className="px-5 py-3 text-right">
+                                <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                                  <button
+                                    onClick={() => { if (acc.email) setNewOrgAdminEmail(acc.email); }}
+                                    className="text-[10px] font-bold text-emerald-600 uppercase hover:underline"
+                                  >
+                                    Assign
+                                  </button>
+                                  <button
+                                    onClick={() => {
+                                      if (acc.user_id === user?.id) { notify({ type: 'error', message: 'You cannot reset your own password from here.' }); return; }
+                                      if (window.confirm(`Reset password for ${acc.email}?`)) void resetUserPassword(acc.user_id);
+                                    }}
+                                    className="text-[10px] font-bold text-stone-400 uppercase hover:text-stone-600 transition-colors"
+                                  >
+                                    Reset
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
                 </div>
-                <div className="p-5">
-                  <div className="mb-4">
-                    <input type="text" placeholder="Filter managers..." className="w-full text-[11px] bg-stone-50 dark:bg-stone-800 border-none rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500" value={clusterSearch} onChange={e => setClusterSearch(e.target.value)} />
+              )}
+
+              {/* Group Administration (cluster admin only) */}
+              {(isClusterAdmin || isPlatformAdmin) && (
+                <div className="section-card p-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <ShieldCheck size={16} className="text-stone-400" />
+                    <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Group managers</h3>
                   </div>
-                  <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1 app-scroll">
+                  <div className="mb-3">
+                    <input
+                      type="text"
+                      placeholder="Filter managers..."
+                      className="w-full text-[11px] bg-stone-50 dark:bg-stone-800 border-none rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500"
+                      value={clusterSearch}
+                      onChange={e => setClusterSearch(e.target.value)}
+                    />
+                  </div>
+                  <div className="space-y-2 max-h-72 overflow-y-auto app-scroll">
                     {clusterAdminsLoading ? (
                       <LoadingLine label="Loading managers..." compact />
                     ) : filteredClusterAdmins.length === 0 ? (
-                      <p className="text-[11px] text-stone-400 italic text-center py-8">No results in this view.</p>
+                      <p className="text-[11px] text-stone-400 italic text-center py-6">No results.</p>
                     ) : filteredClusterAdmins.map(admin => {
                       const isSelf = admin.user_id === user?.id;
-                      const isLastAdmin = admin.role === 'cluster_admin' && clusterAdmins.filter(a => a.role === 'cluster_admin').length === 1;
                       return (
-                        <div key={admin.user_id} className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700/50 flex items-center justify-between group gap-4">
+                        <div key={admin.user_id} className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 flex items-center justify-between group gap-3">
                           <div className="min-w-0 flex-1">
                             <p className="text-xs font-bold text-stone-900 dark:text-stone-100 truncate">{admin.email} {isSelf && '(You)'}</p>
-                            <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                              {admin.type === 'cluster' ? (
-                                <span className="text-[9px] font-black uppercase tracking-tighter text-emerald-600 dark:text-emerald-400">GROUP {admin.role.replace('_', ' ')}</span>
-                              ) : (
-                                <span className="text-[9px] font-black uppercase tracking-tighter text-violet-600 dark:text-violet-400">WORKSPACE {admin.role}</span>
-                              )}
-                              {admin.org_role && (
-                                <span className="text-[9px] font-black uppercase tracking-tighter text-stone-400">• WORKSPACE {admin.org_role}</span>
-                              )}
-                            </div>
+                            <p className="text-[9px] font-bold uppercase tracking-tighter text-stone-400 mt-0.5">
+                              {admin.type === 'cluster' ? `Group ${admin.role.replace('_', ' ')}` : `Workspace ${admin.role}`}
+                            </p>
                           </div>
                           {!isSelf && admin.type === 'cluster' && (
                             <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <select 
+                              <select
                                 className="text-[10px] bg-white dark:bg-stone-900 border-stone-200 rounded px-1 py-0.5 outline-none font-bold text-stone-600"
                                 value={pendingClusterRoles[admin.user_id] || admin.role}
-                                onChange={(e) => setPendingClusterRoles(prev => ({ ...prev, [admin.user_id]: e.target.value as any }))}
+                                onChange={e => setPendingClusterRoles(prev => ({ ...prev, [admin.user_id]: e.target.value as any }))}
                               >
                                 <option value="cluster_admin">Admin</option>
                                 <option value="cluster_operator">Operator</option>
@@ -1380,246 +1377,16 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                             </div>
                           )}
                           {isSelf && <span className="text-[9px] font-bold text-stone-400 uppercase tracking-widest">Fixed</span>}
-                          {admin.type === 'organization' && !isSelf && (
-                            <span className="text-[9px] font-bold text-stone-300 dark:text-stone-600 uppercase italic">Workspace managed</span>
-                          )}
                         </div>
                       );
                     })}
                   </div>
                 </div>
-              </div>
+              )}
 
-              {/* Provisioning Card */}
-              <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm">
-                <div className="p-5 border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30 font-bold">
-                  <h4 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100 mb-1">Create Workspace</h4>
-                  <p className="text-[11px] text-stone-500">Add a new workspace inside this group.</p>
-                </div>
-                <div className="p-5 space-y-4">
-                  <p className="text-[11px] text-stone-600 dark:text-stone-400 leading-relaxed italic">
-                    New workspaces are created with the platform defaults so they are ready to use without extra setup.
-                  </p>
-                  <div className="flex flex-col gap-4">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Initial Admin Email (Optional)</label>
-                      <input 
-                        type="email" 
-                        placeholder="admin@example.com" 
-                        className="w-full text-xs font-bold bg-stone-50 dark:bg-stone-800 border-none rounded-lg px-3 py-2.5 outline-none focus:ring-1 focus:ring-emerald-500"
-                        value={newOrgAdminEmail}
-                        onChange={e => setNewOrgAdminEmail(e.target.value)}
-                        disabled={isProvisioning}
-                      />
-                      <p className="text-[9px] text-stone-400">If provided, this user will be granted administrative access to the new workspace.</p>
-                    </div>
-
-                    {clusterId ? (
-                      <button 
-                        onClick={() => void provisionOrganization()} 
-                        disabled={isProvisioning}
-                        className="action-btn-primary w-full h-11 text-xs justify-center font-bold"
-                      >
-                        {isProvisioning ? <LoadingLine label="Creating workspace..." compact /> : 'Add workspace'}
-                      </button>
-                    ) : (
-                      <button onClick={() => void bootstrapClusterAdmin()} className="w-full h-11 rounded-xl border-2 border-amber-200 bg-amber-50 text-amber-800 text-[11px] font-bold uppercase tracking-widest hover:bg-amber-100 transition-colors">
-                        Create group
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Security & Sessions Card */}
-              <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl overflow-hidden shadow-sm">
-                <div className="p-5 border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30 font-bold">
-                  <h4 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100 mb-1">Security & Sessions</h4>
-                  <p className="text-[11px] text-stone-500">Manage your active sessions and account security.</p>
-                </div>
-                <div className="p-5 space-y-4">
-                  <div className="flex flex-col gap-4">
-                    <div className="p-4 rounded-xl bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800/50">
-                      <p className="text-[11px] text-amber-800 dark:text-amber-400 leading-relaxed font-medium">
-                        If you have recently rotated keys or are experiencing persistent 401 errors, use the button below to sign out of all devices and clear stale session data.
-                      </p>
-                    </div>
-                    <button 
-                      onClick={() => void handleSignOutAll()} 
-                      className="w-full h-11 rounded-xl bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-[11px] font-bold uppercase tracking-widest hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
-                    >
-                      <LogOut size={16} />
-                      Sign Out of All Devices
-                    </button>
-                  </div>
-                </div>
-              </div>
             </div>
-          </div>
-        )}
-
-        {/* SECTION 5: OPERATIONS (Bulk Export) */}
-        <div className="section border-t border-stone-200 dark:border-stone-800 pt-8">
-          <div className="flex items-center gap-2 mb-6">
-            <LogOut size={20} className="rotate-180 text-stone-400" />
-            <h3 className="font-semibold text-base text-stone-900 dark:text-stone-100">Governance & Export</h3>
-          </div>
-
-          <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-2xl shadow-sm w-full overflow-hidden">
-            <div className="p-5 border-b border-stone-100 dark:border-stone-800 bg-stone-50/50 dark:bg-stone-800/30">
-              <div className="flex items-center justify-between mb-1">
-                <h4 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Governed Bulk Export</h4>
-                {lastExportMeta && <span className="text-[10px] font-bold text-stone-400">LAST: {lastExportMeta.rows} ROWS</span>}
-              </div>
-              <p className="text-[11px] text-stone-500">Atomic snapshots with full audit transparency. Sensitive fields are redacted at the Edge.</p>
-            </div>
-            
-            <div className="p-6 space-y-6">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Export level</label>
-                    {(isClusterAdmin || isPlatformAdmin) ? (
-                      <div className="flex gap-1 bg-stone-100 dark:bg-stone-800 p-1 rounded-xl border border-stone-200 dark:border-stone-700">
-                        <button 
-                          onClick={() => setExportScope('cluster')} 
-                          className={cn(
-                            "flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all", 
-                            exportScope === 'cluster' 
-                              ? "bg-stone-900 dark:bg-white text-white dark:text-stone-900 shadow-sm" 
-                              : "text-stone-400 hover:text-stone-600 dark:hover:text-stone-300"
-                          )}
-                        >
-                          Entire group
-                        </button>
-                        <button 
-                          onClick={() => setExportScope('org')} 
-                          className={cn(
-                            "flex-1 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all", 
-                            (exportScope === 'org' || (!isClusterAdmin && !isPlatformAdmin)) 
-                              ? "bg-stone-900 dark:bg-white text-white dark:text-stone-900 shadow-sm" 
-                              : "text-stone-400 hover:text-stone-600 dark:hover:text-stone-300"
-                          )}
-                        >
-                          Workspace
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="py-2.5 px-4 bg-stone-50 dark:bg-stone-800 rounded-lg border border-stone-100 dark:border-stone-700">
-                        <span className="text-[10px] font-black uppercase tracking-widest text-stone-400">Fixed: Workspace</span>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {isPlatformAdmin && exportScope === 'cluster' && (
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Target Group</label>
-                      <select 
-                        value={exportClusterId || contextClusterId || ''} 
-                        onChange={e => setExportClusterId(e.target.value)} 
-                        className="w-full text-xs font-bold bg-stone-50 dark:bg-stone-800 border-none rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500"
-                      >
-                        {manageableClusters.map(c => <option key={c.id} value={c.id}>{c.tag || c.name}</option>)}
-                      </select>
-                    </div>
-                  )}
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Dataset Selection</label>
-                    <select value={exportDataset} onChange={e => setExportDataset(e.target.value)} className="w-full text-xs font-medium bg-stone-50 dark:bg-stone-800 border-none rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500">
-                      <option value="all">Full Operational State</option>
-                      <option value="entities">Entities & Meta</option>
-                      <option value="activities">Activity Feeds</option>
-                      <option value="audit_events">Audit Trail</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="bg-stone-50 dark:bg-stone-800/50 rounded-xl p-4 border border-stone-100 dark:border-stone-700 flex flex-col justify-center gap-2">
-                  <div className="flex items-center gap-2 text-stone-400">
-                    <Globe size={14} />
-                    <span className="text-[10px] font-bold uppercase tracking-widest">Export Preview</span>
-                  </div>
-                  <div className="space-y-1.5 mt-1">
-                    <p className="text-[10px] flex justify-between font-medium">
-                      <span>Target:</span> 
-                      <span className="text-stone-900 dark:text-stone-100 font-bold">
-                        {exportScope === 'cluster' 
-                          ? (manageableClusters.find(c => c.id === (exportClusterId || contextClusterId))?.tag || 'Entire group')
-                          : (Object.values(availableOrgs).find(o => o.id === (exportOrgId || activeOrgId))?.name || 'Selected workspace')}
-                      </span>
-                    </p>
-                    <p className="text-[10px] flex justify-between font-medium"><span>Auth:</span> <span className="text-emerald-600 uppercase font-black tracking-tighter">{roleLabel} Verified</span></p>
-                    <p className="text-[10px] flex justify-between font-medium"><span>Redaction:</span> <span className="text-stone-500 italic">Enabled</span></p>
-                  </div>
-                </div>
-              </div>
-
-              <button 
-                onClick={() => {
-                  const runExport = async () => {
-                    if (!window.confirm(`Initiate ${exportScope} export? This action is audit-logged.`)) return;
-                    setIsExporting(true);
-                    try {
-                      const { data, error } = await invokeSafe('export-data', { 
-                        scope: exportScope, 
-                        dataset: exportDataset, 
-                        org_id: exportOrgId || activeOrgId || '', 
-                        cluster_id: contextClusterId || '' 
-                      });
-                      if (error) throw error;
-                      const result = data as any;
-                      const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = `flow-ops-${exportScope}-${exportDataset}-${new Date().toISOString().slice(0, 10)}.json`;
-                      a.click();
-                      URL.revokeObjectURL(url);
-                      setLastExportMeta({ rows: result.total_rows ?? 0, ts: result.exported_at ?? new Date().toISOString() });
-                      notify({ type: 'success', message: `Export complete. Audit trail ID: ${result.audit_event_id.slice(0, 8)}` });
-                    } catch (err) {
-                      notify({ type: 'error', message: `Export failed: ${String(err)}` });
-                    } finally { setIsExporting(false); }
-                  };
-                  void runExport();
-                }}
-                disabled={isExporting} 
-                className="w-full py-2.5 bg-stone-900 dark:bg-white text-white dark:text-stone-900 rounded-xl text-xs font-bold uppercase tracking-widest hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-30"
-              >
-                {isExporting ? 'Packaging Data...' : 'Generate Governed Export'}
-              </button>
-            </div>
-          </div>
+          )}
         </div>
-
-        {/* SECTION 6: DANGER ZONE */}
-        <div className="section border-t-4 border-red-500/10 pt-12">
-          <div className="flex items-center gap-2 mb-6">
-            <AlertTriangle size={20} className="text-red-500" />
-            <h3 className="font-semibold text-base text-red-600 dark:text-red-400">Danger Zone</h3>
-          </div>
-
-          <div className="bg-red-50/30 dark:bg-red-950/10 border-2 border-red-100 dark:border-red-900/20 rounded-2xl p-6 max-w-2xl">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
-              <div className="max-w-md">
-                <h4 className="text-xs font-bold uppercase tracking-widest text-red-700 dark:text-red-400 mb-1">Irreversible System Reset</h4>
-                <p className="text-[11px] text-stone-500 dark:text-stone-400 leading-relaxed">
-                  Executing a reset permanently purges all operational data, entities, and activity histories for the current workspace. This action cannot be undone.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => { void clearGlobalData(); }}
-                disabled={!canManageGlobalData || isClearingGlobalData}
-                className="h-10 px-6 bg-white dark:bg-stone-900 border-2 border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 rounded-xl text-[10px] font-black uppercase tracking-[0.15em] hover:bg-red-600 hover:text-white dark:hover:bg-red-900 hover:border-red-600 transition-all disabled:opacity-20 flex-shrink-0"
-              >
-                {isClearingGlobalData ? 'Purging...' : 'Execute Reset'}
-              </button>
-            </div>
-          </div>
-        </div>
-
 
         <LiveOperatorsTracker />
       </div>
