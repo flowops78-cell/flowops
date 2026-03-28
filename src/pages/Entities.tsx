@@ -650,9 +650,10 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                 required
               >
                 <option value="">From Entity</option>
-                {entities.map(entity => (
-                  <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(entity.total || 0)})</option>
-                ))}
+                {entities.map(entity => {
+                  const s = entityStats.get(entity.id);
+                  return <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(s?.net ?? 0)})</option>;
+                })}
               </select>
               <select
                 className="control-input"
@@ -662,9 +663,10 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                 required
               >
                 <option value="">To Entity</option>
-                {entities.map(entity => (
-                  <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(entity.total || 0)})</option>
-                ))}
+                {entities.map(entity => {
+                  const s = entityStats.get(entity.id);
+                  return <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(s?.net ?? 0)})</option>;
+                })}
               </select>
               <input
                 type="number"
@@ -713,9 +715,10 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                 required
               >
                 <option value="">Select Entity</option>
-                {entities.map(entity => (
-                  <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(entity.total || 0)})</option>
-                ))}
+                {entities.map(entity => {
+                  const s = entityStats.get(entity.id);
+                  return <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(s?.net ?? 0)})</option>;
+                })}
               </select>
               <input
                 type="number"
@@ -773,9 +776,10 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                 required
               >
                 <option value="">Select Entity</option>
-                {entities.map(entity => (
-                  <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(entity.total || 0)})</option>
-                ))}
+                {entities.map(entity => {
+                  const s = entityStats.get(entity.id);
+                  return <option key={entity.id} value={entity.id}>{getEntityDisplayName(entity.name)} ({formatValue(s?.net ?? 0)})</option>;
+                })}
               </select>
               <input
                 type="number"
@@ -854,9 +858,9 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                   right={
                     <span className={cn(
                       "font-mono text-sm font-medium",
-                      (entity.total || 0) > 0 ? "text-emerald-600 dark:text-emerald-400" : (entity.total || 0) < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
+                      stats.net > 0 ? "text-emerald-600 dark:text-emerald-400" : stats.net < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
                     )}>
-                      {formatValue(entity.total || 0)}
+                      {formatValue(stats.net)}
                     </span>
                   }
                   meta={<span>{stats.activitys} activities • {stats.lastActive ? formatDate(stats.lastActive) : 'Never active'}</span>}
