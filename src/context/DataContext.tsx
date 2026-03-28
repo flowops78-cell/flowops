@@ -497,6 +497,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .single();
       if (error) throw error;
       setEntities(prev => [...prev, row]);
+
+      const startingTotal = Number(data.total);
+      if (Number.isFinite(startingTotal) && Math.abs(startingTotal) > 0) {
+        await addRecord({
+          activity_id: await ensureWorkspaceLedgerActivityId(),
+          entity_id: row.id,
+          direction: startingTotal >= 0 ? 'increase' : 'decrease',
+          status: 'applied',
+          unit_amount: Math.abs(startingTotal),
+          notes: 'Starting total',
+        });
+      }
+
       return row.id as string;
     });
   };

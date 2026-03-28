@@ -49,6 +49,8 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
   const [isActivityRecordingDeferred, setIsActivityRecordingDeferred] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'activity'>('grid');
   const [activeCardAction, setActiveCardAction] = useState<{ entityId: string; action: 'send' | 'adjust' | 'pending' } | null>(null);
+  const [selectedEntity, setSelectedEntity] = useState<Entity | null>(null);
+  const [isQuickOverlayOpen, setIsQuickOverlayOpen] = useState(false);
   const [quickViewEntity, setQuickViewEntity] = useState<Entity | null>(null);
   const [entriesViewEntity, setEntriesViewEntity] = useState<Entity | null>(null);
   const [entitysActivityScrollTop, setEntitysActivityScrollTop] = useState(0);
@@ -85,14 +87,33 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  const openDeferredForm = (entityId?: string) => {
+  const openDeferredForm = (entityId?: string, direction: 'inbound' | 'outbound' = 'outbound') => {
     setIsActivityRecordingDeferred(true);
     setDeferredEntityId(entityId || '');
     setDeferredAmount('');
-    setDeferredDirection('outbound');
+    setDeferredDirection(direction);
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
+  };
+
+  const openAdjustForm = (entityId?: string) => {
+    setIsActivityRecordingOutputRequest(true);
+    setOutputRequestEntityId(entityId || '');
+    setOutputRequestAmount('');
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const openQuickOverlay = (entity: Entity) => {
+    setSelectedEntity(entity);
+    setIsQuickOverlayOpen(true);
+  };
+
+  const closeQuickOverlay = () => {
+    setIsQuickOverlayOpen(false);
+    setSelectedEntity(null);
   };
 
   const openEntityProfile = (entityId: string) => {
@@ -137,7 +158,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
     return records
       .filter(record => record.entity_id === activeProfileEntity.id)
       .map(record => {
-        const activity = activityById.get(record.activity_id);
+        const activity = record.activity_id ? activityById.get(record.activity_id) : undefined;
         const sortTimestamp =
           record.left_at ||
           record.created_at ||
@@ -204,6 +225,33 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
     navigate({ pathname: location.pathname, search: next.toString() ? `?${next.toString()}` : '' }, { replace: true });
   }, [location.pathname, location.search, navigate]);
 
+  useEffect(() => {
+    if (!isQuickOverlayOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeQuickOverlay();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isQuickOverlayOpen]);
+
+  useEffect(() => {
+    if (!selectedEntity) return;
+
+    const nextEntity = entities.find(entity => entity.id === selectedEntity.id) || null;
+    if (!nextEntity) {
+      closeQuickOverlay();
+      return;
+    }
+
+    if (nextEntity !== selectedEntity) {
+      setSelectedEntity(nextEntity);
+    }
+  }, [entities, selectedEntity]);
+
   const handleAddEntity = async (e: React.FormEvent) => {
     e.preventDefault();
     const displayName = name.trim();
@@ -212,16 +260,26 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
       return;
     }
 
-    try {
-      const parsedTotal = profileTotal.trim() === '' ? undefined : Number(profileTotal);
+    const trimmedTotal = profileTotal.trim();
+    const parsedTotal = trimmedTotal === '' ? undefined : Number(trimmedTotal);
+    if (trimmedTotal !== '' && !Number.isFinite(parsedTotal)) {
+      setImportStatus({ type: 'error', message: 'Starting total must be a valid number.' });
+      return;
+    }
 
+    try {
       await addEntity({ 
         name: displayName,
         tags,
         total: Number.isFinite(parsedTotal as number) ? parsedTotal : undefined,
         collaboration_id: attributedCollaborationId || undefined
       });
-      // recordSystemEvent removed
+      setImportStatus({
+        type: 'success',
+        message: Number.isFinite(parsedTotal as number) && (parsedTotal as number) !== 0
+          ? 'Entity saved with starting total.'
+          : 'Entity saved.',
+      });
       setIsAdding(false);
       resetForm();
     } catch (error: any) {
@@ -387,6 +445,9 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
 
   const activeEntitysCount = entities.filter(p => (entityStats.get(p.id)?.net || 0) !== 0).length;
   const positiveDeltaEntitys = entities.filter(p => (entityStats.get(p.id)?.net || 0) > 0).length;
+  const selectedEntityStats = selectedEntity
+    ? entityStats.get(selectedEntity.id) || { net: 0, activitys: 0, lastActive: null, surpluses: 0, totalInflow: 0, avgActivity: 0 }
+    : null;
   const entityDataMenuItems = [
     { 
       key: 'add-entity-profile', 
@@ -518,6 +579,12 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
             </button>
           </div>
         </div>
+
+        {filteredEntitys.length > 0 && (
+          <div className="rounded-xl border border-dashed border-stone-200 bg-stone-50/80 px-3 py-2 text-xs text-stone-500 dark:border-stone-800 dark:bg-stone-900/60 dark:text-stone-400">
+            Tap an entity for quick actions.
+          </div>
+        )}
       </div>
 
       {isAdding && (
@@ -778,6 +845,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                 <EntityGridCard
                   entity={entity}
                   stats={stats}
+                  onOpenOverlay={() => openQuickOverlay(entity)}
                   onOpenProfile={() => openEntityProfile(entity.id)}
                   onOpenSnapshot={() => setQuickViewEntity(entity)}
                   canManageImpact={canManageImpact}
@@ -879,13 +947,13 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
           })}
           {filteredEntitys.length === 0 && (
             <div className="section-card p-8 text-center text-stone-400 sm:col-span-2 xl:col-span-3">
-              <p>No entities found.</p>
+              <p>No entities.</p>
               <button
                 type="button"
                 onClick={() => setIsAdding(true)}
                 className="action-btn-primary text-xs px-3 py-1.5 mt-3"
               >
-                Add first entity
+                Add entity
               </button>
             </div>
           )}
@@ -896,77 +964,102 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
             {filteredEntitys.map(entity => {
               const stats = entityStats.get(entity.id) || { net: 0, activitys: 0, lastActive: null, surpluses: 0, totalInflow: 0, avgActivity: 0 };
               return (
-                <MobileActivityRecordCard
-                  key={entity.id}
-                  title={getEntityDisplayName(entity.name)}
-                  right={
-                    <span className={cn(
-                      "font-mono text-sm font-medium",
-                      stats.net > 0 ? "text-emerald-600 dark:text-emerald-400" : stats.net < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
-                    )}>
-                      {formatValue(stats.net)}
-                    </span>
-                  }
-                  meta={<span>{stats.activitys} · {stats.lastActive ? formatDate(stats.lastActive) : 'Never'}</span>}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <p className={cn(
-                      "font-mono text-sm",
-                      stats.net > 0 ? "text-emerald-600 dark:text-emerald-400" : stats.net < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
-                    )}>
-                      {formatValue(stats.net)}
-                    </p>
-                    <div className="flex items-center gap-1.5">
-                      {canManageImpact && (
+                <div key={entity.id} onClick={() => openQuickOverlay(entity)} className="cursor-pointer">
+                  <MobileActivityRecordCard
+                    title={getEntityDisplayName(entity.name)}
+                    right={
+                      <span className={cn(
+                        "font-mono text-sm font-medium",
+                        stats.net > 0 ? "text-emerald-600 dark:text-emerald-400" : stats.net < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
+                      )}>
+                        {formatValue(stats.net)}
+                      </span>
+                    }
+                    meta={<span>{stats.activitys} · {stats.lastActive ? formatDate(stats.lastActive) : 'Never'}</span>}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <p className={cn(
+                        "font-mono text-sm",
+                        stats.net > 0 ? "text-emerald-600 dark:text-emerald-400" : stats.net < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
+                      )}>
+                        {formatValue(stats.net)}
+                      </p>
+                      <div className="flex items-center gap-1.5">
                         <button
-                          onClick={() => openTransferForm(entity.id)}
-                          className="p-1.5 text-stone-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition-colors"
-                          title="TransferAmount from this entity"
+                          onClick={event => {
+                            event.stopPropagation();
+                            openQuickOverlay(entity);
+                          }}
+                          className="action-btn-secondary text-xs px-2.5 py-1"
                         >
-                          <ArrowRightLeft size={16} />
+                          Quick
                         </button>
-                      )}
-                      {canActivityRecordDeferred && (
+                        {canManageImpact && (
+                          <button
+                            onClick={event => {
+                              event.stopPropagation();
+                              openTransferForm(entity.id);
+                            }}
+                            className="p-1.5 text-stone-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition-colors"
+                            title="Transfer from this entity"
+                          >
+                            <ArrowRightLeft size={16} />
+                          </button>
+                        )}
+                        {canActivityRecordDeferred && (
+                          <button
+                            onClick={event => {
+                              event.stopPropagation();
+                              openDeferredForm(entity.id);
+                            }}
+                            className="p-1.5 text-stone-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 rounded-md transition-colors"
+                            title="Add pending record"
+                          >
+                            <Clock size={16} />
+                          </button>
+                        )}
                         <button
-                          onClick={() => openDeferredForm(entity.id)}
-                          className="p-1.5 text-stone-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 rounded-md transition-colors"
-                          title="Add Pending ActivityRecord"
+                          onClick={event => {
+                            event.stopPropagation();
+                            openEntityProfile(entity.id);
+                          }}
+                          className="action-btn-secondary text-xs px-2.5 py-1"
                         >
-                          <Clock size={16} />
+                          Open
                         </button>
-                      )}
-                      <button
-                        onClick={() => openEntityProfile(entity.id)}
-                        className="action-btn-secondary text-xs px-2.5 py-1"
-                      >
-                        Open
-                      </button>
-                      <button
-                        onClick={() => setQuickViewEntity(entity)}
-                        className="action-btn-secondary text-xs px-2.5 py-1"
-                      >
-                        Snapshot
-                      </button>
-                      {canManageImpact && (
                         <button
-                          onClick={() => { void handleDeleteEntityProfile(entity); }}
-                          className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-                          title="Delete entity"
+                          onClick={event => {
+                            event.stopPropagation();
+                            setQuickViewEntity(entity);
+                          }}
+                          className="action-btn-secondary text-xs px-2.5 py-1"
                         >
-                          <Trash2 size={16} />
+                          Snapshot
                         </button>
-                      )}
+                        {canManageImpact && (
+                          <button
+                            onClick={event => {
+                              event.stopPropagation();
+                              void handleDeleteEntityProfile(entity);
+                            }}
+                            className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
+                            title="Delete entity"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                </MobileActivityRecordCard>
+                  </MobileActivityRecordCard>
+                </div>
               );
             })}
             {filteredEntitys.length === 0 && (
               <EmptyState
-                title="No entities found."
-                description="Refine your search or add a new entity."
+                title="No entities"
+                description="Add an entity to get started."
                 onAction={() => setIsAdding(true)}
-                actionLabel="Add first entity"
+                actionLabel="Add entity"
                 actionIcon={<Plus size={14} />}
                 className="py-12"
               />
@@ -1010,6 +1103,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                     entity={entity} 
                     stats={stats} 
                     updateEntity={updateEntity}
+                    onOpenOverlay={() => openQuickOverlay(entity)}
                     onOpenProfile={() => openEntityProfile(entity.id)}
                     onOpenSnapshot={() => setQuickViewEntity(entity)}
                     collaborations={collaborations}
@@ -1038,7 +1132,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                         onClick={() => setIsAdding(true)}
                         className="action-btn-primary text-xs px-3 py-1.5"
                       >
-                        Add first entity
+                        Add entity
                       </button>
                     </div>
                   </td>
@@ -1058,6 +1152,32 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
           onUpdateTags={(entityId, tags) => { void handleUpdateEntityTags(entityId, tags); }}
           activityNet={entityStats.get(quickViewEntity.id)?.net || 0}
           variant="modal"
+        />
+      )}
+
+      {isQuickOverlayOpen && selectedEntity && selectedEntityStats && (
+        <EntityQuickOverlay
+          entity={selectedEntity}
+          stats={selectedEntityStats}
+          canManageImpact={canManageImpact}
+          canActivityRecordDeferred={canActivityRecordDeferred}
+          onClose={closeQuickOverlay}
+          onSend={() => {
+            closeQuickOverlay();
+            openTransferForm(selectedEntity.id);
+          }}
+          onReceive={() => {
+            closeQuickOverlay();
+            openDeferredForm(selectedEntity.id, 'inbound');
+          }}
+          onAdjust={() => {
+            closeQuickOverlay();
+            openAdjustForm(selectedEntity.id);
+          }}
+          onAdd={() => {
+            closeQuickOverlay();
+            openDeferredForm(selectedEntity.id, 'outbound');
+          }}
         />
       )}
 
@@ -1152,6 +1272,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
 function EntityGridCard({
   entity,
   stats,
+  onOpenOverlay,
   onOpenProfile,
   onOpenSnapshot,
   canManageImpact,
@@ -1162,6 +1283,7 @@ function EntityGridCard({
 }: {
   entity: Entity;
   stats: { net: number; activitys: number; lastActive: string | null; surpluses: number; totalInflow: number; avgActivity: number };
+  onOpenOverlay: () => void;
   onOpenProfile: () => void;
   onOpenSnapshot: () => void;
   canManageImpact: boolean;
@@ -1176,7 +1298,7 @@ function EntityGridCard({
       activeAction ? "rounded-b-none border-b-0" : ""
     )}>
       {/* Header: name + net */}
-      <div className="p-5 cursor-pointer" onClick={onOpenProfile}>
+      <div className="p-5 cursor-pointer" onClick={onOpenOverlay}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="font-medium text-stone-900 dark:text-stone-100 truncate" title={getEntityDisplayName(entity.name)}>{getEntityDisplayName(entity.name)}</p>
@@ -1263,11 +1385,25 @@ function EntityGridCard({
         </div>
         <div className="flex items-center gap-1">
           <button
+            onClick={e => { e.stopPropagation(); onOpenOverlay(); }}
+            className="action-btn-secondary text-xs px-2.5 py-1"
+            title="Quick actions"
+          >
+            Quick
+          </button>
+          <button
             onClick={e => { e.stopPropagation(); onOpenSnapshot(); }}
             className="p-1.5 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 rounded-md transition-colors"
             title="Snapshot"
           >
             <Eye size={14} />
+          </button>
+          <button
+            onClick={e => { e.stopPropagation(); onOpenProfile(); }}
+            className="p-1.5 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 rounded-md transition-colors"
+            title="Open"
+          >
+            <Tag size={14} />
           </button>
           {canManageImpact && (
             <button
@@ -1284,7 +1420,7 @@ function EntityGridCard({
   );
 }
 
-function EntityRow({ entity, stats, updateEntity, onOpenProfile, onOpenSnapshot, collaborations, canManageImpact, canActivityRecordDeferred, onTransferFromEntity, onActivityRecordDeferred, onDelete }: { entity: Entity, stats: any, updateEntity: (p: Entity) => Promise<void>, onOpenProfile: () => void, onOpenSnapshot: () => void, collaborations: Collaboration[], canManageImpact: boolean, canActivityRecordDeferred: boolean, onTransferFromEntity: () => void, onActivityRecordDeferred: () => void, onDelete: () => void }) {
+function EntityRow({ entity, stats, updateEntity, onOpenOverlay, onOpenProfile, onOpenSnapshot, collaborations, canManageImpact, canActivityRecordDeferred, onTransferFromEntity, onActivityRecordDeferred, onDelete }: { entity: Entity, stats: any, updateEntity: (p: Entity) => Promise<void>, onOpenOverlay: () => void, onOpenProfile: () => void, onOpenSnapshot: () => void, collaborations: Collaboration[], canManageImpact: boolean, canActivityRecordDeferred: boolean, onTransferFromEntity: () => void, onActivityRecordDeferred: () => void, onDelete: () => void }) {
   const [isEditing, setIsEditing] = useState(false);
   const [data, setData] = useState(entity);
 
@@ -1352,8 +1488,8 @@ function EntityRow({ entity, stats, updateEntity, onOpenProfile, onOpenSnapshot,
   }
 
   return (
-    <tr className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors group">
-      <td className="sticky-col px-6 py-2.5 cursor-pointer" onClick={onOpenProfile}>
+    <tr className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors group cursor-pointer" onClick={onOpenOverlay}>
+      <td className="sticky-col px-6 py-2.5">
         <div className="font-medium text-stone-900 dark:text-stone-100 flex items-center gap-2">
           {getEntityDisplayName(entity.name)}
           <Eye size={14} className="opacity-0 group-hover:opacity-50 transition-opacity" />
@@ -1411,31 +1547,63 @@ function EntityRow({ entity, stats, updateEntity, onOpenProfile, onOpenSnapshot,
         <div className="flex justify-end gap-2 transition-opacity">
           {canManageImpact && (
             <button
-              onClick={onTransferFromEntity}
+              onClick={event => {
+                event.stopPropagation();
+                onTransferFromEntity();
+              }}
               className="p-1.5 text-stone-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition-colors"
-              title="TransferAmount from this entity"
+              title="Transfer from this entity"
             >
               <ArrowRightLeft size={16} />
             </button>
           )}
           {canActivityRecordDeferred && (
             <button
-              onClick={onActivityRecordDeferred}
+              onClick={event => {
+                event.stopPropagation();
+                onActivityRecordDeferred();
+              }}
               className="p-1.5 text-stone-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 rounded-md transition-colors"
-              title="Add Pending ActivityRecord"
+              title="Add pending record"
             >
               <Clock size={16} />
             </button>
           )}
           <button 
-            onClick={onOpenSnapshot}
+            onClick={event => {
+              event.stopPropagation();
+              onOpenOverlay();
+            }}
+            className="action-btn-secondary text-xs px-2.5 py-1"
+            title="Quick actions"
+          >
+            Quick
+          </button>
+          <button 
+            onClick={event => {
+              event.stopPropagation();
+              onOpenSnapshot();
+            }}
             className="action-btn-secondary text-xs px-2.5 py-1"
             title="Open quick snapshot"
           >
             Quick Snapshot
           </button>
           <button 
-            onClick={() => setIsEditing(true)}
+            onClick={event => {
+              event.stopPropagation();
+              onOpenProfile();
+            }}
+            className="action-btn-secondary text-xs px-2.5 py-1"
+            title="Open entity page"
+          >
+            Open
+          </button>
+          <button 
+            onClick={event => {
+              event.stopPropagation();
+              setIsEditing(true);
+            }}
             className="p-1.5 text-stone-400 hover:text-stone-600 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-md transition-colors"
             title="Edit"
           >
@@ -1443,7 +1611,10 @@ function EntityRow({ entity, stats, updateEntity, onOpenProfile, onOpenSnapshot,
           </button>
           {canManageImpact && (
             <button
-              onClick={onDelete}
+              onClick={event => {
+                event.stopPropagation();
+                onDelete();
+              }}
               className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
               title="Delete entity"
             >
@@ -1453,5 +1624,94 @@ function EntityRow({ entity, stats, updateEntity, onOpenProfile, onOpenSnapshot,
         </div>
       </td>
     </tr>
+  );
+}
+
+function EntityQuickOverlay({
+  entity,
+  stats,
+  canManageImpact,
+  canActivityRecordDeferred,
+  onClose,
+  onSend,
+  onReceive,
+  onAdjust,
+  onAdd,
+}: {
+  entity: Entity;
+  stats: { net: number; activitys: number; lastActive: string | null; surpluses: number; totalInflow: number; avgActivity: number };
+  canManageImpact: boolean;
+  canActivityRecordDeferred: boolean;
+  onClose: () => void;
+  onSend: () => void;
+  onReceive: () => void;
+  onAdjust: () => void;
+  onAdd: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-40 bg-stone-950/45 backdrop-blur-sm p-4 animate-in fade-in" onClick={onClose}>
+      <div className="flex min-h-full items-center justify-center">
+        <div
+          className="w-full max-w-sm rounded-2xl border border-stone-200 bg-white p-5 shadow-2xl dark:border-stone-700 dark:bg-stone-900 animate-in zoom-in-95"
+          onClick={event => event.stopPropagation()}
+        >
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate text-lg font-semibold text-stone-900 dark:text-stone-100">
+                {getEntityDisplayName(entity.name)}
+              </p>
+              <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                {stats.activitys} {stats.activitys === 1 ? 'activity' : 'activities'}
+                {stats.lastActive ? ` · ${formatDate(stats.lastActive)}` : ''}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 dark:hover:bg-stone-800 dark:hover:text-stone-200"
+              aria-label="Close entity quick actions"
+            >
+              <X size={16} />
+            </button>
+          </div>
+
+          <div className="mt-5 rounded-2xl bg-stone-50 px-4 py-5 text-center dark:bg-stone-800/70">
+            <p className={cn(
+              'font-mono text-3xl font-semibold tabular-nums',
+              stats.net > 0
+                ? 'text-emerald-600 dark:text-emerald-400'
+                : stats.net < 0
+                  ? 'text-red-600 dark:text-red-400'
+                  : 'text-stone-500 dark:text-stone-300'
+            )}>
+              {formatValue(stats.net)}
+            </p>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            {canManageImpact && (
+              <button type="button" onClick={onSend} className="action-btn-secondary justify-center py-2 text-sm">
+                Send
+              </button>
+            )}
+            {canActivityRecordDeferred && (
+              <button type="button" onClick={onReceive} className="action-btn-secondary justify-center py-2 text-sm">
+                Receive
+              </button>
+            )}
+            {canManageImpact && (
+              <button type="button" onClick={onAdjust} className="action-btn-secondary justify-center py-2 text-sm">
+                Adjust
+              </button>
+            )}
+            {canActivityRecordDeferred && (
+              <button type="button" onClick={onAdd} className="action-btn-primary justify-center py-2 text-sm">
+                Add
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
