@@ -5,8 +5,21 @@ import { dbRoleToAppRole } from '../lib/roles';
 import { useAppRole } from './AppRoleContext';
 import { useAuth } from './AuthContext';
 
+export interface EntityBalance {
+  id: string;
+  org_id: string;
+  name: string;
+  net: number;
+  total_inflow: number;
+  record_count: number;
+  surplus_count: number;
+  last_active: string | null;
+  avg_duration_hours: number;
+}
+
 interface DataContextType {
   entities: Entity[];
+  entityBalances: Map<string, EntityBalance>;
   activities: Activity[];
   records: ActivityRecord[];
   teamMembers: TeamMember[];
@@ -68,6 +81,7 @@ const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [entities, setEntities] = useState<Entity[]>([]);
+  const [entityBalances, setEntityBalances] = useState<Map<string, EntityBalance>>(new Map());
   const [activities, setActivities] = useState<Activity[]>([]);
   const [records, setRecords] = useState<ActivityRecord[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
@@ -135,7 +149,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       setLoading(true);
 
-      const [eRes, aRes, rRes, tRes, cRes, chRes, sRes, lRes] = await Promise.all([
+      const [eRes, aRes, rRes, tRes, cRes, chRes, sRes, lRes, ebRes] = await Promise.all([
         supabase.from('entities').select('*').eq('org_id', activeOrgId).order('name'),
         supabase.from('activities').select('*').eq('org_id', activeOrgId).order('date', { ascending: false }),
         supabase.from('records').select('*').eq('org_id', activeOrgId).order('created_at', { ascending: false }),
@@ -144,9 +158,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         supabase.from('channels').select('*').eq('org_id', activeOrgId).order('name'),
         supabase.from('audit_events').select('*').eq('org_id', activeOrgId).order('created_at', { ascending: false }).limit(100),
         supabase.from('operator_activities').select('*').eq('org_id', activeOrgId).order('started_at', { ascending: false }),
+        supabase.from('entity_balances').select('*').eq('org_id', activeOrgId),
       ]);
 
-      const responses = [eRes, aRes, rRes, tRes, cRes, chRes, sRes, lRes];
+      const responses = [eRes, aRes, rRes, tRes, cRes, chRes, sRes, lRes, ebRes];
       const authError = responses.map((response) => response.error).find((error) => isAuthFailure(error));
       if (authError) {
         console.warn('Authentication failed during org fetch. Resetting local session state.', authError);
@@ -189,6 +204,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           amount: item.amount,
           details: item.details,
         })));
+      }
+
+      if (ebRes.data) {
+        const balanceMap = new Map<string, EntityBalance>();
+        (ebRes.data as EntityBalance[]).forEach(row => balanceMap.set(row.id, row));
+        setEntityBalances(balanceMap);
       }
 
       // Fetch organization metadata for managedOrgIds is handled in its own effect below
@@ -644,6 +665,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const value: DataContextType = {
     entities,
+    entityBalances,
     activities,
     records,
     teamMembers,

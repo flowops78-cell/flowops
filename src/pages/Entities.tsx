@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useData } from '../context/DataContext';
+import { useData, EntityBalance } from '../context/DataContext';
 import { Search, Plus, Tag, X, TrendingUp, TrendingDown, Calendar, Award, Edit2, Save, Eye, Clock, Download, LayoutGrid, List, ArrowRightLeft, Trash2 } from 'lucide-react';
 import { Collaboration, Entity } from '../types';
 
@@ -25,6 +25,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
   const location = useLocation();
   const { 
     entities, 
+    entityBalances,
     loading, 
     addEntity, 
     requestAdjustment, 
@@ -105,44 +106,23 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
     setValue(parsed.toFixed(2));
   };
 
-  // --- Smart Stats Calculation ---
+  // entityStats is sourced from the entity_balances DB view via DataContext.
+  // The view computes net, total_inflow, record_count, surplus_count, last_active, avg_duration_hours.
+  // We alias to entityStats for backward compatibility with all call sites.
   const entityStats = useMemo(() => {
     const stats = new Map<string, { net: number; activitys: number; lastActive: string | null; surpluses: number; totalInflow: number; avgActivity: number }>();
-
-    entities.forEach(p => {
-      const entityEntries = records.filter(l => l.entity_id === p.id);
-      const net = entityEntries.reduce((sum, e) => sum + (e.direction === 'increase' ? e.unit_amount : -e.unit_amount), 0);
-      const totalInflow = entityEntries.reduce((sum, e) => sum + (e.direction === 'increase' ? e.unit_amount : 0), 0);
-      const activitys = entityEntries.length;
-      const surpluses = entityEntries.filter(e => e.direction === 'increase').length;
-      
-      // Calculate average activity duration
-      let totalDuration = 0;
-      let durationCount = 0;
-      entityEntries.forEach(e => {
-        if (e.created_at && e.left_at) {
-          totalDuration += (new Date(e.left_at).getTime() - new Date(e.created_at).getTime()) / (1000 * 60 * 60);
-          durationCount++;
-        }
+    entityBalances.forEach((balance: EntityBalance, id: string) => {
+      stats.set(id, {
+        net: Number(balance.net) || 0,
+        activitys: Number(balance.record_count) || 0,
+        lastActive: balance.last_active ?? null,
+        surpluses: Number(balance.surplus_count) || 0,
+        totalInflow: Number(balance.total_inflow) || 0,
+        avgActivity: Number(balance.avg_duration_hours) || 0,
       });
-      const avgActivity = durationCount > 0 ? totalDuration / durationCount : 0;
-      
-      // Find last played date
-      let lastActive = null;
-      if (entityEntries.length > 0) {
-        // Get activity dates
-        const dates = entityEntries.map(e => {
-          const activity = activities.find(g => g.id === e.activity_id);
-          return activity ? activity.date : '';
-        }).filter(d => d).sort();
-        lastActive = dates.length > 0 ? dates[dates.length - 1] : null;
-      }
-
-      stats.set(p.id, { net, activitys, lastActive, surpluses, totalInflow, avgActivity });
     });
-
     return stats;
-  }, [entities, records, activities]);
+  }, [entityBalances]);
 
   const activityById = useMemo(() => {
     return new Map(activities.map(activity => [activity.id, activity]));
@@ -404,7 +384,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  const activeEntitysCount = entities.filter(p => (p.total || 0) !== 0).length;
+  const activeEntitysCount = entities.filter(p => (entityStats.get(p.id)?.net || 0) !== 0).length;
   const positiveDeltaEntitys = entities.filter(p => (entityStats.get(p.id)?.net || 0) > 0).length;
   const entityDataMenuItems = [
     { 
@@ -1135,9 +1115,9 @@ function EntityGridCard({
         </div>
         <span className={cn(
           "font-mono text-sm font-medium",
-          (entity.total || 0) > 0 ? "text-emerald-600 dark:text-emerald-400" : (entity.total || 0) < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
+          stats.net > 0 ? "text-emerald-600 dark:text-emerald-400" : stats.net < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
         )}>
-          {formatValue(entity.total || 0)}
+          {formatValue(stats.net)}
         </span>
       </div>
 
@@ -1230,7 +1210,7 @@ function EntityRow({ entity, stats, updateEntity, onOpenProfile, onOpenSnapshot,
         </td>
         <td className="px-6 py-3">
           <span className="font-mono text-stone-600 dark:text-stone-300 text-sm">
-            {formatValue(entity.total || 0)}
+            {formatValue(stats.net)}
           </span>
         </td>
         <td className="px-6 py-3" colSpan={2}>
@@ -1279,9 +1259,9 @@ function EntityRow({ entity, stats, updateEntity, onOpenProfile, onOpenSnapshot,
       <td className="px-6 py-2.5">
         <div className={cn(
           "font-mono font-medium",
-          (entity.total || 0) > 0 ? "text-emerald-600 dark:text-emerald-400" : (entity.total || 0) < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
+          stats.net > 0 ? "text-emerald-600 dark:text-emerald-400" : stats.net < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
         )}>
-          {formatValue(entity.total || 0)}
+          {formatValue(stats.net)}
         </div>
       </td>
       <td className="px-6 py-2.5">
