@@ -33,6 +33,21 @@ const isIgnorableAuthError = (error: unknown) => {
   );
 };
 
+/** Stale storage, revoked session, or rotated keys — clear client and sign in again. */
+const isCorruptRefreshError = (error: unknown) => {
+  if (!error || typeof error !== 'object') return false;
+  const e = error as { message?: string; code?: string; status?: number };
+  const message = String(e.message ?? '').toLowerCase();
+  const code = String(e.code ?? '').toLowerCase();
+  return (
+    message.includes('refresh token') ||
+    message.includes('invalid refresh') ||
+    (message.includes('not found') && message.includes('refresh')) ||
+    code.includes('refresh_token') ||
+    e.status === 400
+  );
+};
+
 const clearStorageKeys = (storage: Storage, matcher: (key: string) => boolean) => {
   const keysToRemove: string[] = [];
   for (let index = 0; index < storage.length; index += 1) {
@@ -109,6 +124,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const sb = supabase;
     let mounted = true;
 
+    void (async () => {
+      try {
+        const { error } = await sb.auth.getSession();
+        if (!mounted) return;
+        if (error && isCorruptRefreshError(error)) {
+          clearClientSessionState();
+        }
+      } catch (err) {
+        if (!mounted) return;
+        if (isCorruptRefreshError(err)) {
+          clearClientSessionState();
+        }
+      }
+    })();
+
     const adoptSession = async (nextSession: Session | null, options?: { persistSessionId?: boolean }) => {
       const client = sb;
       if (!client || !mounted) return;
@@ -147,6 +177,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const { data } = sb.auth.onAuthStateChange(async (event, nextSession) => {
       if (event === 'SIGNED_OUT') {
+        clearClientSessionState();
+        return;
+      }
+
+      if (event === 'TOKEN_REFRESHED' && (!nextSession || !nextSession.access_token)) {
         clearClientSessionState();
         return;
       }

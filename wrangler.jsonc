@@ -5,6 +5,8 @@
   "observability": {
     "enabled": true
   },
+  // SPA fallback returns index.html for unknown paths — a stale index + new deploy yields
+  // "MIME type text/html" for missing /assets/*.js. Keep index uncached (_headers) and hard-refresh after deploys.
   "assets": {
     "directory": "dist",
     "not_found_handling": "single-page-application"
