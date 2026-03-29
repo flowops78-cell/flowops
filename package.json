@@ -23,7 +23,9 @@
     "debug:all": "node scripts/debug/run-all.mjs",
     "debug:all:local": "node scripts/debug/run-all.mjs --local",
     "deploy": "npm run build && wrangler deploy",
-    "deploy:check": "npm run clean && npm run check"
+    "deploy:check": "npm run clean && npm run check",
+    "git:push": "node scripts/git-push-with-token.mjs",
+    "supabase:cli": "node scripts/supabase-with-env.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.98.0",
