@@ -934,7 +934,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
           {/* 2. Access */}
           {canViewOperatorLogs && (
-            <div className="section-card p-5 space-y-4">
+            <div id="settings-grant-access" className="section-card p-5 space-y-4 scroll-mt-24">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <UserPlus size={15} className="text-stone-400" />
@@ -1466,7 +1466,17 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                               <td className="px-5 py-3 text-right">
                                 <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
                                   <button
-                                    onClick={() => { if (acc.email) setNewOrgAdminEmail(acc.email); }}
+                                    type="button"
+                                    onClick={() => {
+                                      if (!acc.email) return;
+                                      setGrantAccessEmail(acc.email);
+                                      window.requestAnimationFrame(() => {
+                                        document.getElementById('settings-grant-access')?.scrollIntoView({
+                                          behavior: 'smooth',
+                                          block: 'start',
+                                        });
+                                      });
+                                    }}
                                     className="text-[10px] font-bold text-emerald-600 uppercase hover:underline"
                                   >
                                     Assign

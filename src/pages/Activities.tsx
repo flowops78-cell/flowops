@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
-import { Plus, Calendar, ChevronRight, History, X, Loader2, Trash2, Zap, Scale, UserCog } from 'lucide-react';
+import { Plus, Calendar, ChevronRight, History, X, Loader2, Trash2, Scale, UserCog } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { APP_MIN_DATE, cn, formatValue, formatDate, formatTime } from '../lib/utils';
 import { useNotification } from '../context/NotificationContext';
@@ -289,28 +289,16 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               TOTAL: <span className="font-bold text-stone-900 dark:text-stone-100">{activities.length}</span>
             </span>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-              {liveFeedUi && (
+              {liveFeedUi && canAccessAdminUi && (
                 <button
                   type="button"
-                  onClick={() => {
-                    if (canAccessAdminUi) liveFeedUi.openWorkspaceHealth();
-                    else liveFeedUi.openLiveFeed();
-                  }}
-                  className={cn(
-                    'action-btn-secondary w-full sm:w-auto h-11',
-                    canAccessAdminUi
-                      ? 'border-stone-200/80 text-stone-800 hover:bg-stone-50 dark:border-stone-700 dark:text-stone-200 dark:hover:bg-stone-900/60'
-                      : 'border-emerald-200/80 text-emerald-800 hover:bg-emerald-50 dark:border-emerald-800/60 dark:text-emerald-200 dark:hover:bg-emerald-950/40',
-                  )}
-                  title={canAccessAdminUi ? LABELS.workspacePanels.workspaceHealth.titleHint : LABELS.workspacePanels.activityList.titleHint}
-                  aria-label={canAccessAdminUi ? LABELS.workspacePanels.workspaceHealth.title : LABELS.workspacePanels.activityList.title}
+                  onClick={() => { liveFeedUi.openWorkspaceHealth(); }}
+                  className="action-btn-secondary w-full sm:w-auto h-11 border-stone-200/80 text-stone-800 hover:bg-stone-50 dark:border-stone-700 dark:text-stone-200 dark:hover:bg-stone-900/60"
+                  title={LABELS.workspacePanels.workspaceHealth.titleHint}
+                  aria-label={LABELS.workspacePanels.workspaceHealth.title}
                 >
-                  {canAccessAdminUi ? (
-                    <Scale size={16} className="shrink-0" aria-hidden />
-                  ) : (
-                    <Zap size={16} className="shrink-0" aria-hidden />
-                  )}
-                  {canAccessAdminUi ? LABELS.workspacePanels.workspaceHealth.title : LABELS.workspacePanels.activityList.title}
+                  <Scale size={16} className="shrink-0" aria-hidden />
+                  {LABELS.workspacePanels.workspaceHealth.title}
                 </button>
               )}
               {canManageImpact && (
