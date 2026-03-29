@@ -1,14 +1,21 @@
 -- -------------------------------------------------------------
 -- 00000000000000_init_canonical_schema.sql
--- Streamlined single baseline: schema, RLS (no platform_roles), ledger/audit
--- views, internal patch log. Access = cluster_memberships + organization_memberships.
--- New project: supabase db push / db reset.
--- If remote lists migration versions you deleted locally, run:
---   supabase migration repair --status reverted <version>
--- then push, or align schema_migrations in the Dashboard SQL editor.
+-- Single baseline: schema, RLS (no platform_roles), ledger/audit views,
+-- entity starting_total + genesis-aware balances, internal patch log.
+-- Access = organization_memberships + cluster_admin / cluster_operator on orgs.
+--
+-- New project: supabase db reset / db push.
+-- If a remote DB recorded migrations you removed locally (e.g. genesis / align
+-- patch files), run: supabase migration repair --status reverted <timestamp>
+-- for each removed version, then push.
 -- -------------------------------------------------------------
 
 BEGIN;
+
+-- 0. LEGACY REMOVAL (no-op on fresh DBs; drops old platform-elevation artifacts)
+DROP TABLE IF EXISTS public.platform_roles CASCADE;
+DROP FUNCTION IF EXISTS public.get_my_platform_role();
+DROP FUNCTION IF EXISTS public.is_platform_admin();
 
 -- 1. EXTENSIONS
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -106,9 +113,12 @@ CREATE TABLE IF NOT EXISTS public.entities (
   collaboration_id           uuid REFERENCES public.collaborations(id) ON DELETE SET NULL,
   referred_by_entity_id      uuid REFERENCES public.entities(id) ON DELETE SET NULL,
   referring_collaboration_id uuid REFERENCES public.collaborations(id) ON DELETE SET NULL,
+  starting_total             numeric(12, 2) NOT NULL DEFAULT 0,
   created_at                 timestamptz NOT NULL DEFAULT now(),
   updated_at                 timestamptz NOT NULL DEFAULT now()
 );
+
+ALTER TABLE public.entities ADD COLUMN IF NOT EXISTS starting_total numeric(12, 2) NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS public.activities (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -119,7 +129,7 @@ CREATE TABLE IF NOT EXISTS public.activities (
   status            text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'completed', 'archived')),
   channel_label     text,
   assigned_user_id  uuid REFERENCES auth.users(id) ON DELETE SET NULL,
-  activity_mode      text DEFAULT 'value' CHECK (activity_mode IN ('value', 'high_intensity')),
+  activity_mode      text DEFAULT 'value' CHECK (activity_mode IN ('value')),
   created_at        timestamptz NOT NULL DEFAULT now(),
   updated_at        timestamptz NOT NULL DEFAULT now()
 );
@@ -603,7 +613,7 @@ SELECT
   e.id,
   e.org_id,
   e.name,
-  COALESCE(SUM(l.applied_signed_amount), 0)::numeric(12, 2) AS net,
+  (COALESCE(e.starting_total, 0) + COALESCE(SUM(l.applied_signed_amount), 0))::numeric(12, 2) AS net,
   COALESCE(SUM(l.applied_increase_amount), 0)::numeric(12, 2) AS total_inflow,
   COUNT(l.record_id) FILTER (WHERE l.status = 'applied')::integer AS record_count,
   COUNT(l.record_id) FILTER (WHERE l.status = 'applied' AND l.applied_signed_amount > 0)::integer AS surplus_count,
@@ -611,7 +621,7 @@ SELECT
   0::numeric(12, 2) AS avg_duration_hours
 FROM public.entities e
 LEFT JOIN public.audit_record_ledger l ON l.entity_id = e.id
-GROUP BY e.id, e.org_id, e.name;
+GROUP BY e.id, e.org_id, e.name, e.starting_total;
 
 CREATE OR REPLACE VIEW public.audit_activity_integrity
 WITH (security_invoker = true) AS
@@ -645,15 +655,15 @@ SELECT
   COUNT(l.record_id) FILTER (WHERE l.status = 'applied')::integer AS applied_record_count,
   COALESCE(SUM(l.applied_increase_amount), 0)::numeric(12, 2) AS total_increase,
   COALESCE(SUM(l.applied_decrease_amount), 0)::numeric(12, 2) AS total_decrease,
-  COALESCE(SUM(l.applied_signed_amount), 0)::numeric(12, 2) AS net_amount,
+  (COALESCE(e.starting_total, 0) + COALESCE(SUM(l.applied_signed_amount), 0))::numeric(12, 2) AS net_amount,
   CASE
-    WHEN COALESCE(SUM(l.applied_signed_amount), 0) < 0 THEN 'watch'
+    WHEN (COALESCE(e.starting_total, 0) + COALESCE(SUM(l.applied_signed_amount), 0)) < 0 THEN 'watch'
     ELSE 'ok'
   END AS status,
   MAX(l.created_at) AS last_record_at
 FROM public.entities e
 LEFT JOIN public.audit_record_ledger l ON l.entity_id = e.id
-GROUP BY e.org_id, e.id, e.name;
+GROUP BY e.org_id, e.id, e.name, e.starting_total;
 
 CREATE OR REPLACE VIEW public.audit_channel_integrity
 WITH (security_invoker = true) AS
@@ -681,10 +691,10 @@ SELECT
   COUNT(l.record_id) FILTER (WHERE l.status = 'applied')::integer AS applied_record_count,
   COALESCE(SUM(l.applied_increase_amount), 0)::numeric(12, 2) AS total_increase,
   COALESCE(SUM(l.applied_decrease_amount), 0)::numeric(12, 2) AS total_decrease,
-  COALESCE(SUM(l.applied_signed_amount), 0)::numeric(12, 2) AS net_amount,
+  (COALESCE(SUM(l.applied_signed_amount), 0) + (SELECT COALESCE(SUM(starting_total), 0) FROM public.entities e WHERE e.org_id = o.id))::numeric(12, 2) AS net_amount,
   COUNT(a.activity_id) FILTER (WHERE a.status = 'broken')::integer AS broken_activity_count,
   CASE
-    WHEN ABS(COALESCE(SUM(l.applied_signed_amount), 0)) < 0.01
+    WHEN ABS(COALESCE(SUM(l.applied_signed_amount), 0) + (SELECT COALESCE(SUM(starting_total), 0) FROM public.entities e WHERE e.org_id = o.id)) < 0.01
       AND COUNT(a.activity_id) FILTER (WHERE a.status = 'broken') = 0 THEN 'ok'
     ELSE 'broken'
   END AS status

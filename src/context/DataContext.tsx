@@ -4,7 +4,7 @@ import {
   Entity,
   Activity,
   ActivityRecord,
-  TeamMember,
+  RosterProfile,
   Collaboration,
   SystemEvent,
   Channel,
@@ -43,7 +43,7 @@ interface DataContextType {
   auditOrgs: AuditOrgIntegrity[];
   auditChannels: AuditChannelIntegrity[];
   auditAnomalies: AuditAnomaly[];
-  teamMembers: TeamMember[];
+  rosterProfiles: RosterProfile[];
   collaborations: Collaboration[];
   channels: Channel[];
   systemEvents: SystemEvent[];
@@ -57,7 +57,6 @@ interface DataContextType {
   setActiveOrgId: (id: string | null) => void;
   loading: boolean;
   loadingProgress: number;
-  isDemoMode: boolean;
   availableOrgs: Record<string, Organization>;
   switchOrg: (orgId: string) => Promise<void>;
   addEntity: (entity: any) => Promise<string>;
@@ -83,9 +82,9 @@ interface DataContextType {
   addChannelRecord: (data: any) => Promise<void>;
   transferUnits: (data: any) => Promise<void>;
 
-  addTeamMember: (data: any) => Promise<void>;
-  updateTeamMember: (member: any) => Promise<void>;
-  deleteTeamMember: (id: string) => Promise<void>;
+  addRosterProfile: (data: any) => Promise<void>;
+  updateRosterProfile: (member: any) => Promise<void>;
+  deleteRosterProfile: (id: string) => Promise<void>;
 
   addCollaboration: (data: any) => Promise<string>;
   updateCollaboration: (collab: any) => Promise<void>;
@@ -110,7 +109,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [auditOrgs, setAuditOrgs] = useState<AuditOrgIntegrity[]>([]);
   const [auditChannels, setAuditChannels] = useState<AuditChannelIntegrity[]>([]);
   const [auditAnomalies, setAuditAnomalies] = useState<AuditAnomaly[]>([]);
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+  const [rosterProfiles, setRosterProfiles] = useState<RosterProfile[]>([]);
   const [collaborations, setCollaborations] = useState<Collaboration[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [systemEvents, setSystemEvents] = useState<SystemEvent[]>([]);
@@ -129,7 +128,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const { loading: roleLoading, managedOrgIds, serverActiveOrgId, isClusterAdmin, clusterId } = useAppRole();
   const { user, loading: authLoading, signOut } = useAuth();
-  const isDemoMode = !isSupabaseConfigured;
+
 
   const resetClientDataState = useCallback(() => {
     setEntities([]);
@@ -141,7 +140,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAuditOrgs([]);
     setAuditChannels([]);
     setAuditAnomalies([]);
-    setTeamMembers([]);
+    setRosterProfiles([]);
     setCollaborations([]);
     setChannels([]);
     setSystemEvents([]);
@@ -258,7 +257,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const fetchData = async () => {
-    if (!supabase || !activeOrgId || isDemoMode) {
+    if (!supabase || !activeOrgId) {
       setLoading(false);
       setLoadingProgress(0);
       return;
@@ -308,7 +307,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (eRes.data) setEntities(eRes.data);
       if (aRes.data) setActivities(aRes.data);
       if (rRes.data) setRecords(rRes.data);
-      if (tRes.data) setTeamMembers(tRes.data.map((m: any) => ({ ...m, role: m.staff_role })));
+      if (tRes.data) setRosterProfiles(tRes.data.map((m: any) => ({ ...m, role: m.staff_role })));
       if (cRes.data) {
         setCollaborations(
           cRes.data.map((c: any) => ({ ...c, total_number: c.total_number ?? 0 })),
@@ -318,7 +317,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (lRes.data) {
         setActivityLogs(lRes.data.map((item: any) => ({
           ...item,
-          teamMember_id: item.actor_user_id,
           start_time: item.started_at,
           end_time: item.ended_at,
           duration_hours: item.duration_seconds ? item.duration_seconds / 3600 : 0,
@@ -437,7 +435,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   //      our allowed set we keep it (zero extra fetch). If it's stale (org removed,
   //      session switched) we fall through to serverActiveOrgId → first managed org.
   useEffect(() => {
-    if (roleLoading || authLoading || isDemoMode || managedOrgIds.length === 0) return;
+    if (roleLoading || authLoading || managedOrgIds.length === 0) return;
 
     // Fast path: cached value is still valid — nothing to do.
     if (activeOrgId && managedOrgIds.includes(activeOrgId)) return;
@@ -458,7 +456,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (error) console.error('Error persisting org context:', error);
       });
     }
-  }, [roleLoading, authLoading, serverActiveOrgId, managedOrgIds.join(','), activeOrgId, user?.id, isDemoMode]);
+  }, [roleLoading, authLoading, serverActiveOrgId, managedOrgIds.join(','), activeOrgId, user?.id]);
 
   // Dedicated effect: refresh available orgs whenever the admin's managed org list changes
   // This ensures the Scoped Context Switcher updates immediately after provisioning
@@ -532,7 +530,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (data) {
       setActivityLogs(data.map((item: any) => ({
         ...item,
-        teamMember_id: item.actor_user_id,
         start_time: item.started_at,
         end_time: item.ended_at,
         duration_hours: item.duration_seconds ? item.duration_seconds / 3600 : 0,
@@ -565,24 +562,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           collaboration_id: data.collaboration_id,
           referred_by_entity_id: data.referred_by_entity_id,
           referring_collaboration_id: data.referring_collaboration_id,
+          starting_total: Number(data.total) || 0,
         }])
         .select('*')
         .single();
       if (error) throw error;
       setEntities(prev => [...prev, row]);
-
-      const startingTotal = Number(data.total);
-      if (Number.isFinite(startingTotal) && Math.abs(startingTotal) > 0) {
-        await addRecord({
-          activity_id: await ensureWorkspaceLedgerActivityId(),
-          entity_id: row.id,
-          direction: startingTotal >= 0 ? 'increase' : 'decrease',
-          status: 'applied',
-          unit_amount: Math.abs(startingTotal),
-          notes: 'Starting total',
-        });
-      }
-
       return row.id as string;
     });
   };
@@ -663,7 +648,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           status: data.status || 'active',
           channel_label: data.channel_label || data.channel,
           assigned_user_id: data.assigned_user_id,
-          activity_mode: data.activity_mode,
+          activity_mode: data.activity_mode || 'value',
         }])
         .select('*')
         .single();
@@ -684,7 +669,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         channel_label: activity.channel_label || activity.channel,
         assigned_user_id: activity.assigned_user_id,
       };
-      if (activity.activity_mode) updates.activity_mode = activity.activity_mode;
+      if (activity.activity_mode != null && activity.activity_mode !== '') {
+        updates.activity_mode = activity.activity_mode;
+      }
 
       const { data: row, error } = await supabase!
         .from('activities').update(updates).eq('id', activity.id).select('*').single();
@@ -797,17 +784,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return withInflight(key, async () => {
       const { data: { user: authUser } } = await supabase!.auth.getUser();
       if (!authUser) throw new Error('Not authenticated');
-      const { error } = await supabase!
-        .from('operator_activities')
-        .insert([{
-          org_id: orgId,
-          actor_user_id: authUser.id,
-          actor_role: data.actor_role || 'operator',
-          actor_label: data.actor_label || authUser.email,
-          started_at: new Date().toISOString(),
-          last_active_at: new Date().toISOString(),
-          is_active: true,
-        }]);
+      const row: Record<string, unknown> = {
+        org_id: orgId,
+        actor_user_id: authUser.id,
+        actor_role: data.actor_role || 'operator',
+        actor_label: data.actor_label || authUser.email,
+        started_at: new Date().toISOString(),
+        last_active_at: new Date().toISOString(),
+        is_active: true,
+      };
+      if (data.activity_id != null && data.activity_id !== '') {
+        row.activity_id = data.activity_id;
+      }
+      const { error } = await supabase!.from('operator_activities').insert([row]);
       if (error) throw error;
       await refreshActivityLogs(orgId);
     });
@@ -898,8 +887,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  // ─── Team member mutations (optimistic local update) ─────────────────────
-  const addTeamMember = async (data: any) => {
+  // ─── Roster profile mutations (`team_members`; optimistic local update) ──
+  const addRosterProfile = async (data: any) => {
     const orgId = requireOrgScope();
     const key = `addMember:${orgId}:${String(data.name).toLowerCase()}`;
     return withInflight(key, async () => {
@@ -909,11 +898,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .select('*')
         .single();
       if (error) throw error;
-      setTeamMembers(prev => [...prev, { ...row, role: row.staff_role }]);
+      setRosterProfiles(prev => [...prev, { ...row, role: row.staff_role }]);
     });
   };
 
-  const updateTeamMember = async (member: any) => {
+  const updateRosterProfile = async (member: any) => {
     return withInflight(`updateMember:${member.id}`, async () => {
       const { data: row, error } = await supabase!
         .from('team_members')
@@ -922,11 +911,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .select('*')
         .single();
       if (error) throw error;
-      if (row) setTeamMembers(prev => prev.map(m => m.id === member.id ? { ...row, role: row.staff_role } : m));
+      if (row) setRosterProfiles(prev => prev.map(m => m.id === member.id ? { ...row, role: row.staff_role } : m));
     });
   };
 
-  const deleteTeamMember = async (id: string) => {
+  const deleteRosterProfile = async (id: string) => {
     return withInflight(`deleteMember:${id}`, async () => {
       const orgId = requireOrgScope();
 
@@ -948,7 +937,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const { error } = await supabase!.from('team_members').delete().eq('id', id);
       if (error) throw error;
-      setTeamMembers(prev => prev.filter(m => m.id !== id));
+      setRosterProfiles(prev => prev.filter(m => m.id !== id));
     });
   };
 
@@ -1133,7 +1122,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     auditOrgs,
     auditChannels,
     auditAnomalies,
-    teamMembers,
+    rosterProfiles,
     collaborations,
     channels,
     systemEvents,
@@ -1144,7 +1133,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     switchOrg,
     loading,
     loadingProgress,
-    isDemoMode,
     recordsByActivityId,
     recordsByEntityId,
     addEntity,
@@ -1161,9 +1149,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     requestAdjustment,
     addChannelRecord,
     transferUnits,
-    addTeamMember,
-    updateTeamMember,
-    deleteTeamMember,
+    addRosterProfile,
+    updateRosterProfile,
+    deleteRosterProfile,
     addCollaboration,
     updateCollaboration,
     deleteCollaboration,

@@ -1354,28 +1354,26 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                 onClick={(e) => e.stopPropagation()}
                 style={{ maxWidth: '480px', position: 'relative' }}
               >
-                {accountState !== 'idle' && (
-                  <OverlaySavingState
-                    state={accountState === 'error' ? 'error' : accountState}
-                    label={
-                      accountState === 'saving'
-                        ? editingAccount
-                          ? 'Updating channel...'
-                          : 'Creating channel...'
-                        : editingAccount
-                          ? 'Channel updated'
-                          : 'Channel created'
-                    }
-                  />
+                {(accountState === 'saving' || accountState === 'success') && (
+                  <div className="px-6">
+                    <OverlaySavingState
+                      compact
+                      state={accountState}
+                      label={
+                        accountState === 'saving'
+                          ? editingAccount
+                            ? 'Updating channel...'
+                            : 'Creating channel...'
+                          : editingAccount
+                            ? 'Channel updated'
+                            : 'Channel created'
+                      }
+                    />
+                  </div>
                 )}
 
                 <div
-                  style={{
-                    opacity: accountState === 'idle' || accountState === 'error' ? 1 : 0,
-                    visibility: accountState === 'idle' || accountState === 'error' ? 'visible' : 'hidden',
-                    transition: 'opacity 0.2s',
-                    pointerEvents: accountState === 'idle' || accountState === 'error' ? 'auto' : 'none',
-                  }}
+                  className={accountState === 'saving' || accountState === 'success' ? 'hidden' : ''}
                 >
                   <div className="overlay-header">
                     <div>
@@ -1450,7 +1448,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
           <div ref={recordHistoryRef} className="section-card p-4">
             <div className="flex justify-between items-center mb-4">
               <div>
-                <h3 className="font-medium text-stone-900 dark:text-stone-100">Live Feed</h3>
+                <h3 className="font-medium text-stone-900 dark:text-stone-100">Channel activity</h3>
                 <p className="hidden md:block text-xs text-stone-500 dark:text-stone-400 mt-1">
                   <span className="font-mono text-stone-900 dark:text-stone-100">{formatValue(totalChannel)}</span> · activity records across all channels
                 </p>

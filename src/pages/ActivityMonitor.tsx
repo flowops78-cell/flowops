@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Activity, Radio, Clock, Plus, X, Loader2 } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { cn, formatDate } from '../lib/utils';
-import { useLabels } from '../lib/labels';
+import { useLabels, LABELS } from '../lib/labels';
 import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../context/NotificationContext';
 import { useAppRole } from '../context/AppRoleContext';
@@ -84,12 +84,12 @@ export default function ActivityMonitor({ embedded = false }: { embedded?: boole
 
   return (
     <div className={cn("flex flex-col h-full", !embedded && "page-shell")}>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 flex items-center gap-2">
-          <Activity size={16} />
-          {tx('Live Feed')}
-        </h3>
-        {!embedded && (
+      {!embedded && (
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-sm font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400 flex items-center gap-2">
+            <Activity size={16} />
+            {LABELS.workspacePanels.activityList.title}
+          </h3>
           <button 
             onClick={() => setIsCreating(true)}
             className="action-btn-primary scale-90"
@@ -97,8 +97,8 @@ export default function ActivityMonitor({ embedded = false }: { embedded?: boole
             <Plus size={14} />
             {tx('New')}
           </button>
-        )}
-      </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
         {feed.length === 0 ? (

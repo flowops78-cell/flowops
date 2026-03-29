@@ -70,6 +70,7 @@ export type UserAuthorityContext = {
 };
 
 
+/** Rows from org membership (`profiles` / org_members), not `team_members` roster. */
 type TeamMembershipAuthorityRow = {
   org_id: string;
   role: AppRole;

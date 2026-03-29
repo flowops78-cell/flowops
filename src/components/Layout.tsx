@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, UserCog, History, Settings, Sun, Moon, Keyboard, LogOut, Landmark, Activity, BarChart3, Briefcase, Handshake, Circle, Scale, Zap } from 'lucide-react';
+import { LayoutDashboard, Users, UserCog, History, Settings, Sun, Moon, Keyboard, LogOut, Landmark, BarChart3, Briefcase, Handshake, Circle, Scale, Zap } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import { useData } from '../context/DataContext';
@@ -16,7 +16,8 @@ import IdentityBadge from './IdentityBadge';
 import { preloadRoute } from '../lib/routePreloaders';
 import { ChevronDown, Globe } from 'lucide-react';
 import EntitiesIcon from './icons/EntitiesIcon';
-import { getRoleLabel } from '../lib/labels';
+import { getRoleLabel, LABELS } from '../lib/labels';
+import { LiveFeedUIProvider } from '../context/LiveFeedUIContext';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { theme, toggleTheme } = useTheme();
@@ -27,6 +28,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const { role, isClusterAdmin, canAccessAdminUi, canOperateLog, canManageImpact, canAlign } = useAppRole();
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const [isFocusFullscreen, setIsFocusFullscreen] = useState(false);
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [isTelemetryOpen, setIsTelemetryOpen] = useState(false);
@@ -45,7 +47,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { to: '/entities', icon: <EntitiesIcon size={18} />, label: 'Entities', hint: 'Entity list and detailed profiles' },
         { to: '/channels', icon: <Circle size={18} />, label: 'Channels', hint: 'Channel tracking and settings overview' },
         { to: '/collaborations', icon: <Handshake size={18} />, label: 'Network', hint: 'Network profiles and linked entities' },
-        { to: '/team', icon: <UserCog size={18} />, label: 'Team', hint: 'Team management and operator coverage' },
+        { to: '/roster', icon: <UserCog size={18} />, label: 'Roster', hint: 'Workspace people list, roles, and operator sessions' },
         { to: '/settings', icon: <Settings size={18} />, label: 'Settings', hint: 'System preferences and access control' },
 
       ],
@@ -58,7 +60,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       label: '',
       items: [
         { to: '/activity', icon: <History size={18} />, label: 'Activities', hint: 'Activity records and management' },
-        { to: '/team', icon: <UserCog size={18} />, label: 'Team', hint: 'Team management and operator coverage' },
+        { to: '/roster', icon: <UserCog size={18} />, label: 'Roster', hint: 'Workspace people list, roles, and operator sessions' },
       ],
     },
   ];
@@ -93,6 +95,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       }
       return next;
     });
+  }, []);
+
+  const openLiveFeed = useCallback(() => {
+    setIsTelemetryOpen(false);
+    setIsLiveFeedOpen(true);
+  }, []);
+  const openWorkspaceHealth = useCallback(() => {
+    setIsLiveFeedOpen(false);
+    setIsTelemetryOpen(true);
   }, []);
 
   const clearShortcutPrefix = useCallback(() => {
@@ -147,7 +158,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               p: '/entities',
               c: '/collaborations',
               v: '/channels',
-              t: '/team',
+              t: '/roster',
               s: '/settings',
             }
           : {
@@ -156,7 +167,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               p: '/activity',
               c: '/activity',
               v: '/activity',
-              t: '/team',
+              t: '/roster',
               s: '/activity',
             };
         const route = goRouteMap[normalizedKey];
@@ -211,7 +222,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           if (normalizedKey === 'm') {
             event.preventDefault();
             clearShortcutPrefix();
-            navigate('/team?action=add-member');
+            navigate('/roster?action=add-roster-profile');
             return;
           }
 
@@ -272,7 +283,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   ]);
 
   return (
-    <div className="app-ambient-surface min-h-screen text-stone-900 dark:text-stone-100 font-sans flex flex-col lg:flex-row transition-colors duration-200 pb-32 lg:pb-0 overflow-x-hidden">
+    <div className="app-ambient-surface min-h-app text-stone-900 dark:text-stone-100 font-sans flex flex-col lg:flex-row transition-colors duration-200 pb-32 lg:pb-0 overflow-x-hidden">
       <div className={cn(
         'fixed top-0 left-0 right-0 h-0.5 z-[70] pointer-events-none transition-opacity duration-200',
         showSyncProgress ? 'opacity-100' : 'opacity-0'
@@ -291,7 +302,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
       {/* Mobile Top Bar */}
       <div className={cn(
-        "mobile-nav-light lg:hidden fixed top-0 left-0 right-0 h-16 bg-stone-900/95 dark:bg-black/95 text-white flex items-center justify-between px-4 z-50 shadow-lg border-b border-stone-800/70",
+        "mobile-nav-light lg:hidden fixed top-0 left-0 right-0 min-h-16 pt-[env(safe-area-inset-top,0px)] bg-stone-900/95 dark:bg-black/95 text-white flex items-center justify-between px-4 pb-0 z-50 shadow-lg border-b border-stone-800/70",
         isFocusFullscreen && "hidden"
       )}>
         <div className="flex items-center">
@@ -345,10 +356,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <button
             onClick={() => setIsTelemetryOpen(true)}
             className="interactive-3d inline-flex h-9 w-9 items-center justify-center rounded-full text-stone-300 hover:text-white"
-            aria-label="Audit Panel"
-            title="Audit Panel"
+            aria-label={LABELS.workspacePanels.workspaceHealth.title}
+            title={LABELS.workspacePanels.workspaceHealth.titleHint}
           >
-            <Activity size={18} />
+            <Scale size={18} />
           </button>
           {isSupabaseConfigured && user && (
             <div className="flex items-center gap-2">
@@ -490,18 +501,22 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <Keyboard size={15} />
             </button>
             <button
-              onClick={() => setIsLiveFeedOpen(true)}
-              className="interactive-3d inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20"
-              title="Live Feed"
-              aria-label="Live Feed"
+              type="button"
+              onClick={openLiveFeed}
+              className={cn(
+                'interactive-3d inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20',
+                location.pathname === '/activity' && 'lg:hidden'
+              )}
+              title={LABELS.workspacePanels.activityList.titleHint}
+              aria-label={LABELS.workspacePanels.activityList.title}
             >
               <Zap size={15} />
             </button>
             <button
-              onClick={() => setIsTelemetryOpen(true)}
+              onClick={openWorkspaceHealth}
               className="interactive-3d inline-flex h-8 w-8 items-center justify-center rounded-lg text-stone-500 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800"
-              title="Audit Panel"
-              aria-label="Audit Panel"
+              title={LABELS.workspacePanels.workspaceHealth.titleHint}
+              aria-label={LABELS.workspacePanels.workspaceHealth.title}
             >
               <Scale size={15} />
             </button>
@@ -550,19 +565,21 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
       {/* Main Content */}
       <main className={cn(
-        "flex-1 w-full flex flex-col min-h-screen min-w-0",
+        "flex-1 w-full flex flex-col min-w-0 min-h-0",
         isFocusFullscreen ? "lg:ml-0" : "desktop-main-offset"
       )}>
         <div
           ref={contentScrollRef}
           className={cn(
           "p-4 lg:px-6 lg:py-8 overflow-y-auto overflow-x-hidden flex-1 app-scroll-smooth",
-          isFocusFullscreen ? "pt-4 lg:pt-4" : "pt-20 lg:pt-8"
+          isFocusFullscreen ? "pt-4 lg:pt-4" : "pt-[calc(4rem+env(safe-area-inset-top,0px))] lg:pt-8"
         )}
         >
-          <div className="desktop-pro w-full min-w-0">
-            {children}
-          </div>
+          <LiveFeedUIProvider openLiveFeed={openLiveFeed} openWorkspaceHealth={openWorkspaceHealth}>
+            <div className="desktop-pro w-full min-w-0">
+              {children}
+            </div>
+          </LiveFeedUIProvider>
         </div>
       </main>
 

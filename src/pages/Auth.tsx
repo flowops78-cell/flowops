@@ -54,7 +54,7 @@ export default function Auth() {
     try {
       if (mode === 'request') {
         if (!isSupabaseConfigured || !supabase) {
-          throw new Error('Supabase is not configured. Cannot submit access request in demo mode.');
+          throw new Error('Supabase is not configured. Add your project URL and keys before requesting access.');
         }
 
         const username = requestUsername.trim().toLowerCase();

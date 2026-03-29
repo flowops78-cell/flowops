@@ -5,6 +5,11 @@
   "observability": {
     "enabled": true
   },
+  // Load performance (Cloudflare edge + this Worker):
+  // • Brotli/Gzip and HTTP/2|3 are automatic at the edge; no Worker code required.
+  // • Dashboard: Speed → consider Early Hints (if offered), keep Rocket Loader OFF for SPAs.
+  // • Purge cache or use versioned URLs after deploys; public/_headers caches /assets/* long-term.
+  // • Production builds: set VITE_SUPABASE_URL so index.html gets a preconnect to your *.supabase.co API host.
   // SPA fallback returns index.html for unknown paths — a stale index + new deploy yields
   // "MIME type text/html" for missing /assets/*.js. Keep index uncached (_headers) and hard-refresh after deploys.
   "assets": {

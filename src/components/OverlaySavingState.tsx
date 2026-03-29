@@ -14,20 +14,33 @@ import React from 'react';
 import { Loader2, CheckCircle2 } from 'lucide-react';
 
 type OverlaySavingStateProps =
-  | { state: 'saving'; label?: string }
-  | { state: 'success'; label?: string }
+  | { state: 'saving'; label?: string; /** Tighter layout for small overlay cards (e.g. channel account). */ compact?: boolean }
+  | { state: 'success'; label?: string; compact?: boolean }
   | { state: 'error'; message?: string };
 
 export default function OverlaySavingState(props: OverlaySavingStateProps) {
   if (props.state === 'saving') {
+    const c = props.compact;
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-8">
-        <Loader2 size={28} className="animate-spin text-stone-400" />
+      <div
+        className={
+          c
+            ? 'flex flex-col items-center justify-center gap-2.5 py-5'
+            : 'flex flex-col items-center justify-center gap-4 py-8'
+        }
+      >
+        <Loader2 size={c ? 24 : 28} className="animate-spin text-stone-400" />
         <p className="text-sm font-medium text-stone-700 dark:text-stone-300">
           {props.label ?? 'Saving…'}
         </p>
         {/* Indeterminate bar — no fake percentages */}
-        <div className="w-full max-w-[200px] h-[3px] rounded-full bg-stone-100 dark:bg-stone-800 overflow-hidden">
+        <div
+          className={
+            c
+              ? 'w-full max-w-[160px] h-[3px] rounded-full bg-stone-100 dark:bg-stone-800 overflow-hidden'
+              : 'w-full max-w-[200px] h-[3px] rounded-full bg-stone-100 dark:bg-stone-800 overflow-hidden'
+          }
+        >
           <div className="overlay-progress-bar" />
         </div>
         <p className="text-xs text-stone-400">Please wait</p>
@@ -36,9 +49,19 @@ export default function OverlaySavingState(props: OverlaySavingStateProps) {
   }
 
   if (props.state === 'success') {
+    const c = props.compact;
     return (
-      <div className="flex flex-col items-center justify-center gap-3 py-8">
-        <CheckCircle2 size={32} className="text-emerald-500 animate-in zoom-in-50 duration-300" />
+      <div
+        className={
+          c
+            ? 'flex flex-col items-center justify-center gap-2 py-5'
+            : 'flex flex-col items-center justify-center gap-3 py-8'
+        }
+      >
+        <CheckCircle2
+          size={c ? 28 : 32}
+          className="text-emerald-500 animate-in zoom-in-50 duration-300"
+        />
         <p className="text-sm font-semibold text-stone-900 dark:text-stone-100">
           {props.label ?? 'Done'}
         </p>

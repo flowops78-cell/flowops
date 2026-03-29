@@ -1,5 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, Handshake, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import {
+  Activity as ActivityWaveIcon,
+  Calendar,
+  ChevronDown,
+  ChevronRight,
+  Handshake,
+  Link2,
+  Plus,
+  RotateCcw,
+  Trash2,
+  User,
+  Users,
+  X,
+} from 'lucide-react';
 import { useRef } from 'react';
 import OverlaySavingState from '../components/OverlaySavingState';
 import { useData } from '../context/DataContext';
@@ -256,7 +270,10 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
             <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-stone-200 bg-stone-100 shadow-sm dark:border-stone-700 dark:bg-stone-800">
               <Handshake size={24} className="text-stone-900 dark:text-stone-100" />
             </div>
-            <h2 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Network</h2>
+            <div>
+              <h2 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Network</h2>
+              <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">Profiles, linked entities, and recent activity touchpoints.</p>
+            </div>
           </div>
           {activeProfiles.length > 0 && (
             <button
@@ -273,9 +290,12 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
       )}
 
       {activeProfiles.length === 0 ? (
-        <div className="section-card flex min-h-[280px] flex-col items-center justify-center gap-5 p-8 text-center">
-          {!embedded && <h3 className="text-2xl font-semibold text-stone-900 dark:text-stone-100">Network</h3>}
-          <p className="text-lg text-stone-500 dark:text-stone-400">No profiles</p>
+        <div className="section-card flex min-h-[240px] flex-col items-center justify-center gap-4 p-8 text-center">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-stone-200 bg-stone-50 text-stone-400 dark:border-stone-700 dark:bg-stone-800/80 dark:text-stone-500">
+            <Handshake size={28} strokeWidth={1.5} aria-hidden />
+          </div>
+          {!embedded && <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">No network profiles yet</h3>}
+          <p className="max-w-sm text-sm text-stone-500 dark:text-stone-400">Add a profile to attribute entities and route flow.</p>
           <button
             type="button"
             onClick={() => setIsAddOpen(true)}
@@ -333,13 +353,33 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
                   type="button"
                   onClick={() => setSelectedProfileId(profile.id)}
                   className={cn(
-                    'w-full rounded-2xl border px-4 py-4 text-left text-base font-medium transition-all',
+                    'group flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left text-sm font-medium transition-all',
                     selectedProfileId === profile.id
                       ? 'border-emerald-300 bg-emerald-50 text-emerald-900 shadow-sm dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-100'
                       : 'border-stone-200 bg-white text-stone-900 hover:border-stone-300 hover:bg-stone-50 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800/80',
                   )}
                 >
-                  <span className="block truncate">{getProfileName(profile.name)}</span>
+                  <span
+                    className={cn(
+                      'flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border',
+                      selectedProfileId === profile.id
+                        ? 'border-emerald-200/80 bg-white/80 text-emerald-700 dark:border-emerald-800/60 dark:bg-emerald-950/40 dark:text-emerald-300'
+                        : 'border-stone-200 bg-stone-50 text-stone-500 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-400',
+                    )}
+                  >
+                    <Handshake size={16} strokeWidth={2} aria-hidden />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{getProfileName(profile.name)}</span>
+                  <ChevronRight
+                    size={16}
+                    className={cn(
+                      'shrink-0 transition-opacity',
+                      selectedProfileId === profile.id
+                        ? 'text-emerald-600 opacity-100 dark:text-emerald-400'
+                        : 'text-stone-300 opacity-0 group-hover:opacity-100 dark:text-stone-600',
+                    )}
+                    aria-hidden
+                  />
                 </button>
               ))}
             </div>
@@ -348,12 +388,10 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
               type="button"
               onClick={() => setIsAddOpen(true)}
               disabled={!canManageImpact}
-              className="mt-3 w-full rounded-2xl border border-dashed border-stone-300 px-4 py-4 text-left text-base font-semibold text-stone-700 transition-colors hover:bg-stone-50 disabled:opacity-50 dark:border-stone-700 dark:text-stone-200 dark:hover:bg-stone-800/70"
+              className="mt-3 flex w-full items-center gap-2 rounded-xl border border-dashed border-stone-300 px-3 py-2.5 text-left text-sm font-semibold text-stone-700 transition-colors hover:bg-stone-50 disabled:opacity-50 dark:border-stone-700 dark:text-stone-200 dark:hover:bg-stone-800/70"
             >
-              <span className="inline-flex items-center gap-2">
-                <Plus size={18} />
-                Add
-              </span>
+              <Plus size={16} className="shrink-0 text-stone-500 dark:text-stone-400" aria-hidden />
+              Add profile
             </button>
 
             {hiddenProfiles.length > 0 && (
@@ -397,10 +435,16 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
           <section className="section-card overflow-hidden">
             {selectedProfile ? (
               <>
-                <div className="border-b border-stone-200 px-5 py-5 dark:border-stone-800 lg:px-6">
+                <div className="border-b border-stone-200 px-5 py-4 dark:border-stone-800 lg:px-6">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
-                      <h3 className="text-2xl font-semibold text-stone-900 dark:text-stone-100">{getProfileName(selectedProfile.name)}</h3>
+                    <div className="flex items-start gap-3">
+                      <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-stone-200 bg-stone-50 text-stone-600 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300">
+                        <Handshake size={18} aria-hidden />
+                      </span>
+                      <div>
+                        <h3 className="text-xl font-semibold tracking-tight text-stone-900 dark:text-stone-100">{getProfileName(selectedProfile.name)}</h3>
+                        <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">Profile detail and links</p>
+                      </div>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {selectedProfile.status === 'inactive' && (
@@ -431,30 +475,47 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
 
                 <div className="space-y-5 p-5 lg:p-6">
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <BasicMetric label="Linked" value={String(selectedMetrics.linked)} />
-                    <BasicMetric label="Flow" value={formatValue(selectedMetrics.flow)} tone={selectedMetrics.flow > 0 ? 'positive' : selectedMetrics.flow < 0 ? 'negative' : 'neutral'} />
-                    <BasicMetric label="Activities" value={String(selectedMetrics.activities)} />
+                    <BasicMetric icon={<Users size={14} className="text-stone-400" aria-hidden />} label="Linked" value={String(selectedMetrics.linked)} />
+                    <BasicMetric icon={<Link2 size={14} className="text-stone-400" aria-hidden />} label="Flow" value={formatValue(selectedMetrics.flow)} tone={selectedMetrics.flow > 0 ? 'positive' : selectedMetrics.flow < 0 ? 'negative' : 'neutral'} />
+                    <BasicMetric icon={<ActivityWaveIcon size={14} className="text-stone-400" aria-hidden />} label="Activities" value={String(selectedMetrics.activities)} />
                   </div>
 
                   <div className="space-y-2">
-                    <h4 className="text-sm font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Entities linked</h4>
+                    <h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-stone-500 dark:text-stone-400">
+                      <User size={14} className="text-stone-400" aria-hidden />
+                      Entities linked
+                    </h4>
                     {linkedEntities.length === 0 ? (
-                      <div className="rounded-2xl border border-dashed border-stone-200 px-4 py-6 text-sm text-stone-500 dark:border-stone-800 dark:text-stone-400">
-                        None
+                      <div className="flex items-center gap-2 rounded-xl border border-dashed border-stone-200 px-4 py-5 text-sm text-stone-500 dark:border-stone-800 dark:text-stone-400">
+                        <User size={16} className="shrink-0 opacity-50" aria-hidden />
+                        No entities use this profile yet.
                       </div>
                     ) : (
                       <div className="space-y-2">
                         {linkedEntities.map(entity => (
-                          <div key={entity.id} className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm font-medium text-stone-900 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-100">
-                            {entity.name}
-                          </div>
+                          <Link
+                            key={entity.id}
+                            to={`/entities/${entity.id}`}
+                            className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm font-medium text-stone-900 transition-colors hover:border-stone-300 hover:bg-stone-50 dark:border-stone-800 dark:bg-stone-900 dark:text-stone-100 dark:hover:bg-stone-800/80"
+                          >
+                            <span className="flex min-w-0 items-center gap-2.5">
+                              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-stone-200 bg-stone-50 text-stone-500 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-400">
+                                <User size={14} aria-hidden />
+                              </span>
+                              <span className="truncate">{entity.name}</span>
+                            </span>
+                            <ChevronRight size={16} className="shrink-0 text-stone-300 dark:text-stone-600" aria-hidden />
+                          </Link>
                         ))}
                       </div>
                     )}
                   </div>
 
                   <div className="space-y-2">
-                    <h4 className="text-sm font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Basic info</h4>
+                    <h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-stone-500 dark:text-stone-400">
+                      <Handshake size={14} className="text-stone-400" aria-hidden />
+                      Basic info
+                    </h4>
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                       <InfoCard label="State" value={selectedProfile.status === 'inactive' ? 'Inactive' : 'Active'} />
                       <InfoCard label="Total" value={formatValue(selectedProfile.total_number ?? 0)} />
@@ -463,13 +524,28 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
 
                   {recentLinkedActivities.length > 0 && (
                     <div className="space-y-2">
-                      <h4 className="text-sm font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Recent</h4>
+                      <h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-widest text-stone-500 dark:text-stone-400">
+                        <Calendar size={14} className="text-stone-400" aria-hidden />
+                        Recent activities
+                      </h4>
                       <div className="space-y-2">
                         {recentLinkedActivities.map(activity => (
-                          <div key={activity.id} className="rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm dark:border-stone-800 dark:bg-stone-900">
-                            <div className="font-medium text-stone-900 dark:text-stone-100">{activity.label}</div>
-                            <div className="mt-1 text-xs text-stone-500 dark:text-stone-400">{new Date(activity.date).toLocaleDateString()}</div>
-                          </div>
+                          <Link
+                            key={activity.id}
+                            to={`/activity/${activity.id}`}
+                            className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm transition-colors hover:border-stone-300 hover:bg-stone-50 dark:border-stone-800 dark:bg-stone-900 dark:hover:bg-stone-800/80"
+                          >
+                            <span className="flex min-w-0 items-start gap-2.5">
+                              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-stone-200 bg-stone-50 text-stone-500 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-400">
+                                <Calendar size={14} aria-hidden />
+                              </span>
+                              <span className="min-w-0">
+                                <span className="block truncate font-medium text-stone-900 dark:text-stone-100">{activity.label}</span>
+                                <span className="mt-0.5 block text-xs text-stone-500 dark:text-stone-400">{new Date(activity.date).toLocaleDateString()}</span>
+                              </span>
+                            </span>
+                            <ChevronRight size={16} className="shrink-0 text-stone-300 dark:text-stone-600" aria-hidden />
+                          </Link>
                         ))}
                       </div>
                     </div>
@@ -550,8 +626,12 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
                 </div>
               </>
             ) : (
-              <div className="flex min-h-[420px] items-center justify-center px-6 text-sm text-stone-500 dark:text-stone-400">
-                Select a profile
+              <div className="flex min-h-[320px] flex-col items-center justify-center gap-3 px-6 text-center">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-stone-200 bg-stone-50 text-stone-400 dark:border-stone-700 dark:bg-stone-800/80 dark:text-stone-500">
+                  <Handshake size={22} strokeWidth={1.5} aria-hidden />
+                </span>
+                <p className="text-sm font-medium text-stone-600 dark:text-stone-300">Choose a profile</p>
+                <p className="max-w-xs text-xs text-stone-500 dark:text-stone-400">Select a network profile on the left to see linked entities and metrics.</p>
               </div>
             )}
           </section>
@@ -583,14 +663,19 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
             {(addProfileState === 'idle' || addProfileState === 'error') && (
               <form onSubmit={handleAddProfile} className="space-y-4">
                 <div className="flex items-start justify-between gap-3">
-                  <h3 className="text-xl font-semibold text-stone-900 dark:text-stone-100">Add profile</h3>
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-stone-200 bg-stone-50 text-stone-600 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300">
+                      <Plus size={18} aria-hidden />
+                    </span>
+                    <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">Add profile</h3>
+                  </div>
                   <button
                     type="button"
                     onClick={closeAddModal}
                     className="rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 dark:hover:bg-stone-800 dark:hover:text-stone-200"
                     aria-label="Close"
                   >
-                    ✕
+                    <X size={18} />
                   </button>
                 </div>
 
@@ -663,7 +748,17 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
   );
 }
 
-function BasicMetric({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'positive' | 'negative' }) {
+function BasicMetric({
+  label,
+  value,
+  tone = 'neutral',
+  icon,
+}: {
+  label: string;
+  value: string;
+  tone?: 'neutral' | 'positive' | 'negative';
+  icon?: React.ReactNode;
+}) {
   const toneClass = tone === 'positive'
     ? 'text-emerald-700 dark:text-emerald-300'
     : tone === 'negative'
@@ -671,9 +766,12 @@ function BasicMetric({ label, value, tone = 'neutral' }: { label: string; value:
       : 'text-stone-900 dark:text-stone-100';
 
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white px-4 py-3 dark:border-stone-800 dark:bg-stone-900">
-      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">{label}</div>
-      <div className={cn('mt-1 text-lg font-semibold', toneClass)}>{value}</div>
+    <div className="rounded-xl border border-stone-200 bg-white px-3 py-2.5 dark:border-stone-800 dark:bg-stone-900">
+      <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-stone-500 dark:text-stone-400">
+        {icon}
+        {label}
+      </div>
+      <div className={cn('mt-1 font-mono text-base font-semibold tabular-nums', toneClass)}>{value}</div>
     </div>
   );
 }

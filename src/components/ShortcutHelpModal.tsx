@@ -30,7 +30,7 @@ const shortcutGroups: Array<{ title: string; items: ShortcutItem[] }> = [
       { keys: 'P', action: 'Entities (admin); operators stay on Activities' },
       { keys: 'C', action: 'Network (admin)' },
       { keys: 'V', action: 'Channels (admin)' },
-      { keys: 'T', action: 'Team' },
+      { keys: 'T', action: 'Roster' },
       { keys: 'S', action: 'Settings (admin)' },
     ],
   },
@@ -49,14 +49,14 @@ const shortcutGroups: Array<{ title: string; items: ShortcutItem[] }> = [
       { keys: 'U', action: 'Add entity' },
       { keys: 'E', action: 'Add entry' },
       { keys: 'Shift + Enter', action: 'Complete activity' },
-      { keys: 'M', action: 'Toggle activity monitor' },
+      { keys: 'O', action: 'Toggle session timeline (this activity sidebar)' },
     ],
   },
   {
-    title: 'Team Page',
+    title: 'Roster Page',
     items: [
-      { keys: 'Delete', action: 'Remove selected team member' },
-      { keys: 'L', action: 'View team log' },
+      { keys: 'Delete', action: 'Remove selected roster profile' },
+      { keys: 'L', action: 'View operator log' },
     ],
   },
   {

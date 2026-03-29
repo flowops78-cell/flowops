@@ -15,6 +15,7 @@ import { preloadCoreRoutesOnIdle } from './lib/routePreloaders';
 import { enableHorizontalMouseDrag } from './lib/enableHorizontalMouseDrag';
 import { useData } from './context/DataContext';
 import { LABELS } from './lib/labels';
+import { StaleChunkBoundary } from './components/StaleChunkBoundary';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const ActivityOverview = lazy(() => import('./pages/ActivityOverview'));
@@ -23,7 +24,7 @@ const Activities = lazy(() => import('./pages/Activities'));
 const ActivityDetail = lazy(() => import('./pages/ActivityDetail'));
 const Entities = lazy(() => import('./pages/Entities'));
 const EntityDetail = lazy(() => import('./pages/EntityDetail'));
-const Team = lazy(() => import('./pages/TeamMembers'));
+const RosterPage = lazy(() => import('./pages/RosterPage'));
 const Channels = lazy(() => import('./pages/Channels'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Auth = lazy(() => import('./pages/Auth'));
@@ -77,8 +78,9 @@ function AppRoutes() {
           <Route path="/channels-fallback" element={<Navigate to="/channels" replace />} />
           <Route path="/overview" element={canAccessAdminUi ? <ActivityOverview /> : <Navigate to="/activity" replace />} />
           <Route path="/collaborations" element={canAccessAdminUi ? <Collaborations /> : <Navigate to="/activity" replace />} />
-          <Route path="/team" element={<Team />} />
-          <Route path="/team-members" element={<Navigate to="/team" replace />} />
+          <Route path="/roster" element={<RosterPage />} />
+          <Route path="/team" element={<Navigate to="/roster" replace />} />
+          <Route path="/team-members" element={<Navigate to="/roster" replace />} />
           <Route path="/settings" element={canAccessAdminUi ? <Settings /> : <Navigate to="/activity" replace />} />
           <Route path="/distribution" element={<Navigate to="/dashboard" replace />} />
           <Route path="/leaderboard" element={<Navigate to="/dashboard" replace />} />
@@ -120,26 +122,28 @@ function AppShell() {
 
   return (
     <BrowserRouter>
-      <Suspense
-        fallback={
-          <div className="min-h-screen flex items-center justify-center px-4">
-            <div className="w-full max-w-sm">
-              <LoadingLine label="Loading page…" />
+      <StaleChunkBoundary>
+        <Suspense
+          fallback={
+            <div className="min-h-screen flex items-center justify-center px-4">
+              <div className="w-full max-w-sm">
+                <LoadingLine label="Loading page…" />
+              </div>
             </div>
-          </div>
-        }
-      >
-        <Routes>
-          <Route
-            path="/auth"
-            element={(!isSupabaseConfigured || !user) ? <Auth /> : <Navigate to="/" replace />}
-          />
-          <Route
-            path="/*"
-            element={(!isSupabaseConfigured || !user) ? <Navigate to="/auth" replace /> : <AppRoutes />}
-          />
-        </Routes>
-      </Suspense>
+          }
+        >
+          <Routes>
+            <Route
+              path="/auth"
+              element={(!isSupabaseConfigured || !user) ? <Auth /> : <Navigate to="/" replace />}
+            />
+            <Route
+              path="/*"
+              element={(!isSupabaseConfigured || !user) ? <Navigate to="/auth" replace /> : <AppRoutes />}
+            />
+          </Routes>
+        </Suspense>
+      </StaleChunkBoundary>
     </BrowserRouter>
   );
 }

@@ -36,10 +36,17 @@
     --kpi-metric-col-width: 5.5rem;
   }
 
+  /* Fill the visible viewport on phones/tablets (100vh alone misses dynamic browser chrome). */
+  html {
+    height: 100%;
+  }
+
   html,
   body,
   #root {
-    min-height: 100vh;
+    min-height: 100%;
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
     background-color: var(--app-bg-light);
     overflow-x: hidden;
   }
@@ -123,7 +130,7 @@
 }
 
 @layer components {
-  /* Full-viewport modals (Activities, Channels add/create, ActivityMonitor).
+  /* Full-viewport modals (Activities, Channels add/create, session feed page).
      Previously these classes had no rules, so overlays sat inside the scrolling main pane. */
   .overlay-backdrop {
     position: fixed;
@@ -133,6 +140,7 @@
     align-items: center;
     justify-content: center;
     padding: 1rem;
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 0px));
     overflow-y: auto;
     -webkit-overflow-scrolling: touch;
     overscroll-behavior: contain;
@@ -143,6 +151,29 @@
 
   .dark .overlay-backdrop {
     background-color: rgb(12 10 9 / 0.6);
+  }
+
+  /* Backdrop blur is costly on low-end GPUs; solid scrims stay readable without it. */
+  @media (prefers-reduced-motion: reduce), (update: slow) {
+    .overlay-backdrop {
+      backdrop-filter: none;
+      -webkit-backdrop-filter: none;
+      background-color: rgb(28 25 23 / 0.72);
+    }
+
+    .dark .overlay-backdrop {
+      background-color: rgb(12 10 9 / 0.88);
+    }
+
+    aside.desktop-sidebar-proportional {
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      background-color: rgb(250 250 249 / 0.96) !important;
+    }
+
+    .dark aside.desktop-sidebar-proportional {
+      background-color: rgb(28 25 23 / 0.98) !important;
+    }
   }
 
   .overlay-card {
@@ -188,6 +219,13 @@
 }
 
 @layer utilities {
+  /* Match shell height to the visible viewport (landscape tablet / mobile browser chrome). */
+  .min-h-app {
+    min-height: 100%;
+    min-height: 100dvh;
+    min-height: -webkit-fill-available;
+  }
+
   .hide-scrollbar::-webkit-scrollbar {
     display: none;
   }
@@ -1227,5 +1265,27 @@
       width: 100%;
       opacity: 0.4;
     }
+  }
+}
+
+/* Inline Tailwind `backdrop-blur-*` on modals/panels — disable on low refresh / reduced motion devices. */
+@media (prefers-reduced-motion: reduce), (update: slow) {
+  .backdrop-blur-sm,
+  .backdrop-blur,
+  .backdrop-blur-md,
+  .backdrop-blur-lg,
+  .backdrop-blur-xl {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce), (update: slow) {
+  body::before {
+    opacity: 0.52 !important;
+  }
+
+  body::after {
+    opacity: 0.38 !important;
   }
 }

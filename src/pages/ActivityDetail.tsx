@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
-import { ArrowLeft, AlertCircle, User, Users, LayoutGrid, List, Timer, Activity, Award, Play, Square, ChevronDown, SlidersHorizontal, X } from 'lucide-react';
+import { ArrowLeft, AlertCircle, User, Users, Activity, Play, Square, ChevronDown, SlidersHorizontal, X } from 'lucide-react';
 import { formatValue, formatDate } from '../lib/utils';
 import { ActivityRecord, Entity } from '../types';
 import { cn } from '../lib/utils';
-import Papa from 'papaparse';
+
 import TelemetrySidebar from '../components/TelemetrySidebar';
 import ContextPanel from '../components/ContextPanel';
 import EntitySnapshot from '../components/EntitySnapshot';
@@ -15,14 +15,14 @@ import { useAppRole } from '../context/AppRoleContext';
 import { useNotification } from '../context/NotificationContext';
 import LoadingLine from '../components/LoadingLine';
 import EmptyState from '../components/EmptyState';
-import { useLabels } from '../lib/labels';
+import { useLabels, LABELS } from '../lib/labels';
 import { EntriesRow } from './ActivityDetailEntriesRow';
 
 export default function ActivityDetail() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { activities, records, entities, teamMembers, activityLogs, channels, loading, loadingProgress, addEntity, requestAdjustment, addRecord, addActivityLog, endActivityLog, updateRecord, deleteRecord, updateActivity, updateEntity, addChannelRecord, transferUnits } = useData();
+  const { activities, records, entities, entityBalances, rosterProfiles, activityLogs, channels, loading, loadingProgress, addEntity, requestAdjustment, addRecord, addActivityLog, endActivityLog, updateRecord, deleteRecord, updateActivity, updateEntity, addChannelRecord, transferUnits } = useData();
   const { role, canOperateLog, canManageImpact, canAlign } = useAppRole();
   const { notify } = useNotification();
   const { getActionText, tx } = useLabels();
@@ -38,7 +38,6 @@ export default function ActivityDetail() {
   const isTotald = Math.abs(discrepancy) < 0.01;
 
   // View State
-  const [viewMode, setViewMode] = useState<'list' | 'activity'>('list');
   const [isTelemetryOpen, setIsTelemetryOpen] = useState(false);
   const [isMobileViewport, setIsMobileViewport] = useState(() => (
     typeof window !== 'undefined' ? window.innerWidth < 640 : false
@@ -55,12 +54,11 @@ export default function ActivityDetail() {
   const [didAddEntity, setDidAddEntity] = useState(false);
   const [isAddOptionsOpen, setIsAddOptionsOpen] = useState(false);
   const [isAdvancedOverlayOpen, setIsAdvancedOverlayOpen] = useState(false);
-  const [selectedTeamMemberId, setSelectedTeamMemberId] = useState('');
+  const [selectedOperatorProfileId, setSelectedOperatorProfileId] = useState('');
   const [isUpdatingWorkforce, setIsUpdatingWorkforce] = useState(false);
-  const [isCopied, setIsCopied] = useState(false);
+
   const [totalRecord, setTotalRecord] = useState<ActivityRecord | null>(null);
   const [totalAmount, setTotalAmount] = useState('');
-  const [totalPlace, setTotalPlace] = useState('');
   const [totalMode, setTotalMode] = useState<'update' | 'sitout' | 'leave'>('update');
   const [totalAlignmentSource, setAlignmentSource] = useState('');
   const [selectedPositionNumber, setSelectedPositionNumber] = useState<number | null>(null);
@@ -68,7 +66,6 @@ export default function ActivityDetail() {
   const [positionPanelEntityQuery, setPositionPanelUnitQuery] = useState('');
   const [positionPanelRecord, setPositionPanelRecordValue] = useState('');
   const [positionPanelTotal, setPositionPanelTotal] = useState('');
-  const [positionPanelPlace, setPositionPanelPlace] = useState('');
   const [isPositionActionPending, setIsPositionActionPending] = useState(false);
   const [isTotalActionPending, setIsTotalActionPending] = useState(false);
   const [isActivityTransitioning, setIsActivityTransitioning] = useState(false);
@@ -81,12 +78,6 @@ export default function ActivityDetail() {
 
   // Activity Operations State
   const [assignedOperator, setAssignedOperator] = useState(activity?.assigned_user_id || '');
-  const [activityMode, setActivityMode] = useState<'value' | 'high_intensity'>(activity?.activity_mode || 'value');
-
-  // Timer State
-  const [elapsedTime, setElapsedTime] = useState('00:00:00');
-  const [intensityLevel, setIntensityLevel] = useState(1);
-  const [levelTimeRemaining, setLevelTimeRemaining] = useState('15:00');
 
   const viewingEntity = entities.find(p => p.id === viewingUnitId);
   const viewingEntityRecord = viewingUnitId
@@ -99,45 +90,8 @@ export default function ActivityDetail() {
   useEffect(() => {
     if (activity) {
       setAssignedOperator(activity.assigned_user_id || '');
-      setActivityMode(activity.activity_mode || 'value');
     }
   }, [activity]);
-
-  // Timer Logic
-  useEffect(() => {
-    if (!activity) return;
-
-    const interval = setInterval(() => {
-      // Elapsed Time
-      const startTime = new Date(activity.created_at || activity.date).getTime();
-      const now = new Date().getTime();
-      const diff = now - startTime;
-
-      if (diff > 0) {
-        const hours = Math.floor(diff / (1000 * 60 * 60));
-        const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-        const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-        setElapsedTime(`${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`);
-      }
-
-      // High Intensity Logic (Mocked for demo)
-      if (activityMode === 'high_intensity') {
-        // Mock levels: 15 mins each
-        const levelDuration = 15 * 60 * 1000;
-        const currentLevel = Math.floor(diff / levelDuration) + 1;
-        setIntensityLevel(currentLevel);
-
-        const timeInLevel = diff % levelDuration;
-        const remaining = levelDuration - timeInLevel;
-        const rMinutes = Math.floor(remaining / (1000 * 60));
-        const rSeconds = Math.floor((remaining % (1000 * 60)) / 1000);
-        setLevelTimeRemaining(`${rMinutes.toString().padStart(2, '0')}:${rSeconds.toString().padStart(2, '0')}`);
-      }
-
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [activity, activityMode]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -282,7 +236,7 @@ export default function ActivityDetail() {
   }, [isAddOptionsOpen, isAdvancedOverlayOpen, isTotalActionPending, isAddingEntity, isUpdatingWorkforce, isActivityTransitioning]);
 
   const availableEntities = entities.filter(entity => !activeActivityEntries.some(record => record.entity_id === entity.id));
-  const rosterPositionCandidates = availableEntities;
+  const entitiesAvailableForPosition = availableEntities;
   const unpositionedActiveEntries = activeActivityEntries.filter(record => !record.position_id || record.position_id <= 0);
   const selectedPositionActivityRecord = selectedPositionNumber !== null
     ? activeActivityEntries.find(record => record.position_id === selectedPositionNumber) ?? null
@@ -290,15 +244,19 @@ export default function ActivityDetail() {
   const selectedPositionUnit = selectedPositionActivityRecord
     ? entities.find(unit => unit.id === selectedPositionActivityRecord.entity_id) ?? null
     : null;
-  const operators = teamMembers.filter(s => s.role === 'operator' || s.role === 'admin');
-  const activityWorkActivitys = activityLogs.filter(activity => activity.activity_id === activity?.id);
-  const activeWorkActivityByTeamMemberId = new Map<string, typeof activityLogs[number]>();
-  activityWorkActivitys.forEach(activity => {
-    if (activity.status === 'active' && !activeWorkActivityByTeamMemberId.has(activity.teamMember_id ?? '')) {
-      activeWorkActivityByTeamMemberId.set(activity.teamMember_id ?? '', activity);
+  const operators = rosterProfiles.filter(s => s.role === 'operator' || s.role === 'admin');
+  const activityWorkActivitys = activityLogs.filter(log => log.activity_id === activity?.id);
+  const activeOperatorLogByUserId = new Map<string, typeof activityLogs[number]>();
+  activityWorkActivitys.forEach(log => {
+    if (log.status === 'active' && !activeOperatorLogByUserId.has(log.actor_user_id ?? '')) {
+      activeOperatorLogByUserId.set(log.actor_user_id ?? '', log);
     }
   });
-  const availableOperators = teamMembers.filter(teamMember => !activeWorkActivityByTeamMemberId.has(teamMember.id));
+  const availableOperators = operators.filter(profile => {
+    const uid = profile.user_id ?? '';
+    if (!uid) return true;
+    return !activeOperatorLogByUserId.has(uid);
+  });
   const isCompleted = activity?.status === 'completed';
   const isArchived = activity?.status === 'archived';
   const canAddUnits = canOperateLog && activity?.status === 'active';
@@ -313,10 +271,10 @@ export default function ActivityDetail() {
         kind: 'waiting' as const,
       };
     }),
-    ...rosterPositionCandidates.map(unit => ({
+    ...entitiesAvailableForPosition.map(unit => ({
       unitId: unit.id,
-      label: `${unit.name || 'Unnamed Entity'} • roster`,
-      kind: 'roster' as const,
+      label: `${unit.name || 'Unnamed Entity'} • pool`,
+      kind: 'entity_pool' as const,
     })),
   ];
   const findPositionFinderOption = (query: string) => {
@@ -356,7 +314,6 @@ export default function ActivityDetail() {
       setPositionPanelUnitQuery('');
       setPositionPanelRecordValue('');
       setPositionPanelTotal('');
-      setPositionPanelPlace('');
       return;
     }
 
@@ -366,7 +323,6 @@ export default function ActivityDetail() {
       setPositionPanelUnitQuery(selectedUnit?.name || '');
       setPositionPanelRecordValue('');
       setPositionPanelTotal(String(selectedPositionActivityRecord.unit_amount ?? 0));
-      setPositionPanelPlace(selectedPositionActivityRecord.sort_order ? String(selectedPositionActivityRecord.sort_order) : '');
       return;
     }
 
@@ -374,14 +330,7 @@ export default function ActivityDetail() {
     setPositionPanelUnitQuery('');
     setPositionPanelRecordValue('');
     setPositionPanelTotal('');
-    setPositionPanelPlace('');
   }, [entities, selectedPositionActivityRecord, selectedPositionNumber, unpositionedActiveEntries]);
-
-  useEffect(() => {
-    if (viewMode !== 'activity') {
-      setSelectedPositionNumber(null);
-    }
-  }, [viewMode]);
 
   if (loading || loadingProgress > 0) {
     return (
@@ -454,6 +403,7 @@ export default function ActivityDetail() {
 
       if (recordValueingType === 'deferred' && parsedrecordValue > 0) {
         await requestAdjustment({
+          activity_id: activity.id,
           entity_id: entityId,
           amount: parsedrecordValue,
           type: 'input',
@@ -508,7 +458,6 @@ export default function ActivityDetail() {
       await updateActivity({
         ...activity,
         assigned_user_id: assignedOperator,
-        activity_mode: activityMode
       });
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to update operations.' });
@@ -561,22 +510,21 @@ export default function ActivityDetail() {
     await updateRecord(record);
   };
 
-  const openTeamMemberActivity = async () => {
-    if (!activity || !selectedTeamMemberId) return;
+  const openOperatorSessionForProfile = async () => {
+    if (!activity || !selectedOperatorProfileId) return;
     if (!canManageWorkforce) {
-      notify({ type: 'error', message: 'Activity logs can only be updated while this activity is active.' });
+      notify({ type: 'error', message: 'Operator logs can only be updated while this activity is active.' });
       return;
     }
  
     try {
       setIsUpdatingWorkforce(true);
       await addActivityLog({
-        teamMember_id: selectedTeamMemberId,
         activity_id: activity.id,
         start_time: new Date().toISOString(),
         status: 'active',
       });
-      setSelectedTeamMemberId('');
+      setSelectedOperatorProfileId('');
       notify({ type: 'success', message: 'Activity log opened.' });
     } catch (error: any) {
       notify({ type: 'error', message: 'Unable to open activity log.' });
@@ -585,25 +533,25 @@ export default function ActivityDetail() {
     }
   };
  
-  const closeTeamMemberActivity = async (activityId: string, teamMemberId: string) => {
+  const closeOperatorSession = async (logId: string, operatorUserId: string) => {
     if (!canManageWorkforce) {
-      notify({ type: 'error', message: 'Activity logs can only be updated while this activity is active.' });
+      notify({ type: 'error', message: 'Operator logs can only be updated while this activity is active.' });
       return;
     }
-    const teamMember = teamMembers.find(item => item.id === teamMemberId);
-    const activityLog = activityWorkActivitys.find(item => item.id === activityId);
-    if (!activityLog || !teamMember) return;
+    const profile = rosterProfiles.find(item => item.user_id === operatorUserId);
+    const activityLog = activityWorkActivitys.find(item => item.id === logId);
+    if (!activityLog || !profile) return;
 
     const endTime = new Date().toISOString();
     const startTime = activityLog.start_time ? new Date(activityLog.start_time).getTime() : new Date().getTime();
     const durationHours = Math.max(0, (new Date(endTime).getTime() - startTime) / (1000 * 60 * 60));
-    const pay = teamMember.arrangement_type === 'hourly' && typeof (teamMember.overhead_weight ?? teamMember.service_rate) === 'number'
-      ? durationHours * (teamMember.overhead_weight ?? teamMember.service_rate ?? 0)
+    const pay = profile.arrangement_type === 'hourly' && typeof (profile.overhead_weight ?? profile.service_rate) === 'number'
+      ? durationHours * (profile.overhead_weight ?? profile.service_rate ?? 0)
       : undefined;
 
     try {
       setIsUpdatingWorkforce(true);
-      await endActivityLog(activity.id, endTime, durationHours, pay);
+      await endActivityLog(logId, endTime, durationHours, pay);
       notify({ type: 'success', message: 'Activity log closed.' });
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to close activity log.' });
@@ -637,43 +585,7 @@ export default function ActivityDetail() {
     }
   };
 
-  const generateReport = () => {
-    const lines = [
-      `*Activity Report - ${activity.name || formatDate(activity.date)}*`,
-      `Channel: ${activity.channel_label || 'N/A'} • Activity: ${activity.label || 'N/A'}${activity.name ? ` • Date: ${formatDate(activity.date)}` : ''}`,
-      `------------------`,
-      `*Entities:*`
-    ];
 
-    activityEntries.forEach(record => {
-      const unit = entities.find(p => p.id === record.entity_id);
-      const net = (record.direction === 'increase' ? record.unit_amount : -record.unit_amount);
-      const symbol = net > 0 ? '🟢' : net < 0 ? '🔴' : '⚪️';
-      lines.push(`${symbol} ${unit?.name}: ${net > 0 ? '+' : ''}${formatValue(net)}`);
-    });
-
-    lines.push(`------------------`);
-    lines.push(`*Total Inflow:* ${formatValue(totalInflow)}`);
-    if (!isTotald) lines.push(`⚠️ *Discrepancy:* ${formatValue(discrepancy)}`);
-
-    return lines.join('\n');
-  };
-
-  const copyReport = () => {
-    navigator.clipboard.writeText(generateReport());
-    setIsCopied(true);
-    setTimeout(() => setIsCopied(false), 2000);
-  };
-
-  const shareToWhatsapp = () => {
-    const text = encodeURIComponent(generateReport());
-    window.open(`https://wa.me/?text=${text}`, '_blank');
-  };
-
-  const shareToTelegram = () => {
-    const text = encodeURIComponent(generateReport());
-    window.open(`https://t.me/share/url?url=&text=${text}`, '_blank');
-  };
 
 
 
@@ -684,7 +596,6 @@ export default function ActivityDetail() {
     }
     setTotalRecord(record);
     setTotalAmount(record.unit_amount.toString());
-    setTotalPlace(record.sort_order?.toString() || '');
     setTotalMode('update');
   };
 
@@ -704,7 +615,6 @@ export default function ActivityDetail() {
 
     setTotalRecord(record);
     setTotalAmount(record.unit_amount.toString());
-    setTotalPlace(record.sort_order?.toString() || '');
     setTotalMode('sitout');
   };
 
@@ -724,7 +634,6 @@ export default function ActivityDetail() {
 
     setTotalRecord(record);
     setTotalAmount(record.unit_amount.toString());
-    setTotalPlace(record.sort_order?.toString() || '');
     setTotalMode('leave');
   };
 
@@ -842,18 +751,18 @@ export default function ActivityDetail() {
       }
 
       if (!targetUnitId) {
-        const rosterContainsMatches = rosterPositionCandidates.filter(entity => (entity.name || '').toLowerCase().includes(normalizedQuery));
-        if (rosterContainsMatches.length === 1) {
-          targetUnitId = rosterContainsMatches[0].id;
-        } else if (rosterContainsMatches.length > 1) {
-          notify({ type: 'error', message: 'Multiple roster entities match that text. Choose a specific suggestion from the finder list.' });
+        const poolEntityMatches = entitiesAvailableForPosition.filter(entity => (entity.name || '').toLowerCase().includes(normalizedQuery));
+        if (poolEntityMatches.length === 1) {
+          targetUnitId = poolEntityMatches[0].id;
+        } else if (poolEntityMatches.length > 1) {
+          notify({ type: 'error', message: 'Multiple pool entities match that text. Choose a specific suggestion from the finder list.' });
           return;
         }
       }
     }
 
     if (!targetUnitId) {
-      notify({ type: 'error', message: 'Select a waiting/sat-out entity, or type a valid roster entity name.' });
+      notify({ type: 'error', message: 'Select a waiting/sat-out entity, or type a valid pool entity name.' });
       return;
     }
 
@@ -912,13 +821,13 @@ export default function ActivityDetail() {
       return;
     }
 
-    const rosterUnit = rosterPositionCandidates.find(unit => unit.id === targetUnitId);
-    if (!rosterUnit) {
+    const poolEntity = entitiesAvailableForPosition.find(unit => unit.id === targetUnitId);
+    if (!poolEntity) {
       const hasHistoricalActivityRecord = activityEntries.some(record => record.entity_id === targetUnitId);
       if (hasHistoricalActivityRecord) {
-        notify({ type: 'error', message: 'This entity already has an record row in this activity. Re-position the existing row instead of adding from roster.' });
+        notify({ type: 'error', message: 'This entity already has an record row in this activity. Re-position the existing row instead of adding from the pool.' });
       } else {
-        notify({ type: 'error', message: 'Select a valid waiting or roster entity from finder suggestions.' });
+        notify({ type: 'error', message: 'Select a valid waiting or pool entity from finder suggestions.' });
       }
       return;
     }
@@ -935,7 +844,7 @@ export default function ActivityDetail() {
 
     const parsedActivityRecordVal = parseFloat(positionPanelRecord);
     if (!Number.isFinite(parsedActivityRecordVal) || parsedActivityRecordVal < 10) {
-      notify({ type: 'error', message: 'ActivityRecord value must be at least 10 to position a roster entity.' });
+      notify({ type: 'error', message: 'ActivityRecord value must be at least 10 to position a pool entity.' });
       return;
     }
 
@@ -943,7 +852,7 @@ export default function ActivityDetail() {
       setIsPositionActionPending(true);
       await addRecord({
         activity_id: activity.id,
-        entity_id: rosterUnit.id,
+        entity_id: poolEntity.id,
         unit_amount: parsedActivityRecordVal,
         direction: 'increase',
         status: 'applied',
@@ -953,7 +862,7 @@ export default function ActivityDetail() {
       setPositionPanelUnitId('');
       setPositionPanelUnitQuery('');
       setSelectedPositionNumber(null);
-      notify({ type: 'success', message: `${rosterUnit.name || 'Entity'} added and positioned at #${selectedPositionNumber}.` });
+      notify({ type: 'success', message: `${poolEntity.name || 'Entity'} added and positioned at #${selectedPositionNumber}.` });
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to add and position selected entity.' });
     } finally {
@@ -978,20 +887,7 @@ export default function ActivityDetail() {
     const updates: ActivityRecord = {
       ...selectedPositionActivityRecord,
       unit_amount: parsedTotal,
-      sort_order:
-        activityMode === 'high_intensity'
-          ? (positionPanelPlace.trim() ? parseInt(positionPanelPlace, 10) : undefined)
-          : selectedPositionActivityRecord.sort_order,
     };
-
-    if (activityMode === 'high_intensity' && positionPanelPlace.trim()) {
-      const parsedPlace = parseInt(positionPanelPlace, 10);
-      if (!Number.isFinite(parsedPlace) || parsedPlace <= 0) {
-        notify({ type: 'error', message: 'Event position must be a positive integer.' });
-        return;
-      }
-      updates.sort_order = parsedPlace;
-    }
 
     try {
       setIsTotalActionPending(true);
@@ -1038,19 +934,6 @@ export default function ActivityDetail() {
       updates.position_id = undefined;
     }
 
-    if (activityMode === 'high_intensity') {
-      if (totalPlace.trim()) {
-        const parsedPlace = parseInt(totalPlace, 10);
-        if (!Number.isFinite(parsedPlace) || parsedPlace <= 0) {
-          notify({ type: 'error', message: 'Event position must be a positive integer.' });
-          return;
-        }
-        updates.sort_order = parsedPlace;
-      } else {
-        updates.sort_order = undefined;
-      }
-    }
-
     try {
       setIsTotalActionPending(true);
       await updateRecord({ ...latestActivityRecord, ...updates });
@@ -1075,7 +958,6 @@ export default function ActivityDetail() {
 
       setTotalRecord(null);
       setTotalAmount('');
-      setTotalPlace('');
       setAlignmentSource('');
       notify({
         type: 'success',
@@ -1113,7 +995,7 @@ export default function ActivityDetail() {
               type="entity"
               onClose={() => setViewingUnitId(null)}
               onUpdateTags={handleUpdateEntityTags}
-              activityNet={activityEntries.filter(e => e.entity_id === viewingUnitId).reduce((sum, e) => sum + (e.direction === 'increase' ? e.unit_amount : -e.unit_amount), 0)}
+              activityNet={(entityBalances.get(viewingEntity.id)?.net ?? 0) - (viewingEntity.starting_total ?? 0)}
               variant="sidebar"
             />
           )}
@@ -1140,29 +1022,20 @@ export default function ActivityDetail() {
             {!isMobileViewport && (
               <button 
                 onClick={() => setIsTelemetryOpen(!isTelemetryOpen)}
-                aria-label="Toggle activity monitor"
+                aria-label={`Toggle ${LABELS.workspacePanels.sessionTimeline.title.toLowerCase()}`}
                 className={cn(
                   "action-pill",
                   isTelemetryOpen 
                     ? "action-pill-strong" 
                     : "action-pill-neutral"
                 )}
-                title="Activity Monitor (M)"
+                title={`${LABELS.workspacePanels.sessionTimeline.titleHint}`}
               >
                 <Activity size={14} />
-                <span className="hidden sm:inline">Activity Monitor</span>
+                <span className="hidden sm:inline">{LABELS.workspacePanels.sessionTimeline.title}</span>
               </button>
             )}
-            <DataActionMenu
-              label={isCopied ? 'Exported' : 'Export'}
-              className="text-xs"
-              items={[
 
-                { key: 'copy-report', label: 'Copy Report', onClick: copyReport },
-                { key: 'share-whatsapp', label: 'Share via WhatsApp', onClick: shareToWhatsapp },
-                { key: 'share-telegram', label: 'Share via Telegram', onClick: shareToTelegram },
-              ]}
-            />
           </div>
         </div>
 
@@ -1337,10 +1210,8 @@ export default function ActivityDetail() {
                     entity={entities.find(p => p.id === record.entity_id)!}
                     updateRecord={guardedUpdateActivityRecord}
                     deleteRecord={guardedDeleteActivityRecord}
-                    isHighIntensity={activityMode === 'high_intensity'}
                     onViewEntity={(id) => setViewingUnitId(id)}
                     onTotalUpdate={openTotalModal}
-                    onSitOut={openSitOutModal}
                     onLeave={openLeaveModal}
                     canManageImpact={canManageEntries}
                     isTotalActionPending={isTotalActionPending}
@@ -1532,43 +1403,43 @@ export default function ActivityDetail() {
                 <div className="flex items-start justify-between gap-4">
                   <div>
                     <h4 className="text-sm font-semibold text-stone-900 dark:text-stone-100">Workforce</h4>
-                    <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">Open logs, close active shifts, and review who touched this activity.</p>
+                    <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">Open operator logs, close active shifts, and review who touched this activity.</p>
                   </div>
                   <span className="rounded-full bg-stone-100 px-2 py-1 text-[11px] text-stone-700 dark:bg-stone-800 dark:text-stone-300">
-                    {activityWorkActivitys.length} logs
+                    {activityWorkActivitys.length} operator logs
                   </span>
                 </div>
 
                 <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
                   <select
                     className="control-input"
-                    value={selectedTeamMemberId}
-                    onChange={event => setSelectedTeamMemberId(event.target.value)}
+                    value={selectedOperatorProfileId}
+                    onChange={event => setSelectedOperatorProfileId(event.target.value)}
                     disabled={!canManageWorkforce || isUpdatingWorkforce}
                   >
-                    <option value="">Select Operator...</option>
-                    {availableOperators.map(teamMember => (
-                      <option key={teamMember.id} value={teamMember.id}>{teamMember.name || 'Unnamed Operator'}</option>
+                    <option value="">Select roster profile…</option>
+                    {availableOperators.map(profile => (
+                      <option key={profile.id} value={profile.id}>{profile.name || 'Unnamed operator'}</option>
                     ))}
                   </select>
                   <button
                     type="button"
-                    onClick={() => { void openTeamMemberActivity(); }}
-                    disabled={!canManageWorkforce || isUpdatingWorkforce || !selectedTeamMemberId}
+                    onClick={() => { void openOperatorSessionForProfile(); }}
+                    disabled={!canManageWorkforce || isUpdatingWorkforce || !selectedOperatorProfileId}
                     className="action-btn-primary justify-center"
                   >
                     <Play size={14} />
-                    {isUpdatingWorkforce ? 'Updating…' : 'Open Activity Log'}
+                    {isUpdatingWorkforce ? 'Updating…' : LABELS.workforce.openOperatorLog}
                   </button>
                 </div>
 
                 <div className="mt-4 space-y-2">
                   {activityWorkActivitys.length === 0 && (
-                    <p className="text-sm text-stone-500 dark:text-stone-400">No activity logs yet.</p>
+                    <p className="text-sm text-stone-500 dark:text-stone-400">{LABELS.workforce.noOperatorLogsYet}</p>
                   )}
                   {activityWorkActivitys.map(activityLog => {
-                    const teamMember = teamMembers.find(item => item.user_id === activityLog.teamMember_id);
-                    const operatorName = teamMember ? (teamMember.name || 'Unnamed Operator') : (activityLog.actor_label || 'Unknown Operator');
+                    const profile = rosterProfiles.find(item => item.user_id === activityLog.actor_user_id);
+                    const operatorName = profile ? (profile.name || 'Unnamed operator') : (activityLog.actor_label || 'Unknown operator');
                     const windowLabel = `${(activityLog.start_time ? new Date(activityLog.start_time) : new Date()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${activityLog.end_time ? new Date(activityLog.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}`;
 
                     return (
@@ -1589,7 +1460,7 @@ export default function ActivityDetail() {
                           {activityLog.status === 'active' && (
                             <button
                               type="button"
-                              onClick={() => { void closeTeamMemberActivity(activityLog.id, activityLog.teamMember_id ?? ''); }}
+                              onClick={() => { void closeOperatorSession(activityLog.id, activityLog.actor_user_id ?? ''); }}
                               disabled={!canManageWorkforce || isUpdatingWorkforce}
                               className="action-btn-secondary text-xs"
                             >
@@ -1628,18 +1499,6 @@ export default function ActivityDetail() {
                   onChange={e => setTotalAmount(e.target.value)}
                 />
               </div>
-              {activityMode === 'high_intensity' && (
-                <div>
-                  <label className="text-xs font-medium text-stone-500 dark:text-stone-400 block mb-1">Event Position (Optional)</label>
-                  <input
-                    type="number"
-                    className="w-full p-2 border border-stone-200 dark:border-stone-700 rounded-md bg-white dark:bg-stone-800 text-stone-900 dark:text-stone-100"
-                    value={totalPlace}
-                    onChange={e => setTotalPlace(e.target.value)}
-                    placeholder="e.g. 1"
-                  />
-                </div>
-              )}
               {totalMode === 'leave' && (
                 <div>
                   <label className="text-xs font-medium text-stone-500 dark:text-stone-400 block mb-1">

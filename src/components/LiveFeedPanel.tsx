@@ -1,8 +1,7 @@
 import React, { lazy, Suspense } from 'react';
 import ContextPanel from './ContextPanel';
 import LoadingLine from './LoadingLine';
-import { useLabels } from '../lib/labels';
-
+import { LABELS } from '../lib/labels';
 const ActivityMonitor = lazy(() => import('../pages/ActivityMonitor'));
 
 interface LiveFeedPanelProps {
@@ -11,15 +10,13 @@ interface LiveFeedPanelProps {
 }
 
 export default function LiveFeedPanel({ isOpen, onClose }: LiveFeedPanelProps) {
-  const { tx } = useLabels();
-
   return (
     <ContextPanel isOpen={isOpen} onClose={onClose}>
       <div className="flex flex-col h-full bg-stone-50/50 dark:bg-stone-900/50 backdrop-blur-xl">
         <div className="px-6 py-5 border-b border-stone-200 dark:border-stone-800 flex items-center justify-between">
           <div>
-            <h3 className="font-bold text-stone-900 dark:text-stone-100 tracking-tight">{tx('Live Feed')}</h3>
-            <p className="text-[10px] uppercase tracking-widest text-stone-500 font-medium mt-0.5">Real-time Operations</p>
+            <h3 className="font-bold text-stone-900 dark:text-stone-100 tracking-tight">{LABELS.workspacePanels.activityList.title}</h3>
+            <p className="text-[10px] uppercase tracking-widest text-stone-500 font-medium mt-0.5">{LABELS.workspacePanels.activityList.subtitle}</p>
           </div>
         </div>
         
@@ -28,7 +25,7 @@ export default function LiveFeedPanel({ isOpen, onClose }: LiveFeedPanelProps) {
             fallback={
               <div className="flex min-h-[200px] items-center justify-center px-4">
                 <div className="w-full max-w-xs">
-                  <LoadingLine compact label="Loading feed…" />
+                  <LoadingLine compact label="Loading activities…" />
                 </div>
               </div>
             }

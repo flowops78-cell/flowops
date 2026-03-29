@@ -98,12 +98,11 @@ const generateInviteToken = () => {
 export default function Settings({ embedded = false }: { embedded?: boolean }) {
   // Pull only canonical DataContext properties
   const {
-    isDemoMode,
     activeOrgId,
     entities: rawEntities,
     activities: rawActivities,
     records: rawRecords,
-    teamMembers: rawTeamMembers,
+    rosterProfiles: rawRosterProfiles,
     activityLogs: rawActivityLogs,
     systemEvents: rawSystemEvents,
     availableOrgs,
@@ -115,7 +114,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const entities = rawEntities ?? [];
   const activities = rawActivities ?? [];
   const records = rawRecords ?? [];
-  const teamMembers = rawTeamMembers ?? [];
+  const rosterProfiles = rawRosterProfiles ?? [];
   const activityLogs = rawActivityLogs ?? [];
   const systemEvents = rawSystemEvents ?? [];
 
@@ -219,7 +218,10 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [requestsNoticeLoginValue, setRequestsNoticeLoginValue] = React.useState<string | null>(null);
   const [requestsNoticeCopied, setRequestsNoticeCopied] = React.useState<'login' | null>(null);
   const [busyRequestId, setBusyRequestId] = React.useState<string | null>(null);
-  const [pendingTeamMemberIds, setPendingTeamMemberIds] = React.useState<Record<string, string>>({});
+  /** Maps access_request id → `team_members.id` (workspace roster profile row), not auth user id. */
+  const [pendingRosterRowIds, setPendingRosterRowIds] = React.useState<Record<string, string>>({});
+  /** Optional roster display name: creates a new roster profile if none selected; else can override when linking. */
+  const [pendingProvisionDisplayNames, setPendingProvisionDisplayNames] = React.useState<Record<string, string>>({});
   const [pendingPasswords, setPendingPasswords] = React.useState<Record<string, string>>({});
   const [pendingApprovedRoles, setPendingApprovedRoles] = React.useState<Record<string, DbRole>>({});
   const [clusterAdmins, setClusterAdmins] = React.useState<ManagedClusterAccount[]>([]);
@@ -335,59 +337,34 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
     setIsClearingGlobalData(true);
     try {
-      if (isDemoMode) {
-        const demoKeys = [
-          'flow_ops_units',
-          'flow_ops_activitys',
-          'flow_ops_entries',
-          'flow_ops_teamMembers',
-          'flow_ops_activity_logs',
-          'flow_ops_outflows',
-          'flow_ops_adjustments',
-          'flow_ops_channel_base',
-          'flow_ops_collaborations',
-          'flow_ops_collaboration_allocations',
-          'flow_ops_partners',
-          'flow_ops_partner_trans',
-          'flow_ops_audit_events_v2',
-          'flow_ops_operator_log_id',
-          'flow_ops_operator_log_started_at',
-          'flow_ops_operator_log_user_id',
-          'flow_ops_missing_supabase_activitys',
-        ];
-        demoKeys.forEach(key => localStorage.removeItem(key));
-        await refreshData();
-        notify({ type: 'success', message: 'Demo data cleared.' });
-      } else {
-        const client = supabase;
-        if (!client) throw new Error('Supabase project connectivity is not configured in environment variables.');
+      const client = supabase;
+      if (!client) throw new Error('Supabase project connectivity is not configured in environment variables.');
 
-        const isMissingActivityError = (message: string) => {
-          const normalized = message.toLowerCase();
-          return normalized.includes('could not find the activity') || normalized.includes('relation') || normalized.includes('schema cache');
-        };
+      const isMissingActivityError = (message: string) => {
+        const normalized = message.toLowerCase();
+        return normalized.includes('could not find the activity') || normalized.includes('relation') || normalized.includes('schema cache');
+      };
 
-        const clearActivity = async (activityName: string) => {
-          const { error } = await client.from(activityName).delete().not('id', 'is', null);
-          if (error && !isMissingActivityError(error.message ?? '')) {
-            throw new Error(`${activityName}: ${error.message}`);
-          }
-        };
+      const clearActivity = async (activityName: string) => {
+        const { error } = await client.from(activityName).delete().not('id', 'is', null);
+        if (error && !isMissingActivityError(error.message ?? '')) {
+          throw new Error(`${activityName}: ${error.message}`);
+        }
+      };
 
-        // FK-safe order (matches 00000000000000_init_canonical_schema.sql)
-        await clearActivity('channel_records');
-        await clearActivity('records');
-        await clearActivity('operator_activities');
-        await clearActivity('activities');
-        await clearActivity('audit_events');
-        await clearActivity('team_members');
-        await clearActivity('entities');
-        await clearActivity('collaborations');
-        await clearActivity('channels');
+      // FK-safe order (matches 00000000000000_init_canonical_schema.sql)
+      await clearActivity('channel_records');
+      await clearActivity('records');
+      await clearActivity('operator_activities');
+      await clearActivity('activities');
+      await clearActivity('audit_events');
+      await clearActivity('team_members');
+      await clearActivity('entities');
+      await clearActivity('collaborations');
+      await clearActivity('channels');
 
-        await refreshData();
-        notify({ type: 'success', message: 'Cloud operational data cleared.' });
-      }
+      await refreshData();
+      notify({ type: 'success', message: 'Cloud operational data cleared.' });
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to clear global data.' });
     } finally {
@@ -527,9 +504,13 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         return;
       }
 
+      const rosterRowId = pendingRosterRowIds[request.id]?.trim() || '';
+      const displayNameOverride = pendingProvisionDisplayNames[request.id]?.trim() || '';
+
       const { data, error } = await invokeSafe<ProvisionResult>('provision-user', {
         access_request_id: request.id,
-        teamMember_id: pendingTeamMemberIds[request.id]?.trim() || undefined,
+        roster_row_id: rosterRowId || undefined,
+        roster_display_name: displayNameOverride || undefined,
         password: initialPassword,
         approved_role: pendingApprovedRoles[request.id] || request.requested_role,
       });
@@ -548,7 +529,12 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         delete next[request.id];
         return next;
       });
-      setPendingTeamMemberIds(prev => {
+      setPendingRosterRowIds(prev => {
+        const next = { ...prev };
+        delete next[request.id];
+        return next;
+      });
+      setPendingProvisionDisplayNames(prev => {
         const next = { ...prev };
         delete next[request.id];
         return next;
@@ -584,6 +570,21 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     if (status === 'rejected') {
       setRequestsNotice('Request rejected.');
       notify({ type: 'info', message: 'Request rejected.' });
+      setPendingRosterRowIds(prev => {
+        const next = { ...prev };
+        delete next[request.id];
+        return next;
+      });
+      setPendingProvisionDisplayNames(prev => {
+        const next = { ...prev };
+        delete next[request.id];
+        return next;
+      });
+      setPendingPasswords(prev => {
+        const next = { ...prev };
+        delete next[request.id];
+        return next;
+      });
     }
     await fetchAccessRequests();
     setBusyRequestId(null);
@@ -752,11 +753,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     await fetchAccessInvites();
   };
 
-  const backendStatus = isDemoMode
-    ? 'Demo mode'
-    : isSupabaseConfigured
-      ? 'Connected'
-      : 'Not configured';
+  const backendStatus = isSupabaseConfigured ? 'Connected' : 'Not configured';
   
   const roleLabel = React.useMemo(() => {
     if (isClusterAdmin || clusterRole === 'cluster_admin') return getRoleLabel('cluster_admin');
@@ -853,7 +850,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     } catch (err) {
       notify({
         type: 'error',
-        message: `Could not add teammate: ${toDisplayError(err)}`,
+        message: `Could not grant workspace access: ${toDisplayError(err)}`,
       });
     } finally {
       setGrantAccessBusy(false);
@@ -1299,6 +1296,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                       <div key={req.id} className="p-4 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 space-y-3">
                         <div className="flex items-center justify-between">
                           <div>
+                            <p className="text-[9px] font-bold uppercase tracking-wider text-stone-400 mb-0.5">Sign-in email</p>
                             <p className="text-xs font-bold text-stone-900 dark:text-stone-100">{req.login_id}</p>
                             <p className="text-[10px] text-stone-400">{getRoleLabel(req.requested_role)}</p>
                           </div>
@@ -1312,6 +1310,47 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                             value={pendingPasswords[req.id] || ''}
                             onChange={e => setPendingPasswords(prev => ({ ...prev, [req.id]: e.target.value }))}
                           />
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold uppercase text-stone-400">Workspace roster profile (optional)</label>
+                            <select
+                              className="control-input py-1.5 text-xs w-full"
+                              value={pendingRosterRowIds[req.id] || ''}
+                              onChange={e =>
+                                setPendingRosterRowIds(prev => ({
+                                  ...prev,
+                                  [req.id]: e.target.value,
+                                }))
+                              }
+                            >
+                              <option value="">New profile — set display name below (recommended if they are not on the list yet)</option>
+                              {rosterProfiles
+                                .filter(tm => tm.org_id === activeOrgId)
+                                .map(tm => (
+                                  <option key={tm.id} value={tm.id}>
+                                    {tm.name}
+                                    {tm.user_id ? ' · already has a sign-in' : ' · no sign-in yet'}
+                                  </option>
+                                ))}
+                            </select>
+                            <p className="text-[9px] text-stone-500 dark:text-stone-400 leading-snug">
+                              The workspace keeps a <span className="font-semibold">people list</span> (roster) separate from accounts. Choosing someone here only connects <span className="font-semibold">this email</span> to that list row — it is not their user id.
+                            </p>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[10px] font-bold uppercase text-stone-400">Name on workspace list (optional)</label>
+                            <input
+                              type="text"
+                              placeholder="e.g. Sam Chen (creates list row if you did not pick one above)"
+                              className="control-input py-1.5 text-xs w-full"
+                              value={pendingProvisionDisplayNames[req.id] || ''}
+                              onChange={e =>
+                                setPendingProvisionDisplayNames(prev => ({
+                                  ...prev,
+                                  [req.id]: e.target.value,
+                                }))
+                              }
+                            />
+                          </div>
                           <div className="flex gap-2">
                             <button onClick={() => void reviewAccessRequest(req, 'approved')} disabled={busyRequestId === req.id} className="action-btn-primary flex-1 h-8 text-xs justify-center">Approve</button>
                             <button onClick={() => void reviewAccessRequest(req, 'rejected')} disabled={busyRequestId === req.id} className="flex-1 h-8 rounded-xl border border-stone-200 dark:border-stone-700 text-xs font-bold text-stone-500 hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors">Reject</button>

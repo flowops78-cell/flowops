@@ -3,6 +3,7 @@ import { Circle, Users, Activity as ActivityIcon, TrendingUp, TrendingDown, Bell
 import { formatValue } from '../lib/utils';
 import { ActivityRecord, Entity, Activity } from '../types';
 import ContextPanel from './ContextPanel';
+import { LABELS } from '../lib/labels';
 
 interface TelemetryEvent {
   id: string;
@@ -249,11 +250,14 @@ export default function TelemetrySidebar({ activity, records, entities, isOpen, 
     <ContextPanel isOpen={isOpen} onClose={onClose}>
       <div className="flex flex-col h-full min-h-0">
         <div className="border-b border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-800/50">
-          <div className="px-4 pt-4 pb-2 flex justify-between items-center">
-            <h3 className="font-medium text-stone-900 dark:text-stone-100 flex items-center gap-2">
-              <ActivityIcon size={18} className="text-emerald-600 dark:text-emerald-400" />
-              Activity Monitor
-            </h3>
+          <div className="px-4 pt-4 pb-2 flex justify-between items-start gap-2">
+            <div>
+              <h3 className="font-medium text-stone-900 dark:text-stone-100 flex items-center gap-2">
+                <ActivityIcon size={18} className="text-emerald-600 dark:text-emerald-400" />
+                {LABELS.workspacePanels.sessionTimeline.title}
+              </h3>
+              <p className="mt-1 text-[10px] text-stone-500 dark:text-stone-400 pr-2">{LABELS.workspacePanels.sessionTimeline.subtitle}</p>
+            </div>
             <button 
               onClick={toggleNotifications}
               className={`p-1.5 rounded-full transition-colors ${notificationsEnabled ? 'text-emerald-600 bg-emerald-100 dark:bg-emerald-900/30' : 'text-stone-400 hover:text-stone-600 dark:hover:text-stone-200'}`}

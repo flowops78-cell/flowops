@@ -13,8 +13,8 @@ const routePreloaders: Record<string, () => Promise<unknown>> = {
   '/collaborations': () => Promise.all([
     import('../pages/CollaborationNetwork'),
   ]),
-  '/team': () => Promise.all([
-    import('../pages/TeamMembers'),
+  '/roster': () => Promise.all([
+    import('../pages/RosterPage'),
   ]),
   '/settings': () => Promise.all([
     import('../pages/Settings'),

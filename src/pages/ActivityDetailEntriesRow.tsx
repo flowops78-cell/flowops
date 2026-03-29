@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Save, Trash2, Edit2, Share2, Circle, Clock } from 'lucide-react';
+import { Save, Trash2, Edit2, Circle, Clock } from 'lucide-react';
 import { formatValue } from '../lib/utils';
 import { cn } from '../lib/utils';
 import { ActivityRecord, Entity } from '../types';
@@ -10,10 +10,8 @@ export function EntriesRow({
   entity,
   updateRecord,
   deleteRecord,
-  isHighIntensity: _isHighIntensity,
   onViewEntity,
   onTotalUpdate,
-  onSitOut: _onSitOut,
   onLeave,
   canManageImpact,
   isTotalActionPending,
@@ -23,17 +21,13 @@ export function EntriesRow({
   entity: Entity;
   updateRecord: (e: ActivityRecord) => Promise<void>;
   deleteRecord: (id: string) => Promise<void>;
-  isHighIntensity: boolean;
   onViewEntity: (id: string) => void;
   onTotalUpdate: (record: ActivityRecord) => void;
-  onSitOut: (record: ActivityRecord) => void;
   onLeave: (record: ActivityRecord) => void;
   canManageImpact: boolean;
   isTotalActionPending: boolean;
   onNotify: (input: { type: 'success' | 'error' | 'info'; message: string }) => void;
 }) {
-  void _onSitOut;
-  void _isHighIntensity;
   const { confirm } = useConfirm();
   const [isEditing, setIsEditing] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -66,15 +60,7 @@ export function EntriesRow({
     setValue(parsed.toFixed(2));
   };
 
-  const generateReceipt = () => {
-    const net = (parseFloat(total) || 0) - (parseFloat(initialValue) || 0);
-    return `🧾 *Activity Total Snapshot*\nEntity: ${entity.name}\nUnit Input: ${formatValue(parseFloat(initialValue))}\nCurrent Total: ${formatValue(parseFloat(total))}\nDelta: ${net > 0 ? '+' : ''}${formatValue(net)}`;
-  };
 
-  const shareReceipt = () => {
-    const text = encodeURIComponent(generateReceipt());
-    window.open(`https://wa.me/?text=${text}`, '_blank');
-  };
 
   const handleRemoveActivityRecord = async () => {
     if (isDeleting) return;
@@ -181,10 +167,7 @@ export function EntriesRow({
       </td>
       <td className="px-6 py-3 text-right">
         <div className="toolbar-surface justify-end">
-          <button onClick={shareReceipt} aria-label="Share receipt" className="action-pill action-pill-success action-pill-sm" title="Share Receipt">
-            <Share2 size={14} />
-            <span className="hidden sm:inline">Share</span>
-          </button>
+
           {canManageImpact && (
             <>
               <button

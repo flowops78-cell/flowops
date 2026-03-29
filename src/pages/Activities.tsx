@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useMemo, lazy, Suspense } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useData } from '../context/DataContext';
-import { Plus, Calendar, ChevronRight, History, X, Loader2, Trash2 } from 'lucide-react';
+import { Plus, Calendar, ChevronRight, History, X, Loader2, Trash2, Zap, Scale, UserCog } from 'lucide-react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { APP_MIN_DATE, cn, formatValue, formatDate, formatTime } from '../lib/utils';
 import { useNotification } from '../context/NotificationContext';
@@ -8,12 +8,11 @@ import { useConfirm } from '../context/ConfirmContext';
 import { useAppRole } from '../context/AppRoleContext';
 import { useAuth } from '../context/AuthContext';
 import LoadingLine from '../components/LoadingLine';
-import { useLabels } from '../lib/labels';
+import { useLiveFeedUI } from '../context/LiveFeedUIContext';
+import { useLabels, LABELS } from '../lib/labels';
 import EmptyState from '../components/EmptyState';
 import { Activity, ActivityRecord } from '../types';
 import OverlaySavingState from '../components/OverlaySavingState';
-
-const ActivityMonitor = lazy(() => import('./ActivityMonitor'));
 
 type LoadingState = 'idle' | 'saving' | 'success' | 'error';
 
@@ -33,9 +32,10 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
   const navigate = useNavigate();
   const { notify } = useNotification();
   const { confirm } = useConfirm();
-  const { role, canOperateLog, canManageImpact } = useAppRole();
+  const { role, canOperateLog, canManageImpact, canAccessAdminUi } = useAppRole();
   const { user } = useAuth();
   const { tx } = useLabels();
+  const liveFeedUi = useLiveFeedUI();
   
   // States
   const [isCreating, setIsCreating] = useState(false);
@@ -289,6 +289,42 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               TOTAL: <span className="font-bold text-stone-900 dark:text-stone-100">{activities.length}</span>
             </span>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+              {liveFeedUi && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (canAccessAdminUi) liveFeedUi.openWorkspaceHealth();
+                    else liveFeedUi.openLiveFeed();
+                  }}
+                  className={cn(
+                    'action-btn-secondary w-full sm:w-auto h-11',
+                    canAccessAdminUi
+                      ? 'border-stone-200/80 text-stone-800 hover:bg-stone-50 dark:border-stone-700 dark:text-stone-200 dark:hover:bg-stone-900/60'
+                      : 'border-emerald-200/80 text-emerald-800 hover:bg-emerald-50 dark:border-emerald-800/60 dark:text-emerald-200 dark:hover:bg-emerald-950/40',
+                  )}
+                  title={canAccessAdminUi ? LABELS.workspacePanels.workspaceHealth.titleHint : LABELS.workspacePanels.activityList.titleHint}
+                  aria-label={canAccessAdminUi ? LABELS.workspacePanels.workspaceHealth.title : LABELS.workspacePanels.activityList.title}
+                >
+                  {canAccessAdminUi ? (
+                    <Scale size={16} className="shrink-0" aria-hidden />
+                  ) : (
+                    <Zap size={16} className="shrink-0" aria-hidden />
+                  )}
+                  {canAccessAdminUi ? LABELS.workspacePanels.workspaceHealth.title : LABELS.workspacePanels.activityList.title}
+                </button>
+              )}
+              {canManageImpact && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/roster?action=add-roster-profile')}
+                  className="action-btn-secondary w-full sm:w-auto h-11 border-stone-200 dark:border-stone-700"
+                  title="Add someone to the workspace roster"
+                  aria-label="Add to roster"
+                >
+                  <UserCog size={16} className="shrink-0" aria-hidden />
+                  Add to roster
+                </button>
+              )}
               <button
                 onClick={() => {
                   if (!canOperateLog) {
@@ -338,9 +374,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
         </div>
       )}
 
-      <div className="lg:grid lg:grid-cols-[1fr_350px] lg:gap-8 lg:items-start">
-        {/* Main Grid: Management Section */}
-        <div className="space-y-8">
+      <div className="space-y-8">
           {activeActivitys.length === 0 && completedActivitys.length === 0 && archivedActivitys.length === 0 ? (
             <div className="rounded-xl border border-dashed border-stone-300 dark:border-stone-700 bg-stone-50/80 dark:bg-stone-900/70">
               <EmptyState
@@ -416,22 +450,6 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               )}
             </>
           )}
-        </div>
-
-        {/* Side Panel: Activity Monitor */}
-        {!embedded && (
-          <aside className="hidden lg:block space-y-6">
-            <Suspense
-              fallback={
-                <div className="rounded-xl border border-stone-200 dark:border-stone-800 bg-white/40 dark:bg-stone-900/40 p-6">
-                  <LoadingLine compact label="Loading monitor…" />
-                </div>
-              }
-            >
-              <ActivityMonitor embedded />
-            </Suspense>
-          </aside>
-        )}
       </div>
 
 
@@ -463,7 +481,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
                     <input
                       type="text"
                       className="control-input w-full"
-                      placeholder="e.g. Afternoon Session, High Intensity Segment..."
+                      placeholder="e.g. Afternoon session, evening segment…"
                       value={activityName}
                       onChange={e => setActivityName(e.target.value)}
                       maxLength={60}

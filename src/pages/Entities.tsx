@@ -8,13 +8,12 @@ import { formatValue, formatDate } from '../lib/utils';
 import { cn } from '../lib/utils';
 import MobileActivityRecordCard from '../components/MobileActivityRecordCard';
 import EmptyState from '../components/EmptyState';
-import CollapsibleActivitySection from '../components/CollapsibleActivitySection';
 import { useAppRole } from '../context/AppRoleContext';
 import DataActionMenu from '../components/DataActionMenu';
 import EntitySnapshot from '../components/EntitySnapshot';
 import EntitiesIcon from '../components/icons/EntitiesIcon';
 import OverlaySavingState from '../components/OverlaySavingState';
-import { useLabels } from '../lib/labels';
+import { ENTITY_STAT_BADGES, useLabels } from '../lib/labels';
 import { useConfirm } from '../context/ConfirmContext';
 
 const getEntityDisplayName = (name?: string | null) => {
@@ -80,6 +79,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
   const [deferredEntityId, setDeferredEntityId] = useState('');
   const [deferredAmount, setDeferredAmount] = useState('');
   const [deferredDirection, setDeferredDirection] = useState<'inbound' | 'outbound'>('outbound');
+  const [deferredChannelLabel, setDeferredChannelLabel] = useState('');
 
   const openTransferForm = (fromEntityId?: string) => {
     setIsTransferring(true);
@@ -99,6 +99,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
     setDeferredEntityId(entityId || '');
     setDeferredAmount('');
     setDeferredDirection(direction);
+    setDeferredChannelLabel('');
     if (typeof window !== 'undefined') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     }
@@ -231,6 +232,12 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
     next.delete('action');
     navigate({ pathname: location.pathname, search: next.toString() ? `?${next.toString()}` : '' }, { replace: true });
   }, [location.pathname, location.search, navigate]);
+
+  useEffect(() => {
+    if (activeCardAction?.action === 'pending') {
+      setDeferredChannelLabel('');
+    }
+  }, [activeCardAction?.entityId, activeCardAction?.action]);
 
   useEffect(() => {
     if (!isQuickOverlayOpen) return;
@@ -432,6 +439,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
         entity_id: deferredEntityId,
         amount: parsedAmount,
         type: deferredDirection === 'outbound' ? 'input' : 'output',
+        ...(deferredChannelLabel.trim() ? { channel_label: deferredChannelLabel.trim() } : {}),
         requested_at: new Date().toISOString(),
       });
 
@@ -440,6 +448,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
       setDeferredEntityId('');
       setDeferredAmount('');
       setDeferredDirection('outbound');
+      setDeferredChannelLabel('');
     } catch (error: any) {
       setImportStatus({ type: 'error', message: error?.message || 'Unable to add pending record.' });
     }
@@ -623,7 +632,9 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
 
         {filteredEntitys.length > 0 && (
           <div className="rounded-xl border border-dashed border-stone-200 bg-stone-50/80 px-3 py-2 text-xs text-stone-500 dark:border-stone-800 dark:bg-stone-900/60 dark:text-stone-400">
-            Select a row for quick actions (or open the full profile).
+            {viewMode === 'grid'
+              ? 'Use Send / Adjust / Pending on a card, or Quick for a short preview.'
+              : 'Desktop: click a row or use Preview. Mobile: Quick opens actions; Open goes to the full profile.'}
           </div>
         )}
       </div>
@@ -841,7 +852,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
         <div className="fixed inset-0 z-40 bg-stone-900/50 backdrop-blur-sm flex items-center justify-center p-4">
           <form onSubmit={handleActivityRecordDeferredActivityRecord} className="section-card w-full max-w-3xl p-6 animate-in fade-in zoom-in-95">
             <h3 className="font-medium mb-4 text-stone-900 dark:text-stone-100">Add pending</h3>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
               <select
                 className="control-input"
                 value={deferredEntityId}
@@ -876,6 +887,19 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                 <option value="outbound">Outbound</option>
                 <option value="inbound">Inbound</option>
               </select>
+              <select
+                className="control-input md:col-span-2 lg:col-span-1"
+                value={deferredChannelLabel}
+                onChange={e => setDeferredChannelLabel(e.target.value)}
+                disabled={!canActivityRecordDeferred}
+              >
+                <option value="">Channel (optional)</option>
+                {channels.filter(c => c.is_active).map(channel => (
+                  <option key={channel.id} value={`${channel.category}::${channel.name}`}>
+                    {channel.name}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="flex justify-end gap-2">
               <button
@@ -885,6 +909,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                   setDeferredEntityId('');
                   setDeferredAmount('');
                   setDeferredDirection('outbound');
+                  setDeferredChannelLabel('');
                 }}
                 className="action-btn-secondary"
               >
@@ -1036,22 +1061,41 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                           try {
                             const parsed = Number(deferredAmount);
                             if (!Number.isFinite(parsed) || parsed <= 0) { setImportStatus({ type: 'error', message: 'Amount must be greater than 0.' }); return; }
-                            await requestAdjustment({ entity_id: entity.id, amount: parsed, type: deferredDirection === 'outbound' ? 'input' : 'output', requested_at: new Date().toISOString() });
+                            await requestAdjustment({
+                              entity_id: entity.id,
+                              amount: parsed,
+                              type: deferredDirection === 'outbound' ? 'input' : 'output',
+                              ...(deferredChannelLabel.trim() ? { channel_label: deferredChannelLabel.trim() } : {}),
+                              requested_at: new Date().toISOString(),
+                            });
                             setImportStatus({ type: 'success', message: 'Pending record added.' });
                             setActiveCardAction(null);
                             setDeferredAmount('');
                             setDeferredDirection('outbound');
+                            setDeferredChannelLabel('');
                           } catch (err: any) { setImportStatus({ type: 'error', message: err?.message || 'Failed to add pending record.' }); }
                         }}
                         className="flex flex-wrap items-center gap-2"
                       >
                         <input type="number" min="0.01" step="0.01" className="control-input w-28 text-xs py-1.5" placeholder="Units" value={deferredAmount} onChange={e => setDeferredAmount(e.target.value)} required />
-                        <select className="control-input text-xs py-1.5" value={deferredDirection} onChange={e => setDeferredDirection(e.target.value as 'inbound' | 'outbound')}>
+                        <select className="control-input text-xs py-1.5 min-w-[7rem]" value={deferredDirection} onChange={e => setDeferredDirection(e.target.value as 'inbound' | 'outbound')}>
                           <option value="outbound">Outbound</option>
                           <option value="inbound">Inbound</option>
                         </select>
+                        <select
+                          className="control-input text-xs py-1.5 min-w-[8rem] max-w-[10rem]"
+                          value={deferredChannelLabel}
+                          onChange={e => setDeferredChannelLabel(e.target.value)}
+                        >
+                          <option value="">Channel</option>
+                          {channels.filter(c => c.is_active).map(channel => (
+                            <option key={channel.id} value={`${channel.category}::${channel.name}`}>
+                              {channel.name}
+                            </option>
+                          ))}
+                        </select>
                         <button type="submit" className="action-btn-primary text-xs px-3 py-1.5">Add</button>
-                        <button type="button" onClick={() => { setActiveCardAction(null); setDeferredAmount(''); setDeferredDirection('outbound'); }} className="action-btn-secondary text-xs px-3 py-1.5">Cancel</button>
+                        <button type="button" onClick={() => { setActiveCardAction(null); setDeferredAmount(''); setDeferredDirection('outbound'); setDeferredChannelLabel(''); }} className="action-btn-secondary text-xs px-3 py-1.5">Cancel</button>
                       </form>
                     )}
                   </div>
@@ -1073,96 +1117,93 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
           )}
         </div>
       ) : (
-        <div className="section-card overflow-hidden">
-          <div className="md:hidden divide-y divide-stone-100 dark:divide-stone-800">
+        <div className="min-w-0 space-y-3">
+          <div className="md:hidden rounded-2xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 overflow-hidden divide-y divide-stone-100 dark:divide-stone-800 shadow-sm">
             {filteredEntitys.map(entity => {
               const stats = entityStats.get(entity.id) || { net: 0, activitys: 0, lastActive: null, surpluses: 0, totalInflow: 0, avgActivity: 0 };
+              const mobileMoreItems = [
+                ...(canManageImpact
+                  ? [
+                      {
+                        key: 'send',
+                        label: 'Send…',
+                        icon: <ArrowRightLeft size={16} />,
+                        onClick: () => openTransferForm(entity.id),
+                      },
+                    ]
+                  : []),
+                ...(canActivityRecordDeferred
+                  ? [
+                      {
+                        key: 'pending',
+                        label: 'Add pending…',
+                        icon: <Clock size={16} />,
+                        onClick: () => openDeferredForm(entity.id),
+                      },
+                    ]
+                  : []),
+                {
+                  key: 'snapshot',
+                  label: 'Snapshot',
+                  icon: <Eye size={16} />,
+                  onClick: () => setQuickViewEntity(entity),
+                },
+                ...(canManageImpact
+                  ? [
+                      {
+                        key: 'delete',
+                        label: 'Delete',
+                        icon: <Trash2 size={16} />,
+                        onClick: () => { void handleDeleteEntityProfile(entity); },
+                      },
+                    ]
+                  : []),
+              ];
               return (
-                <div key={entity.id} onClick={() => openQuickOverlay(entity)} className="cursor-pointer">
+                <div key={entity.id} className="px-1">
                   <MobileActivityRecordCard
                     title={getEntityDisplayName(entity.name)}
                     right={
-                      <span className={cn(
-                        "font-mono text-sm font-medium",
-                        stats.net > 0 ? "text-emerald-600 dark:text-emerald-400" : stats.net < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
-                      )}>
+                      <span
+                        className={cn(
+                          'font-mono text-base font-semibold tabular-nums tracking-tight',
+                          stats.net > 0
+                            ? 'text-emerald-600 dark:text-emerald-400'
+                            : stats.net < 0
+                              ? 'text-red-600 dark:text-red-400'
+                              : 'text-stone-500 dark:text-stone-400',
+                        )}
+                      >
                         {formatValue(stats.net)}
                       </span>
                     }
-                    meta={<span>{stats.activitys} · {stats.lastActive ? formatDate(stats.lastActive) : 'Never'}</span>}
+                    meta={
+                      <span>
+                        {stats.activitys} {stats.activitys === 1 ? 'record' : 'records'}
+                        {stats.lastActive ? ` · ${formatDate(stats.lastActive)}` : ' · No activity yet'}
+                      </span>
+                    }
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <p className={cn(
-                        "font-mono text-sm",
-                        stats.net > 0 ? "text-emerald-600 dark:text-emerald-400" : stats.net < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
-                      )}>
-                        {formatValue(stats.net)}
-                      </p>
-                      <div className="flex items-center gap-1.5">
+                    <div className="flex flex-wrap items-center justify-between gap-2 pt-2 w-full">
+                      <div className="flex flex-wrap gap-2">
                         <button
-                          onClick={event => {
-                            event.stopPropagation();
-                            openQuickOverlay(entity);
-                          }}
-                          className="action-btn-secondary text-xs px-2.5 py-1"
+                          type="button"
+                          onClick={() => openQuickOverlay(entity)}
+                          className="action-btn-primary text-xs px-3 py-1.5"
                         >
                           Quick
                         </button>
-                        {canManageImpact && (
-                          <button
-                            onClick={event => {
-                              event.stopPropagation();
-                              openTransferForm(entity.id);
-                            }}
-                            className="p-1.5 text-stone-400 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-900/20 rounded-md transition-colors"
-                            title="Transfer from this entity"
-                          >
-                            <ArrowRightLeft size={16} />
-                          </button>
-                        )}
-                        {canActivityRecordDeferred && (
-                          <button
-                            onClick={event => {
-                              event.stopPropagation();
-                              openDeferredForm(entity.id);
-                            }}
-                            className="p-1.5 text-stone-400 hover:text-sky-600 hover:bg-sky-50 dark:hover:bg-sky-900/20 rounded-md transition-colors"
-                            title="Add pending record"
-                          >
-                            <Clock size={16} />
-                          </button>
-                        )}
                         <button
-                          onClick={event => {
-                            event.stopPropagation();
-                            openEntityProfile(entity.id);
-                          }}
-                          className="action-btn-secondary text-xs px-2.5 py-1"
+                          type="button"
+                          onClick={() => openEntityProfile(entity.id)}
+                          className="action-btn-secondary text-xs px-3 py-1.5"
                         >
                           Open
                         </button>
-                        <button
-                          onClick={event => {
-                            event.stopPropagation();
-                            setQuickViewEntity(entity);
-                          }}
-                          className="action-btn-secondary text-xs px-2.5 py-1"
-                        >
-                          Snapshot
-                        </button>
-                        {canManageImpact && (
-                          <button
-                            onClick={event => {
-                              event.stopPropagation();
-                              void handleDeleteEntityProfile(entity);
-                            }}
-                            className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-                            title="Delete entity"
-                          >
-                            <Trash2 size={16} />
-                          </button>
-                        )}
                       </div>
+                      {mobileMoreItems.length > 0 && (
+                        <DataActionMenu label="More" items={mobileMoreItems} />
+                      )}
                     </div>
                   </MobileActivityRecordCard>
                 </div>
@@ -1180,25 +1221,32 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
             )}
           </div>
 
-          <CollapsibleActivitySection
-            title="Entities"
-            summary={`${filteredEntitys.length} entities`}
-            className="hidden md:block"
-            defaultExpanded={false}
-            maxExpandedHeightClass="max-h-[560px]"
-            maxCollapsedHeightClass="max-h-[96px]"
-            contentRef={entitysActivityContainerRef}
-            onContentScroll={event => setEntitysActivityScrollTop(event.currentTarget.scrollTop)}
-          >
-          <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[980px] activity-fixed text-left text-[13px]">
-            <thead className="sticky top-0 z-10 bg-stone-50/95 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-700">
+          <div className="hidden md:flex md:flex-col min-w-0 rounded-2xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900 shadow-sm overflow-hidden">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-stone-200 dark:border-stone-800 bg-stone-50/90 dark:bg-stone-800/60">
+              <div>
+                <h3 className="text-sm font-semibold text-stone-900 dark:text-stone-100">List</h3>
+                <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
+                  Scroll vertically for all rows; scroll horizontally if columns are clipped.
+                </p>
+              </div>
+              <span className="text-xs font-medium tabular-nums text-stone-600 dark:text-stone-300 shrink-0 rounded-full border border-stone-200 dark:border-stone-600 bg-white dark:bg-stone-900 px-3 py-1">
+                {filteredEntitys.length} shown
+              </span>
+            </div>
+            <div
+              ref={entitysActivityContainerRef}
+              onScroll={event => setEntitysActivityScrollTop(event.currentTarget.scrollTop)}
+              className="overflow-x-auto overflow-y-auto max-h-[min(75vh,880px)] overscroll-y-contain"
+            >
+          <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] text-left text-sm">
+            <thead className="sticky top-0 z-10 bg-stone-50 dark:bg-stone-900 text-stone-600 dark:text-stone-300 border-b border-stone-200 dark:border-stone-700 shadow-[0_1px_0_0_rgb(0_0_0/0.04)] dark:shadow-[0_1px_0_0_rgb(255_255_255/0.06)]">
               <tr>
-                <th className="sticky-col px-6 py-2.5 w-[270px] text-[11px] font-semibold uppercase tracking-wide">Name</th>
-                <th className="px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Total</th>
-                <th className="px-6 py-2.5 w-[180px] text-[11px] font-semibold uppercase tracking-wide">Activity</th>
-                <th className="px-6 py-2.5 w-[150px] text-[11px] font-semibold uppercase tracking-wide">Last Active</th>
-                <th className="px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Tags</th>
-                <th className="sticky-col-right px-6 py-2.5 w-[140px] text-right text-[11px] font-semibold uppercase tracking-wide">Actions</th>
+                <th className="sticky-col px-4 py-3 w-[min(28%,260px)] text-left text-xs font-semibold uppercase tracking-wide">Name</th>
+                <th className="px-4 py-3 w-[120px] text-right text-xs font-semibold uppercase tracking-wide">Total</th>
+                <th className="px-4 py-3 w-[160px] text-left text-xs font-semibold uppercase tracking-wide">Records</th>
+                <th className="px-4 py-3 w-[130px] text-left text-xs font-semibold uppercase tracking-wide">Last active</th>
+                <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide">Tags</th>
+                <th className="sticky-col-right px-4 py-3 w-[200px] text-right text-xs font-semibold uppercase tracking-wide">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
@@ -1238,7 +1286,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
 
               {filteredEntitys.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="px-6 py-12 text-center text-stone-400">
+                  <td colSpan={6} className="px-4 py-14 text-center text-stone-500 dark:text-stone-400">
                     <div className="flex flex-col items-center gap-2">
                       <span>No entities found.</span>
                       <button
@@ -1254,7 +1302,8 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
               )}
             </tbody>
           </table>
-          </CollapsibleActivitySection>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1264,7 +1313,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
           type="entity"
           onClose={() => setQuickViewEntity(null)}
           onUpdateTags={(entityId, tags) => { void handleUpdateEntityTags(entityId, tags); }}
-          activityNet={entityStats.get(quickViewEntity.id)?.net || 0}
+          activityNet={(entityStats.get(quickViewEntity.id)?.net ?? 0) - (quickViewEntity.starting_total ?? 0)}
           variant="modal"
         />
       )}
@@ -1554,19 +1603,19 @@ function EntityRow({ entity, stats, updateEntity, onOpenOverlay, onOpenProfile, 
   if (isEditing) {
     return (
       <tr className="bg-stone-50 dark:bg-stone-800">
-        <td className="sticky-col px-6 py-3">
+        <td className="sticky-col px-4 py-3">
           <input 
             className="w-full p-1 border border-stone-300 dark:border-stone-600 rounded bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 mb-1" 
             value={data.name} 
             onChange={e => setData({...data, name: e.target.value})} 
           />
         </td>
-        <td className="px-6 py-3">
-          <span className="font-mono text-stone-600 dark:text-stone-300 text-sm">
+        <td className="px-4 py-3 text-right">
+          <span className="font-mono tabular-nums text-stone-600 dark:text-stone-300 text-sm">
             {formatValue(stats.net)}
           </span>
         </td>
-        <td className="px-6 py-3">
+        <td className="px-4 py-3">
           <label className="sr-only">Network profile</label>
           <select
             className="w-full p-1 border border-stone-300 dark:border-stone-600 rounded bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 text-xs"
@@ -1579,8 +1628,8 @@ function EntityRow({ entity, stats, updateEntity, onOpenOverlay, onOpenProfile, 
             ))}
           </select>
         </td>
-        <td className="px-6 py-3 text-stone-400 text-xs">—</td>
-        <td className="px-6 py-3">
+        <td className="px-4 py-3 text-stone-400 text-xs">—</td>
+        <td className="px-4 py-3">
           {/* Simple tag edit - comma separated for now to save space */}
           <input 
             className="w-full p-1 border border-stone-300 dark:border-stone-600 rounded bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 text-xs" 
@@ -1589,7 +1638,7 @@ function EntityRow({ entity, stats, updateEntity, onOpenOverlay, onOpenProfile, 
             onChange={e => setData({...data, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean)})} 
           />
         </td>
-        <td className="sticky-col-right px-6 py-3 text-right">
+        <td className="sticky-col-right px-4 py-3 text-right">
           <div className="flex justify-end gap-2">
             <button onClick={() => setIsEditing(false)} className="p-1 text-stone-400 hover:text-stone-600">
               <X size={16} />
@@ -1605,7 +1654,7 @@ function EntityRow({ entity, stats, updateEntity, onOpenOverlay, onOpenProfile, 
 
   return (
     <tr className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors group cursor-pointer" onClick={onOpenOverlay}>
-      <td className="sticky-col px-6 py-2.5">
+      <td className="sticky-col px-4 py-3 align-top">
         <div className="font-medium text-stone-900 dark:text-stone-100 flex items-center gap-2">
           <span className="min-w-0">
             {getEntityDisplayName(entity.name)}
@@ -1615,43 +1664,48 @@ function EntityRow({ entity, stats, updateEntity, onOpenOverlay, onOpenProfile, 
               </span>
             ) : null}
           </span>
-          <Eye size={14} className="opacity-0 group-hover:opacity-50 transition-opacity shrink-0" />
+          <Eye size={14} className="opacity-0 group-hover:opacity-50 transition-opacity shrink-0 text-stone-400" aria-hidden />
         </div>
       </td>
-      <td className="px-6 py-2.5">
+      <td className="px-4 py-3 text-right align-top">
         <div className={cn(
-          "font-mono font-medium",
+          "font-mono font-semibold tabular-nums text-base",
           stats.net > 0 ? "text-emerald-600 dark:text-emerald-400" : stats.net < 0 ? "text-red-600 dark:text-red-400" : "text-stone-500 dark:text-stone-400"
         )}>
           {formatValue(stats.net)}
         </div>
       </td>
-      <td className="px-6 py-2.5">
-        <div className="text-sm text-stone-700 dark:text-stone-200">
-          {stats.activitys} {stats.activitys === 1 ? 'activity' : 'activities'}
+      <td className="px-4 py-3 align-top">
+        <div className="text-sm text-stone-800 dark:text-stone-100">
+          {stats.activitys} {stats.activitys === 1 ? 'record' : 'records'}
         </div>
-        <div className="text-xs text-stone-400 mt-0.5">
+        <div className="text-xs text-stone-500 dark:text-stone-400 mt-0.5 leading-snug">
           {stats.surpluses} positive · inflow {formatValue(stats.totalInflow)}
         </div>
       </td>
-      <td className="px-6 py-2.5 text-stone-500 dark:text-stone-400">
-        <div className="flex items-center gap-1.5">
-          <Calendar size={14} className="text-stone-400" />
-          {stats.lastActive ? formatDate(stats.lastActive) : 'Never'}
+      <td className="px-4 py-3 text-stone-600 dark:text-stone-300 align-top">
+        <div className="flex items-center gap-1.5 text-sm">
+          <Calendar size={14} className="text-stone-400 shrink-0" aria-hidden />
+          <span>{stats.lastActive ? formatDate(stats.lastActive) : 'Never'}</span>
         </div>
       </td>
-      <td className="px-6 py-2.5">
+      <td className="px-4 py-3 align-top">
         <div className="flex flex-wrap gap-1">
-          {/* Auto-badges based on stats */}
           {stats.activitys > 5 && (
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800">
-              Regular
+            <span
+              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-800"
+              title="From applied record count, not a stored tag"
+            >
+              {ENTITY_STAT_BADGES.manyRecords}
             </span>
           )}
           {stats.net > 1000 && (
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border border-amber-100 dark:border-amber-800">
-              <Award size={8} className="mr-1" />
-              High Roller
+            <span
+              className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 border border-amber-100 dark:border-amber-800"
+              title="From net balance (includes starting total), not a stored tag"
+            >
+              <TrendingUp size={8} className="mr-1 shrink-0" />
+              {ENTITY_STAT_BADGES.highNetBalance}
             </span>
           )}
 
@@ -1662,12 +1716,12 @@ function EntityRow({ entity, stats, updateEntity, onOpenOverlay, onOpenProfile, 
           ))}
         </div>
       </td>
-      <td className="sticky-col-right px-6 py-2.5 text-right">
-        <div className="flex justify-end items-center gap-2 transition-opacity" onClick={e => e.stopPropagation()}>
+      <td className="sticky-col-right px-4 py-3 text-right align-top">
+        <div className="flex justify-end items-center flex-wrap gap-1.5 transition-opacity" onClick={e => e.stopPropagation()}>
           <button
             type="button"
             onClick={onOpenOverlay}
-            className="action-btn-secondary text-xs px-2.5 py-1"
+            className="action-btn-secondary text-xs px-2.5 py-1.5 whitespace-nowrap"
             title="Preview actions"
           >
             Preview
@@ -1675,7 +1729,7 @@ function EntityRow({ entity, stats, updateEntity, onOpenOverlay, onOpenProfile, 
           <button
             type="button"
             onClick={onOpenProfile}
-            className="action-btn-secondary text-xs px-2.5 py-1"
+            className="action-btn-primary text-xs px-2.5 py-1.5 whitespace-nowrap"
             title="Open full entity page"
           >
             Open

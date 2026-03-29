@@ -20,6 +20,47 @@ export const LABELS = {
 		noWorkspace: 'No workspace selected',
 		awaitingAccess: 'You need workspace access',
 	},
+	/**
+	 * Keep these distinct from each other and from Settings → Export → Audit trail (exportable `audit_events`).
+	 */
+	workspacePanels: {
+		activityList: {
+			title: 'Activity list',
+			subtitle: 'Recent work sessions — open one to operate',
+			titleHint:
+				'Activity list — browse sessions (not workspace health, not the per-activity timeline)',
+		},
+		workspaceHealth: {
+			title: 'Workspace health',
+			subtitle: 'Balances, checks, and alerts for the whole workspace',
+			titleHint:
+				'Workspace health — integrity and alerts (not the activity list; full audit export: Settings → Export → Audit trail)',
+			sections: {
+				integrityIssues: 'Integrity issues',
+				snapshot: 'Workspace snapshot',
+				watchlist: 'Watchlist',
+				recentAttributedActions: 'Recent attributed actions',
+			},
+			empty: {
+				noIntegrityIssues: 'No integrity issues flagged.',
+				noWatchlistItems: 'No watchlist items.',
+				noAttributedActions: 'No recent attributed actions.',
+			},
+		},
+		sessionTimeline: {
+			title: 'Session timeline',
+			subtitle: 'This activity only — inflow, outflow, and events',
+			titleHint: 'Session timeline — this activity (shortcut O)',
+		},
+	},
+	/** Operator shift records (`operator_activities`), not workspace health or Settings audit export. */
+	workforce: {
+		openOperatorLog: 'Open operator log',
+		noOperatorLogsYet: 'No operator logs yet.',
+	},
+	entityHistory: {
+		operationsOnEntity: 'Operations on this entity',
+	},
 } as const;
 
 export const getRoleLabel = (role: string | null | undefined): string => {
@@ -88,6 +129,14 @@ export const sanitizeLabel = (text: string): string => {
 		.trim();
 };
 
+/** Auto-badges on the entities table (derived from balances, not stored entity tags). */
+export const ENTITY_STAT_BADGES = {
+	/** Shown when applied record count exceeds the threshold (ledger history). */
+	manyRecords: 'Many records',
+	/** Shown when net balance exceeds the threshold (includes starting total on workspace ledger). */
+	highNetBalance: 'High net balance',
+} as const;
+
 export const METRIC_LABELS = {
 	openActivities: 'Open activities',
 	activeEntitys: 'Active entities',
@@ -118,10 +167,11 @@ export const EVENT_LABELS: Record<string, string> = {
 	outflow_added: 'Cost logged',
 	record_added: 'Record added',
 	activity_record_added: 'Record added',
-	teamMember_added: 'Team member added',
-	teamMember_imported: 'Team members imported',
-	teamMember_updated: 'Team member updated',
-	teamMember_deleted: 'Team member removed',
+	// Audit `action` values may still use teamMember_* — labels match UI “roster profile”.
+	teamMember_added: 'Roster profile added',
+	teamMember_imported: 'Roster profiles imported',
+	teamMember_updated: 'Roster profile updated',
+	teamMember_deleted: 'Roster profile removed',
 	activity_created: 'Activity created',
 	activity_deleted: 'Activity deleted',
 	operator_session_started: 'Session started',
@@ -173,4 +223,5 @@ export const useLabels = () => ({
 	getActionText,
 	getTelemetryLabel,
 	getEventLabel,
+	workspacePanels: LABELS.workspacePanels,
 });

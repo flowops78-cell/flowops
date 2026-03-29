@@ -4,7 +4,7 @@ import { Activity, AlertCircle, Clock3, ExternalLink, Scale } from 'lucide-react
 import ContextPanel from './ContextPanel';
 import { useData } from '../context/DataContext';
 import { formatDate, formatCompactValue } from '../lib/utils';
-import { useLabels } from '../lib/labels';
+import { useLabels, LABELS } from '../lib/labels';
 
 interface GlobalTelemetryPanelProps {
   isOpen: boolean;
@@ -127,16 +127,16 @@ export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetr
         <div className="border-b border-stone-200 dark:border-stone-800 bg-stone-50 dark:bg-stone-800/50 px-4 py-3">
           <h3 className="flex items-center gap-2 text-sm font-semibold text-stone-900 dark:text-stone-100">
             <Scale size={16} className="text-emerald-600 dark:text-emerald-400" />
-            Audit Panel
+            {LABELS.workspacePanels.workspaceHealth.title}
           </h3>
-          <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">Integrity · Balances · Activity Log</p>
+          <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">{LABELS.workspacePanels.workspaceHealth.subtitle}</p>
+          <p className="mt-1 text-[10px] text-stone-400 dark:text-stone-500">Attributed actions here are a live slice — for a full trail export, use Settings → Export with dataset “Audit trail”.</p>
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-5 pb-[calc(env(safe-area-inset-bottom)+1rem)]">
 
-          {/* Issues */}
           <section className="space-y-2">
-            <p className="text-[11px] uppercase tracking-wide text-stone-400">Issues</p>
+            <p className="text-[11px] uppercase tracking-wide text-stone-400">{LABELS.workspacePanels.workspaceHealth.sections.integrityIssues}</p>
             <div className="space-y-2">
               {issueItems.map(item => (
                 <button
@@ -163,15 +163,14 @@ export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetr
 
               {issueItems.length === 0 && (
                 <div className="rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-2 text-xs text-stone-500 dark:text-stone-400">
-                  No open issues.
+                  {LABELS.workspacePanels.workspaceHealth.empty.noIntegrityIssues}
                 </div>
               )}
             </div>
           </section>
 
-          {/* Overview */}
           <section className="space-y-2">
-            <p className="text-[11px] uppercase tracking-wide text-stone-400">Overview</p>
+            <p className="text-[11px] uppercase tracking-wide text-stone-400">{LABELS.workspacePanels.workspaceHealth.sections.snapshot}</p>
             <div className="rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-2.5 space-y-1.5 text-xs">
               <div className="flex justify-between">
                 <span className="text-stone-500 dark:text-stone-400">{getMetricLabel('openActivities')}</span>
@@ -198,7 +197,7 @@ export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetr
 
           <section className="space-y-2">
             <div className="flex items-center justify-between">
-              <p className="text-[11px] uppercase tracking-wide text-stone-400">Watchlist</p>
+              <p className="text-[11px] uppercase tracking-wide text-stone-400">{LABELS.workspacePanels.workspaceHealth.sections.watchlist}</p>
               <button
                 type="button"
                 onClick={() => openRoute('/activity')}
@@ -245,16 +244,15 @@ export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetr
               )}
               {watchActivities.length === 0 && channelAlerts.length === 0 && (
                 <div className="rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-2 text-xs text-stone-500 dark:text-stone-400">
-                  No watchlist items.
+                  {LABELS.workspacePanels.workspaceHealth.empty.noWatchlistItems}
                 </div>
               )}
             </div>
           </section>
 
-          {/* Activity Log */}
           <section className="space-y-2">
             <div className="flex items-center justify-between">
-              <p className="text-[11px] uppercase tracking-wide text-stone-400">Activity Log</p>
+              <p className="text-[11px] uppercase tracking-wide text-stone-400">{LABELS.workspacePanels.workspaceHealth.sections.recentAttributedActions}</p>
               <button
                 type="button"
                 onClick={() => openRoute('/activity')}
@@ -279,7 +277,7 @@ export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetr
               ))}
               {recentActions.length === 0 && (
                 <div className="rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-3 py-2 text-xs text-stone-500 dark:text-stone-400">
-                  No recent activity.
+                  {LABELS.workspacePanels.workspaceHealth.empty.noAttributedActions}
                 </div>
               )}
             </div>

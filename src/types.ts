@@ -45,6 +45,7 @@ export interface Entity {
   referring_collaboration_id?: string;
   total?: number;
   total_net?: number;
+  starting_total?: number;
   last_active_at?: string;
   tags?: string[];
   created_at?: string;
@@ -62,7 +63,7 @@ export interface Activity {
   channel_label?: string;
   location?: string;
   assigned_user_id?: string;
-  activity_mode?: 'value' | 'high_intensity';
+  activity_mode?: 'value';
   created_at?: string;
   updated_at?: string;
 }
@@ -149,15 +150,15 @@ export interface AuditAnomaly {
   detail: string;
 }
 
-export interface TeamMember {
+/** Workspace people row (`public.team_members`). UI: roster profile; distinct from auth user until `user_id` is set. */
+export interface RosterProfile {
   id: string;
   org_id: string;
   name: string;
   staff_role: string;
-  role?: string; 
+  role?: string;
   status?: 'active' | 'inactive';
   user_id?: string;
-  teamMember_id?: string;
   arrangement_type?: 'hourly' | 'fixed' | 'percentage';
   overhead_weight?: number;
   service_rate?: number;
@@ -213,7 +214,6 @@ export interface OperatorActivity {
   id: string;
   org_id: string;
   actor_user_id: string;
-  teamMember_id?: string; 
   activity_id?: string; 
   actor_role: AppRole;
   actor_label?: string;

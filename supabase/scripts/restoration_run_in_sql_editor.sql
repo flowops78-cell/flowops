@@ -94,7 +94,7 @@ ALTER TABLE public.activities ADD COLUMN IF NOT EXISTS activity_mode text;
 UPDATE public.activities
 SET activity_mode = 'value'
 WHERE activity_mode IS NULL
-   OR activity_mode NOT IN ('value', 'high_intensity');
+   OR activity_mode NOT IN ('value');
 
 ALTER TABLE public.activities ALTER COLUMN activity_mode SET DEFAULT 'value';
 
@@ -107,7 +107,7 @@ BEGIN
   ) THEN
     ALTER TABLE public.activities
       ADD CONSTRAINT activities_activity_mode_check
-      CHECK (activity_mode IN ('value', 'high_intensity'));
+      CHECK (activity_mode IN ('value'));
   END IF;
 END $$;
 

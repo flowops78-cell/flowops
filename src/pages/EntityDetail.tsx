@@ -9,7 +9,7 @@ import { formatValue, formatDate } from '../lib/utils';
 import { cn } from '../lib/utils';
 import { ActivityRecord } from '../types';
 import EntitySnapshot from '../components/EntitySnapshot';
-import { useLabels } from '../lib/labels';
+import { useLabels, LABELS } from '../lib/labels';
 
 type UnitAccountActivityRecordType = 'increment' | 'adjustment' | 'decrement';
 
@@ -49,6 +49,7 @@ export default function EntityDetail() {
   const [adjustmentPercent, setAdjustmentPercent] = useState('5');
   const [overrideTargetTotal, setOverrideTargetTotal] = useState('');
   const [isSnapshotOpen, setIsSnapshotOpen] = useState(false);
+  const [requestMethod, setRequestMethod] = useState('');
   const [isOverrideExpanded, setIsOverrideExpanded] = useState(false);
 
   const entityEntries = useMemo(
@@ -86,23 +87,38 @@ export default function EntityDetail() {
   }, [entityEntries]);
 
   const performanceDelta = useMemo(
-    () => records.filter(item => item.entity_id === id).reduce((sum, item) => sum + (item.direction === 'increase' ? item.unit_amount : -item.unit_amount), 0),
+    () =>
+      records
+        .filter(item => item.entity_id === id && item.status === 'applied')
+        .reduce((sum, item) => {
+          if (item.direction === 'increase') return sum + item.unit_amount;
+          if (item.direction === 'decrease') return sum - item.unit_amount;
+          return sum;
+        }, 0),
     [records, id],
   );
 
+  const genesisBalance = unit?.starting_total || 0;
+
   const inflowsAndAdjustments = useMemo(
-    () => entityEntries.reduce((sum, item) => sum + (item.direction === 'increase' ? item.unit_amount : 0), 0),
+    () =>
+      entityEntries
+        .filter(item => item.status === 'applied')
+        .reduce((sum, item) => sum + (item.direction === 'increase' ? item.unit_amount : 0), 0),
     [entityEntries],
   );
 
   const totalOutflows = useMemo(
-    () => entityEntries.reduce((sum, item) => sum + (item.direction === 'decrease' ? item.unit_amount : 0), 0),
+    () =>
+      entityEntries
+        .filter(item => item.status === 'applied')
+        .reduce((sum, item) => sum + (item.direction === 'decrease' ? item.unit_amount : 0), 0),
     [entityEntries],
   );
 
   const computedTotal = useMemo(
-    () => inflowsAndAdjustments + performanceDelta - totalOutflows,
-    [inflowsAndAdjustments, performanceDelta, totalOutflows],
+    () => genesisBalance + performanceDelta,
+    [genesisBalance, performanceDelta],
   );
 
   const operationalWeightRangeTotal = useMemo(() => {
@@ -185,22 +201,24 @@ export default function EntityDetail() {
       return;
     }
 
-    if (!recordMethod) {
-      notify({ type: 'error', message: 'Select a transfer source from Channels.' });
+    if (!recordMethod && recordType !== 'adjustment') {
+      notify({ type: 'error', message: 'Select a transfer source from Channels for increases/decreases.' });
       return;
     }
+
+    const finalMethod = recordMethod || 'System adjustment';
 
     await addRecord({
       entity_id: unit.id,
       direction: recordType === 'decrement' ? 'decrease' : 'increase',
       unit_amount: amount,
       status: 'applied',
-      channel_label: recordMethod,
-      notes: recordType === 'adjustment' ? 'Manual adjustment' : `Manual record - Channel: ${recordMethod}`,
+      channel_label: finalMethod,
+      notes: recordType === 'adjustment' ? 'Manual adjustment (reconciliation-free)' : `Manual record - Channel: ${finalMethod}`,
     });
 
     // Sync with channel ONLY for increments and decrements (not adjustments)
-    if (recordType !== 'adjustment') {
+    if (recordType !== 'adjustment' && recordMethod) {
       try {
         await addChannelRecord({
           type: recordType === 'increment' ? 'decrement' : 'increment',
@@ -235,9 +253,11 @@ export default function EntityDetail() {
       unit_amount: amount,
       direction: 'decrease',
       status: 'pending',
-      notes: 'Outflow request (pending approval)',
+      channel_label: requestMethod,
+      notes: requestMethod ? `Outflow request (pending approval) - Channel: ${requestMethod}` : 'Outflow request (pending approval) - Internal adjustment',
     });
     setRequestAmount('');
+    setRequestMethod('');
     notify({ type: 'success', message: 'Adjustment request submitted for review.' });
   };
 
@@ -251,12 +271,12 @@ export default function EntityDetail() {
     const canonicalStatus = nextStatus === 'approved' ? 'applied' : 'voided';
     await updateRecord({ ...request, status: canonicalStatus });
 
-    if (nextStatus === 'approved') {
+    if (nextStatus === 'approved' && request.channel_label) {
       try {
         await addChannelRecord({
           type: 'decrement',
           amount: request.unit_amount,
-          method: 'value',
+          method: request.channel_label,
           date: isoToday(),
         });
       } catch {
@@ -329,40 +349,16 @@ export default function EntityDetail() {
         direction: 'increase',
         unit_amount: Math.abs(delta),
         status: 'applied',
-        notes: `Manual override: increase to ${formatValue(target)}`,
+        notes: `Manual override: increase to ${formatValue(target)} (balance correction only)`,
       });
-
-      // Sync with channel: override increase = decrement from source
-      try {
-        await addChannelRecord({
-          type: 'decrement',
-          amount: Math.abs(delta),
-          method: 'override_adjustment',
-          date: isoToday(),
-        });
-      } catch (error) {
-        notify({ type: 'warning', message: 'Override recorded but channel sync failed. ActivityRecord manually.' });
-      }
     } else {
       await addRecord({
         entity_id: unit.id,
         direction: 'decrease',
         unit_amount: Math.abs(delta),
         status: 'applied',
-        notes: `Manual override: decrease to ${formatValue(target)}`,
+        notes: `Manual override: decrease to ${formatValue(target)} (balance correction only)`,
       });
-
-      // Sync with channel: override decrease = increment to source
-      try {
-        await addChannelRecord({
-          type: 'increment',
-          amount: Math.abs(delta),
-          method: 'override_adjustment',
-          date: isoToday(),
-        });
-      } catch (error) {
-        notify({ type: 'warning', message: 'Override recorded but channel sync failed. ActivityRecord manually.' });
-      }
     }
 
     // recordSystemEvent removed as it is not in the current DataContext
@@ -402,30 +398,28 @@ export default function EntityDetail() {
         </div>
       </div>
 
-      <div className="section-card p-5 lg:p-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="section-card p-5 lg:p-6 grid grid-cols-1 md:grid-cols-5 gap-4">
         <div>
-          <p className="text-xs text-stone-500 dark:text-stone-400">Inputs + Adjustments</p>
+          <p className="text-xs text-stone-500 dark:text-stone-400">Genesis Balance</p>
+          <p className="text-lg font-mono text-stone-900 dark:text-stone-100">{formatValue(genesisBalance)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-stone-500 dark:text-stone-400">Inbound (Ledger)</p>
           <p className="text-lg font-mono text-stone-900 dark:text-stone-100">{formatValue(inflowsAndAdjustments)}</p>
         </div>
         <div>
-          <p className="text-xs text-stone-500 dark:text-stone-400">Operational Delta</p>
-          <p className={cn('text-lg font-mono', performanceDelta >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400')}>
-            {formatValue(performanceDelta)}
-          </p>
-        </div>
-        <div>
-          <p className="text-xs text-stone-500 dark:text-stone-400">{tx('Decreases')}</p>
+          <p className="text-xs text-stone-500 dark:text-stone-400">Outbound (Ledger)</p>
           <p className="text-lg font-mono text-red-600 dark:text-red-400">{formatValue(totalOutflows)}</p>
         </div>
-        <div>
-          <p className="text-xs text-stone-500 dark:text-stone-400">Computed Total</p>
-          <p className={cn('text-lg font-mono', computedTotal >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400')}>
+        <div className="bg-stone-50 dark:bg-stone-800/50 rounded-lg p-2 px-3 border border-stone-100 dark:border-stone-800">
+          <p className="text-[10px] uppercase tracking-wider text-stone-400 mb-0.5">Net Position</p>
+          <p className={cn('text-lg font-mono font-bold', computedTotal >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400')}>
             {formatValue(computedTotal)}
           </p>
         </div>
-        <div className="md:col-span-4">
-          <p className="text-xs text-stone-500 dark:text-stone-400">Formula</p>
-          <p className="text-sm text-stone-700 dark:text-stone-200">Inputs + Adjustments + Operational Delta - Outputs</p>
+        <div className="md:col-start-1 md:col-span-4">
+          <p className="text-[10px] text-stone-400 uppercase tracking-widest mb-1">Audit Formula</p>
+          <p className="text-xs text-stone-500 dark:text-stone-400 italic">Genesis + SUM(Applied Increases) - SUM(Applied Decreases) = Net position</p>
           {!isAdmin && (
             <p className="text-xs text-amber-700 dark:text-amber-400 mt-1">This operational flow is admin-controlled. Non-admin roles are read-only on this page.</p>
           )}
@@ -447,14 +441,21 @@ export default function EntityDetail() {
             </button>
           </div>
           <div>
-            <label className="block text-xs text-stone-500 dark:text-stone-400 mb-1">TransferAmount Source (links to Channels)</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-medium text-stone-500 dark:text-stone-400">
+                {recordType === 'adjustment' ? 'Reference (Optional)' : 'Transfer Source'}
+              </label>
+              {recordType === 'adjustment' && (
+                <span className="text-[10px] text-amber-600 dark:text-amber-400 italic">No reconciliation</span>
+              )}
+            </div>
             <select
               className="control-input max-w-sm"
               value={recordMethod}
               onChange={e => setRecordMethod(e.target.value)}
-              required
+              required={recordType !== 'adjustment'}
             >
-              <option value="">Select transfer source...</option>
+              <option value="">{recordType === 'adjustment' ? 'System / Internal Adjustment' : 'Select transfer source...'}</option>
               {transferAccounts.filter(a => a.is_active).map(a => (
                 <option key={a.id} value={`${a.category}::${a.name}`}>
                   {a.name}
@@ -487,11 +488,28 @@ export default function EntityDetail() {
       <div className="section-card p-5 lg:p-6 space-y-4">
         <h3 className="text-base font-medium text-stone-900 dark:text-stone-100">{tx('Adjustment Requests')}</h3>
         {canManageEntityTx && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <input className="control-input" type="number" min="0.01" step="0.01" placeholder="Requested Amount" value={requestAmount} onChange={e => setRequestAmount(e.target.value)} />
-            <button type="button" onClick={() => { void handleCreateOutputRequest(); }} className="action-btn-secondary">
-              Submit Request
-            </button>
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <input className="control-input" type="number" min="0.01" step="0.01" placeholder="Requested Amount" value={requestAmount} onChange={e => setRequestAmount(e.target.value)} />
+              <select
+                className="control-input"
+                value={requestMethod}
+                onChange={e => setRequestMethod(e.target.value)}
+              >
+                <option value="">No reconciliation (Internal adjustment)</option>
+                {transferAccounts.filter(a => a.is_active).map(a => (
+                  <option key={a.id} value={`${a.category}::${a.name}`}>
+                    {a.name}
+                  </option>
+                ))}
+              </select>
+              <button type="button" onClick={() => { void handleCreateOutputRequest(); }} className="action-btn-secondary">
+                Submit Request
+              </button>
+            </div>
+            <p className="text-[10px] text-stone-500 italic">
+              * Choosing a channel will reconcile this outflow upon approval. Leave blank for internal losses or ledger-only adjustments.
+            </p>
           </div>
         )}
 
@@ -500,7 +518,17 @@ export default function EntityDetail() {
           {entityRequests.map(request => (
             <div key={request.id} className="rounded-lg border border-stone-200 dark:border-stone-800 p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <p className="text-sm text-stone-900 dark:text-stone-100">{formatValue(request.unit_amount)} • {request.created_at ? formatDate(request.created_at) : 'No timestamp'}</p>
+                <p className="text-sm font-medium text-stone-900 dark:text-stone-100">{formatValue(request.unit_amount)} • {request.created_at ? formatDate(request.created_at) : 'No timestamp'}</p>
+                {request.channel_label && (
+                  <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono mt-0.5 uppercase tracking-wider">
+                    TARGET: {request.channel_label}
+                  </p>
+                )}
+                {!request.channel_label && (
+                  <p className="text-[10px] text-stone-400 font-mono mt-0.5 uppercase tracking-wider italic">
+                    Internal adjustment (Non-reconciled)
+                  </p>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <span className={cn(
@@ -536,7 +564,7 @@ export default function EntityDetail() {
       </div>
 
       <div className="section-card p-5 lg:p-6 space-y-3">
-        <h3 className="text-base font-medium text-stone-900 dark:text-stone-100">Operations Activity Log</h3>
+        <h3 className="text-base font-medium text-stone-900 dark:text-stone-100">{LABELS.entityHistory.operationsOnEntity}</h3>
         {operatorActions.length === 0 && (
           <p className="text-sm text-stone-500 dark:text-stone-400">{tx('No operator actions yet.')}</p>
         )}
