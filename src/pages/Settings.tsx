@@ -136,7 +136,8 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     clusterId: contextClusterId, 
     refreshAuthority, 
     manageableClusters, 
-    manageableOrgsByCluster 
+    manageableOrgsByCluster,
+    managedOrgIds: authorityManagedOrgIds,
   } = useAppRole();
 
   const { notify } = useNotification();
@@ -225,6 +226,14 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [managedClusterId, setManagedClusterId] = React.useState<string | null>(null);
   const [clusterManagedOrgIds, setClusterManagedOrgIds] = React.useState<string[]>([]);
   const [newOrgAdminEmail, setNewOrgAdminEmail] = React.useState('');
+  const [grantAccessEmail, setGrantAccessEmail] = React.useState('');
+  const [grantAccessRole, setGrantAccessRole] = React.useState<'admin' | 'operator' | 'viewer'>('operator');
+  const [grantAccessOrgId, setGrantAccessOrgId] = React.useState('');
+  const [grantAccessBusy, setGrantAccessBusy] = React.useState(false);
+
+  React.useEffect(() => {
+    if (activeOrgId) setGrantAccessOrgId(activeOrgId);
+  }, [activeOrgId]);
   const [isProvisioning, setIsProvisioning] = React.useState(false);
 
   // Wire real state to the variables used in JSX
@@ -807,6 +816,50 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
+  const grantWorkspaceOrgOptions = React.useMemo(() => {
+    const all = Object.values(availableOrgs);
+    if (authorityManagedOrgIds.length === 0) return all;
+    return all.filter((o) => authorityManagedOrgIds.includes(o.id));
+  }, [availableOrgs, authorityManagedOrgIds]);
+
+  const grantWorkspaceToExistingUser = async () => {
+    if (!supabase || !activeOrgId) return;
+    const email = grantAccessEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      notify({ type: 'error', message: 'Enter a valid email for an account that already exists in Auth.' });
+      return;
+    }
+    const orgId = grantAccessOrgId || activeOrgId;
+    if (!authorityManagedOrgIds.includes(orgId)) {
+      notify({ type: 'error', message: 'Pick a workspace you manage.' });
+      return;
+    }
+    setGrantAccessBusy(true);
+    try {
+      await refreshAuthority();
+      const { error } = await invokeSafe('manage-organizations', {
+        action: 'assign-org-admin',
+        org_id: orgId,
+        target_email: email,
+        target_role: grantAccessRole,
+      });
+      if (error) throw error;
+      notify({
+        type: 'success',
+        message: `${email} can open the app for this workspace as ${grantAccessRole}. They should refresh or use Check status.`,
+      });
+      setGrantAccessEmail('');
+      if (isClusterAdmin) await fetchPlatformDirectory();
+    } catch (err) {
+      notify({
+        type: 'error',
+        message: `Could not add teammate: ${toDisplayError(err)}`,
+      });
+    } finally {
+      setGrantAccessBusy(false);
+    }
+  };
+
   const filteredClusterAdmins = clusterAdmins.filter(admin =>
     (admin.email ?? '').toLowerCase().includes(clusterSearch.toLowerCase()) ||
     (admin.user_id ?? '').toLowerCase().includes(clusterSearch.toLowerCase())
@@ -925,6 +978,59 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               {inviteNotice && !inviteTokenValue && (
                 <p className="text-[10px] text-red-500">{inviteNotice}</p>
               )}
+
+              <div className="pt-4 border-t border-stone-100 dark:border-stone-800 space-y-3">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Add existing account</p>
+                <p className="text-[11px] text-stone-500 leading-relaxed">
+                  The person must already exist in Supabase Auth (for example they signed in once). This adds them to a workspace and sets their default workspace so they can use the app.
+                </p>
+                {grantWorkspaceOrgOptions.length > 1 && (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Workspace</label>
+                    <select
+                      className="w-full text-xs bg-stone-50 dark:bg-stone-800 border-none rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500"
+                      value={grantAccessOrgId || activeOrgId || ''}
+                      onChange={e => setGrantAccessOrgId(e.target.value)}
+                      disabled={grantAccessBusy}
+                    >
+                      {grantWorkspaceOrgOptions.map(org => (
+                        <option key={org.id} value={org.id}>{org.name || org.tag || org.id.slice(0, 8)}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+                <div className="flex flex-col gap-2">
+                  <input
+                    type="email"
+                    autoComplete="off"
+                    placeholder="Their login email"
+                    className="control-input py-2 text-xs"
+                    value={grantAccessEmail}
+                    onChange={e => setGrantAccessEmail(e.target.value)}
+                    disabled={grantAccessBusy}
+                  />
+                  <div className="flex gap-2">
+                    <select
+                      className="flex-1 text-xs bg-stone-50 dark:bg-stone-800 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
+                      value={grantAccessRole}
+                      onChange={e => setGrantAccessRole(e.target.value as 'admin' | 'operator' | 'viewer')}
+                      disabled={grantAccessBusy}
+                    >
+                      <option value="admin">Workspace admin</option>
+                      <option value="operator">Workspace manager</option>
+                      <option value="viewer">Viewer</option>
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => void grantWorkspaceToExistingUser()}
+                      disabled={grantAccessBusy}
+                      className="action-btn-primary px-4 text-xs font-bold shrink-0"
+                    >
+                      {grantAccessBusy ? '…' : 'Add'}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 

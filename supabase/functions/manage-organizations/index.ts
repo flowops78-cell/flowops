@@ -660,7 +660,9 @@ Deno.serve(async (request: Request) => {
       const orgId = normalizeId(payload.org_id);
       let targetUserId = normalizeId(payload.target_user_id);
       const targetEmail = normalizeId(payload.target_email);
-      const role = (payload.target_role as DbRole) || 'admin';
+      const rawRole = payload.target_role;
+      const role: DbRole =
+        rawRole === 'operator' || rawRole === 'viewer' || rawRole === 'admin' ? rawRole : 'admin';
 
       if (!orgId) return json(400, { error: 'org_id is required.' }, origin);
       if (!targetUserId && !targetEmail) return json(400, { error: 'target_user_id or target_email is required.' }, origin);
@@ -679,8 +681,34 @@ Deno.serve(async (request: Request) => {
 
       if (!targetUserId) return json(400, { error: 'Unable to resolve target user.' }, origin);
 
-      await ensureOrgMembership(adminClient, targetUserId, orgId, role);
-      
+      if (targetUserId === callerUserId) {
+        return json(400, { error: 'Use workspace switching for your own account.' }, origin);
+      }
+
+      await ensureOrgMembership(adminClient, targetUserId, orgId, role, {
+        isDefaultOrg: true,
+        status: 'active',
+      });
+
+      const { data: orgRow, error: orgLookupErr } = await adminClient
+        .from('organizations')
+        .select('cluster_id')
+        .eq('id', orgId)
+        .maybeSingle();
+
+      if (orgLookupErr) {
+        return json(400, { error: orgLookupErr.message }, origin);
+      }
+
+      if (orgRow?.cluster_id) {
+        const { error: profileErr } = await adminClient.from('profiles').upsert({
+          id: targetUserId,
+          active_org_id: orgId,
+          active_cluster_id: orgRow.cluster_id as string,
+        });
+        if (profileErr) return json(400, { error: profileErr.message }, origin);
+      }
+
       return json(200, { ok: true, message: `User assigned as ${role} to organization.` }, origin);
     }
 
