@@ -952,6 +952,9 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
               >
                 + Invite user
               </button>
+              <p className="text-[10px] text-stone-500 leading-relaxed">
+                Tokens do not create accounts by themselves. After someone uses <span className="font-medium text-stone-700 dark:text-stone-300">Request access</span> on the sign-in page, they appear in <span className="font-medium text-stone-700 dark:text-stone-300">Pending access requests</span> below. When you <span className="font-medium text-stone-700 dark:text-stone-300">Approve</span>, you set their <span className="font-medium text-stone-700 dark:text-stone-300">initial password</span> (min 8); that calls provisioning and grants workspace access.
+              </p>
               {inviteTokenValue && (
                 <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/20 space-y-2">
                   <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">Token ready — copy now</p>
@@ -1102,6 +1105,101 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
             </div>
           )}
         </div>
+
+        {canViewOperatorLogs && (
+          <div className="section-card p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 size={15} className="text-stone-400" />
+                <span className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">
+                  Pending access requests{accessRequests.length > 0 ? ` (${accessRequests.length})` : ''}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => { void fetchAccessInvites(); void fetchAccessRequests(); }}
+                className="text-[10px] font-bold uppercase text-stone-400 hover:text-stone-600 transition-colors"
+              >
+                Refresh
+              </button>
+            </div>
+            {accessRequests.length === 0 ? (
+              <p className="text-[11px] text-stone-500 leading-relaxed">
+                No one is waiting. New submissions from the sign-in page (with a valid invite token) will show up here for approval and initial password.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {accessRequests.map(req => (
+                  <div key={req.id} className="p-4 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-[9px] font-bold uppercase tracking-wider text-stone-400 mb-0.5">Sign-in email</p>
+                        <p className="text-xs font-bold text-stone-900 dark:text-stone-100">{req.login_id}</p>
+                        <p className="text-[10px] text-stone-400">{getRoleLabel(req.requested_role)}</p>
+                      </div>
+                      <span className="text-[9px] font-black uppercase text-amber-600 bg-amber-50 dark:bg-amber-900/10 px-2 py-0.5 rounded-full border border-amber-100 dark:border-amber-800">Pending</span>
+                    </div>
+                    <div className="space-y-2">
+                      <input
+                        type="password"
+                        placeholder="Set initial password (min 8)"
+                        className="control-input py-1.5 text-xs w-full"
+                        value={pendingPasswords[req.id] || ''}
+                        onChange={e => setPendingPasswords(prev => ({ ...prev, [req.id]: e.target.value }))}
+                      />
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold uppercase text-stone-400">Workspace roster profile (optional)</label>
+                        <select
+                          className="control-input py-1.5 text-xs w-full"
+                          value={pendingRosterRowIds[req.id] || ''}
+                          onChange={e =>
+                            setPendingRosterRowIds(prev => ({
+                              ...prev,
+                              [req.id]: e.target.value,
+                            }))
+                          }
+                        >
+                          <option value="">New profile — set display name below (recommended if they are not on the list yet)</option>
+                          {rosterProfiles
+                            .filter(tm => tm.org_id === activeOrgId)
+                            .map(tm => (
+                              <option key={tm.id} value={tm.id}>
+                                {tm.name}
+                                {tm.user_id ? ' · already has a sign-in' : ' · no sign-in yet'}
+                              </option>
+                            ))}
+                        </select>
+                        <p className="text-[9px] text-stone-500 dark:text-stone-400 leading-snug">
+                          The workspace keeps a <span className="font-semibold">people list</span> (roster) separate from accounts. Choosing someone here only connects <span className="font-semibold">this email</span> to that list row — it is not their user id.
+                        </p>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-bold uppercase text-stone-400">Name on workspace list (optional)</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Sam Chen (creates list row if you did not pick one above)"
+                          className="control-input py-1.5 text-xs w-full"
+                          value={pendingProvisionDisplayNames[req.id] || ''}
+                          onChange={e =>
+                            setPendingProvisionDisplayNames(prev => ({
+                              ...prev,
+                              [req.id]: e.target.value,
+                            }))
+                          }
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={() => void reviewAccessRequest(req, 'approved')} disabled={busyRequestId === req.id} className="action-btn-primary flex-1 h-8 text-xs justify-center">Approve</button>
+                        <button onClick={() => void reviewAccessRequest(req, 'rejected')} disabled={busyRequestId === req.id} className="flex-1 h-8 rounded-xl border border-stone-200 dark:border-stone-700 text-xs font-bold text-stone-500 hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors">Reject</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {requestsNotice && <p className="text-[10px] text-stone-500 italic">{requestsNotice}</p>}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ── ADVANCED COLLAPSE ── */}
         <div className="border-t border-stone-200 dark:border-stone-800 pt-6">
@@ -1278,88 +1376,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                       ))}
                     </div>
                   )}
-                </div>
-              )}
-
-              {/* Pending access requests */}
-              {canViewOperatorLogs && accessRequests.length > 0 && (
-                <div className="section-card p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle2 size={16} className="text-stone-400" />
-                      <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Pending requests ({accessRequests.length})</h3>
-                    </div>
-                    <button onClick={() => { void fetchAccessInvites(); void fetchAccessRequests(); }} className="text-[10px] font-bold uppercase text-stone-400 hover:text-stone-600 transition-colors">Refresh</button>
-                  </div>
-                  <div className="space-y-3">
-                    {accessRequests.map(req => (
-                      <div key={req.id} className="p-4 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <p className="text-[9px] font-bold uppercase tracking-wider text-stone-400 mb-0.5">Sign-in email</p>
-                            <p className="text-xs font-bold text-stone-900 dark:text-stone-100">{req.login_id}</p>
-                            <p className="text-[10px] text-stone-400">{getRoleLabel(req.requested_role)}</p>
-                          </div>
-                          <span className="text-[9px] font-black uppercase text-amber-600 bg-amber-50 dark:bg-amber-900/10 px-2 py-0.5 rounded-full border border-amber-100 dark:border-amber-800">Pending</span>
-                        </div>
-                        <div className="space-y-2">
-                          <input
-                            type="password"
-                            placeholder="Set initial password (min 8)"
-                            className="control-input py-1.5 text-xs w-full"
-                            value={pendingPasswords[req.id] || ''}
-                            onChange={e => setPendingPasswords(prev => ({ ...prev, [req.id]: e.target.value }))}
-                          />
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold uppercase text-stone-400">Workspace roster profile (optional)</label>
-                            <select
-                              className="control-input py-1.5 text-xs w-full"
-                              value={pendingRosterRowIds[req.id] || ''}
-                              onChange={e =>
-                                setPendingRosterRowIds(prev => ({
-                                  ...prev,
-                                  [req.id]: e.target.value,
-                                }))
-                              }
-                            >
-                              <option value="">New profile — set display name below (recommended if they are not on the list yet)</option>
-                              {rosterProfiles
-                                .filter(tm => tm.org_id === activeOrgId)
-                                .map(tm => (
-                                  <option key={tm.id} value={tm.id}>
-                                    {tm.name}
-                                    {tm.user_id ? ' · already has a sign-in' : ' · no sign-in yet'}
-                                  </option>
-                                ))}
-                            </select>
-                            <p className="text-[9px] text-stone-500 dark:text-stone-400 leading-snug">
-                              The workspace keeps a <span className="font-semibold">people list</span> (roster) separate from accounts. Choosing someone here only connects <span className="font-semibold">this email</span> to that list row — it is not their user id.
-                            </p>
-                          </div>
-                          <div className="space-y-1">
-                            <label className="text-[10px] font-bold uppercase text-stone-400">Name on workspace list (optional)</label>
-                            <input
-                              type="text"
-                              placeholder="e.g. Sam Chen (creates list row if you did not pick one above)"
-                              className="control-input py-1.5 text-xs w-full"
-                              value={pendingProvisionDisplayNames[req.id] || ''}
-                              onChange={e =>
-                                setPendingProvisionDisplayNames(prev => ({
-                                  ...prev,
-                                  [req.id]: e.target.value,
-                                }))
-                              }
-                            />
-                          </div>
-                          <div className="flex gap-2">
-                            <button onClick={() => void reviewAccessRequest(req, 'approved')} disabled={busyRequestId === req.id} className="action-btn-primary flex-1 h-8 text-xs justify-center">Approve</button>
-                            <button onClick={() => void reviewAccessRequest(req, 'rejected')} disabled={busyRequestId === req.id} className="flex-1 h-8 rounded-xl border border-stone-200 dark:border-stone-700 text-xs font-bold text-stone-500 hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors">Reject</button>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                    {requestsNotice && <p className="text-[10px] text-stone-500 italic">{requestsNotice}</p>}
-                  </div>
                 </div>
               )}
 

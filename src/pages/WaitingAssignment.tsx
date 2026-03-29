@@ -31,7 +31,7 @@ export default function WaitingAssignment() {
             <div className="text-sm">
               <p className="font-medium text-stone-900 dark:text-stone-100">Next Steps</p>
               <p className="mt-1 text-stone-500 dark:text-stone-400">
-                Ask your group manager to add you to a workspace. You’ll be able to use the app once access is granted.
+                {LABELS.states.awaitingAccessNextSteps}
               </p>
             </div>
           </div>
@@ -67,7 +67,7 @@ export default function WaitingAssignment() {
           </button>
         </div>
         
-        <p className="text-center text-xs text-stone-400">You can use the app after a workspace is assigned to you.</p>
+        <p className="text-center text-xs text-stone-400">{LABELS.states.awaitingAccessFooter}</p>
       </div>
     </div>
   );

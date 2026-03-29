@@ -19,6 +19,10 @@ export const LABELS = {
 	states: {
 		noWorkspace: 'No workspace selected',
 		awaitingAccess: 'You need workspace access',
+		/** Shown on the waiting screen — avoid “group manager” alone; in-app that label means cluster operator, not the person who grants org access. */
+		awaitingAccessNextSteps:
+			'Ask a workspace admin or group admin to add you under Settings → Access (Add existing account). Then tap Check status below.',
+		awaitingAccessFooter: 'You can use the app after a workspace is assigned to your account.',
 	},
 	/**
 	 * Keep these distinct from each other and from Settings → Export → Audit trail (exportable `audit_events`).
