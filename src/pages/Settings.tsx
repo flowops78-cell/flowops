@@ -102,7 +102,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     entities: rawEntities,
     activities: rawActivities,
     records: rawRecords,
-    rosterProfiles: rawRosterProfiles,
     activityLogs: rawActivityLogs,
     systemEvents: rawSystemEvents,
     availableOrgs,
@@ -114,7 +113,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const entities = rawEntities ?? [];
   const activities = rawActivities ?? [];
   const records = rawRecords ?? [];
-  const rosterProfiles = rawRosterProfiles ?? [];
   const activityLogs = rawActivityLogs ?? [];
   const systemEvents = rawSystemEvents ?? [];
 
@@ -218,9 +216,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [requestsNoticeLoginValue, setRequestsNoticeLoginValue] = React.useState<string | null>(null);
   const [requestsNoticeCopied, setRequestsNoticeCopied] = React.useState<'login' | null>(null);
   const [busyRequestId, setBusyRequestId] = React.useState<string | null>(null);
-  /** Maps access_request id → `team_members.id` (workspace roster profile row), not auth user id. */
-  const [pendingRosterRowIds, setPendingRosterRowIds] = React.useState<Record<string, string>>({});
-  /** Optional roster display name: creates a new roster profile if none selected; else can override when linking. */
+  /** Optional `organization_memberships.display_name` when approving access. */
   const [pendingProvisionDisplayNames, setPendingProvisionDisplayNames] = React.useState<Record<string, string>>({});
   const [pendingPasswords, setPendingPasswords] = React.useState<Record<string, string>>({});
   const [pendingApprovedRoles, setPendingApprovedRoles] = React.useState<Record<string, DbRole>>({});
@@ -329,7 +325,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     const ok = await confirm({
       title: 'Clear all operational data?',
       message:
-        'This removes activities, entities, records, team roster and operator sessions, expenses, adjustment requests, collaboration profiles, and channel movements. This cannot be undone.',
+        'This removes activities, entities, records, operator sessions, expenses, adjustment requests, collaboration profiles, and channel movements. This cannot be undone.',
       danger: true,
       confirmLabel: 'Clear data',
     });
@@ -358,7 +354,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       await clearActivity('operator_activities');
       await clearActivity('activities');
       await clearActivity('audit_events');
-      await clearActivity('team_members');
       await clearActivity('entities');
       await clearActivity('collaborations');
       await clearActivity('channels');
@@ -504,13 +499,11 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         return;
       }
 
-      const rosterRowId = pendingRosterRowIds[request.id]?.trim() || '';
       const displayNameOverride = pendingProvisionDisplayNames[request.id]?.trim() || '';
 
       const { data, error } = await invokeSafe<ProvisionResult>('provision-user', {
         access_request_id: request.id,
-        roster_row_id: rosterRowId || undefined,
-        roster_display_name: displayNameOverride || undefined,
+        display_name: displayNameOverride || undefined,
         password: initialPassword,
         approved_role: pendingApprovedRoles[request.id] || request.requested_role,
       });
@@ -525,11 +518,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       await fetchAccessRequests();
       setBusyRequestId(null);
       setPendingPasswords(prev => {
-        const next = { ...prev };
-        delete next[request.id];
-        return next;
-      });
-      setPendingRosterRowIds(prev => {
         const next = { ...prev };
         delete next[request.id];
         return next;
@@ -570,11 +558,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     if (status === 'rejected') {
       setRequestsNotice('Request rejected.');
       notify({ type: 'info', message: 'Request rejected.' });
-      setPendingRosterRowIds(prev => {
-        const next = { ...prev };
-        delete next[request.id];
-        return next;
-      });
       setPendingProvisionDisplayNames(prev => {
         const next = { ...prev };
         delete next[request.id];
@@ -1148,36 +1131,10 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                         onChange={e => setPendingPasswords(prev => ({ ...prev, [req.id]: e.target.value }))}
                       />
                       <div className="space-y-1">
-                        <label className="text-[10px] font-bold uppercase text-stone-400">Workspace roster profile (optional)</label>
-                        <select
-                          className="control-input py-1.5 text-xs w-full"
-                          value={pendingRosterRowIds[req.id] || ''}
-                          onChange={e =>
-                            setPendingRosterRowIds(prev => ({
-                              ...prev,
-                              [req.id]: e.target.value,
-                            }))
-                          }
-                        >
-                          <option value="">New profile — set display name below (recommended if they are not on the list yet)</option>
-                          {rosterProfiles
-                            .filter(tm => tm.org_id === activeOrgId)
-                            .map(tm => (
-                              <option key={tm.id} value={tm.id}>
-                                {tm.name}
-                                {tm.user_id ? ' · already has a sign-in' : ' · no sign-in yet'}
-                              </option>
-                            ))}
-                        </select>
-                        <p className="text-[9px] text-stone-500 dark:text-stone-400 leading-snug">
-                          The workspace keeps a <span className="font-semibold">people list</span> (roster) separate from accounts. Choosing someone here only connects <span className="font-semibold">this email</span> to that list row — it is not their user id.
-                        </p>
-                      </div>
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold uppercase text-stone-400">Name on workspace list (optional)</label>
+                        <label className="text-[10px] font-bold uppercase text-stone-400">Display name (optional)</label>
                         <input
                           type="text"
-                          placeholder="e.g. Sam Chen (creates list row if you did not pick one above)"
+                          placeholder="e.g. Sam Chen — shown in Members and activity pickers"
                           className="control-input py-1.5 text-xs w-full"
                           value={pendingProvisionDisplayNames[req.id] || ''}
                           onChange={e =>

@@ -9,8 +9,8 @@ export const DATA_SELECT = {
     'id, org_id, label, date, start_time, status, channel_label, assigned_user_id, activity_mode, created_at, updated_at',
   records:
     'id, org_id, activity_id, entity_id, direction, status, unit_amount, transfer_group_id, notes, channel_label, target_entity_id, position_id, sort_order, left_at, created_at, updated_at',
-  /** `public.team_members` — roster profiles in the app layer. */
-  team_members: 'id, org_id, name, staff_role, user_id, created_at, updated_at',
+  organization_memberships:
+    'id, org_id, user_id, role, status, display_name, is_default_org, created_at, updated_at',
   collaborations:
     'id, org_id, name, collaboration_type, status, participation_factor, overhead_weight_pct, rules, created_at, updated_at',
   channels: 'id, org_id, name, status, notes, created_at, updated_at',

@@ -4,7 +4,7 @@ import {
   Entity,
   Activity,
   ActivityRecord,
-  RosterProfile,
+  WorkspaceMember,
   Collaboration,
   SystemEvent,
   Channel,
@@ -43,7 +43,7 @@ interface DataContextType {
   auditOrgs: AuditOrgIntegrity[];
   auditChannels: AuditChannelIntegrity[];
   auditAnomalies: AuditAnomaly[];
-  rosterProfiles: RosterProfile[];
+  workspaceMembers: WorkspaceMember[];
   collaborations: Collaboration[];
   channels: Channel[];
   systemEvents: SystemEvent[];
@@ -82,10 +82,6 @@ interface DataContextType {
   addChannelRecord: (data: any) => Promise<void>;
   transferUnits: (data: any) => Promise<void>;
 
-  addRosterProfile: (data: any) => Promise<void>;
-  updateRosterProfile: (member: any) => Promise<void>;
-  deleteRosterProfile: (id: string) => Promise<void>;
-
   addCollaboration: (data: any) => Promise<string>;
   updateCollaboration: (collab: any) => Promise<void>;
   deleteCollaboration: (id: string) => Promise<void>;
@@ -109,7 +105,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [auditOrgs, setAuditOrgs] = useState<AuditOrgIntegrity[]>([]);
   const [auditChannels, setAuditChannels] = useState<AuditChannelIntegrity[]>([]);
   const [auditAnomalies, setAuditAnomalies] = useState<AuditAnomaly[]>([]);
-  const [rosterProfiles, setRosterProfiles] = useState<RosterProfile[]>([]);
+  const [workspaceMembers, setWorkspaceMembers] = useState<WorkspaceMember[]>([]);
   const [collaborations, setCollaborations] = useState<Collaboration[]>([]);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [systemEvents, setSystemEvents] = useState<SystemEvent[]>([]);
@@ -140,7 +136,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setAuditOrgs([]);
     setAuditChannels([]);
     setAuditAnomalies([]);
-    setRosterProfiles([]);
+    setWorkspaceMembers([]);
     setCollaborations([]);
     setChannels([]);
     setSystemEvents([]);
@@ -278,7 +274,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         supabase.from('entities').select(DATA_SELECT.entities).eq('org_id', orgSnapshot).order('name'),
         supabase.from('activities').select(DATA_SELECT.activities).eq('org_id', orgSnapshot).order('date', { ascending: false }),
         supabase.from('records').select(DATA_SELECT.records).eq('org_id', orgSnapshot).order('created_at', { ascending: false }),
-        supabase.from('team_members').select(DATA_SELECT.team_members).eq('org_id', orgSnapshot).order('name'),
+        supabase
+          .from('organization_memberships')
+          .select(DATA_SELECT.organization_memberships)
+          .eq('org_id', orgSnapshot)
+          .eq('status', 'active')
+          .order('display_name', { ascending: true }),
         supabase.from('collaborations').select(DATA_SELECT.collaborations).eq('org_id', orgSnapshot).order('name'),
         supabase.from('channels').select(DATA_SELECT.channels).eq('org_id', orgSnapshot).order('name'),
         supabase.from('audit_events').select(DATA_SELECT.audit_events).eq('org_id', orgSnapshot).order('created_at', { ascending: false }).limit(100),
@@ -307,7 +308,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (eRes.data) setEntities(eRes.data);
       if (aRes.data) setActivities(aRes.data);
       if (rRes.data) setRecords(rRes.data);
-      if (tRes.data) setRosterProfiles(tRes.data.map((m: any) => ({ ...m, role: m.staff_role })));
+      if (tRes.data) {
+        setWorkspaceMembers(
+          (tRes.data as any[]).map((m) => ({
+            id: m.id,
+            org_id: m.org_id,
+            user_id: m.user_id,
+            role: dbRoleToAppRole(m.role),
+            status: m.status,
+            display_name: m.display_name ?? null,
+            created_at: m.created_at,
+            updated_at: m.updated_at,
+          })),
+        );
+      }
       if (cRes.data) {
         setCollaborations(
           cRes.data.map((c: any) => ({ ...c, total_number: c.total_number ?? 0 })),
@@ -780,15 +794,66 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // ─── Operator activity log mutations ─────────────────────────────────────
   const addActivityLog = async (data: any) => {
     const orgId = requireOrgScope();
-    const key = `addLog:${orgId}:${user?.id}`;
+    const targetActorId = typeof data.actor_user_id === 'string' ? data.actor_user_id.trim() : '';
+    const key = `addLog:${orgId}:${targetActorId || user?.id}`;
     return withInflight(key, async () => {
       const { data: { user: authUser } } = await supabase!.auth.getUser();
       if (!authUser) throw new Error('Not authenticated');
+
+      let actorUserId = authUser.id;
+      let actorRole = (data.actor_role as string | undefined) || 'operator';
+      let actorLabel = (data.actor_label as string | undefined) || authUser.email || '';
+
+      if (targetActorId && targetActorId !== authUser.id) {
+        const { data: callerMem, error: callerErr } = await supabase!
+          .from('organization_memberships')
+          .select('role')
+          .eq('org_id', orgId)
+          .eq('user_id', authUser.id)
+          .eq('status', 'active')
+          .maybeSingle();
+        if (callerErr) throw callerErr;
+
+        let canAttributeOther = callerMem?.role === 'admin';
+        if (!canAttributeOther) {
+          const { data: orgRow } = await supabase!.from('organizations').select('cluster_id').eq('id', orgId).maybeSingle();
+          if (orgRow?.cluster_id) {
+            const { data: cm } = await supabase!
+              .from('cluster_memberships')
+              .select('role')
+              .eq('cluster_id', orgRow.cluster_id)
+              .eq('user_id', authUser.id)
+              .maybeSingle();
+            canAttributeOther = cm?.role === 'cluster_admin';
+          }
+        }
+        if (!canAttributeOther) {
+          throw new Error('Only workspace or group admins can open an operator log for another member.');
+        }
+        const { data: targetMem, error: targetErr } = await supabase!
+          .from('organization_memberships')
+          .select('role, display_name')
+          .eq('org_id', orgId)
+          .eq('user_id', targetActorId)
+          .eq('status', 'active')
+          .maybeSingle();
+        if (targetErr) throw targetErr;
+        if (!targetMem) {
+          throw new Error('Selected user is not an active member of this workspace.');
+        }
+        actorUserId = targetActorId;
+        actorRole = (data.actor_role as string | undefined) || targetMem.role || 'operator';
+        actorLabel =
+          (data.actor_label as string | undefined) ||
+          (targetMem.display_name as string | undefined)?.trim() ||
+          targetActorId;
+      }
+
       const row: Record<string, unknown> = {
         org_id: orgId,
-        actor_user_id: authUser.id,
-        actor_role: data.actor_role || 'operator',
-        actor_label: data.actor_label || authUser.email,
+        actor_user_id: actorUserId,
+        actor_role: actorRole,
+        actor_label: actorLabel,
         started_at: new Date().toISOString(),
         last_active_at: new Date().toISOString(),
         is_active: true,
@@ -884,60 +949,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         target_note: data.to_note || `Transfer from ${data.from_entity_name || data.from_entity_id}`,
       });
       await refreshRecordsAndBalances(orgId);
-    });
-  };
-
-  // ─── Roster profile mutations (`team_members`; optimistic local update) ──
-  const addRosterProfile = async (data: any) => {
-    const orgId = requireOrgScope();
-    const key = `addMember:${orgId}:${String(data.name).toLowerCase()}`;
-    return withInflight(key, async () => {
-      const { data: row, error } = await supabase!
-        .from('team_members')
-        .insert([{ org_id: orgId, name: data.name, staff_role: data.role, user_id: data.user_id || null }])
-        .select('*')
-        .single();
-      if (error) throw error;
-      setRosterProfiles(prev => [...prev, { ...row, role: row.staff_role }]);
-    });
-  };
-
-  const updateRosterProfile = async (member: any) => {
-    return withInflight(`updateMember:${member.id}`, async () => {
-      const { data: row, error } = await supabase!
-        .from('team_members')
-        .update({ name: member.name, staff_role: member.role || member.staff_role, user_id: member.user_id })
-        .eq('id', member.id)
-        .select('*')
-        .single();
-      if (error) throw error;
-      if (row) setRosterProfiles(prev => prev.map(m => m.id === member.id ? { ...row, role: row.staff_role } : m));
-    });
-  };
-
-  const deleteRosterProfile = async (id: string) => {
-    return withInflight(`deleteMember:${id}`, async () => {
-      const orgId = requireOrgScope();
-
-      const { data: row, error: fetchError } = await supabase!
-        .from('team_members')
-        .select('user_id')
-        .eq('id', id)
-        .eq('org_id', orgId)
-        .maybeSingle();
-      if (fetchError) throw fetchError;
-
-      if (row?.user_id) {
-        const { error: logsError } = await supabase!.from('operator_activities')
-          .delete()
-          .eq('org_id', orgId)
-          .eq('actor_user_id', row.user_id);
-        if (logsError) throw logsError;
-      }
-
-      const { error } = await supabase!.from('team_members').delete().eq('id', id);
-      if (error) throw error;
-      setRosterProfiles(prev => prev.filter(m => m.id !== id));
     });
   };
 
@@ -1122,7 +1133,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     auditOrgs,
     auditChannels,
     auditAnomalies,
-    rosterProfiles,
+    workspaceMembers,
     collaborations,
     channels,
     systemEvents,
@@ -1149,9 +1160,6 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     requestAdjustment,
     addChannelRecord,
     transferUnits,
-    addRosterProfile,
-    updateRosterProfile,
-    deleteRosterProfile,
     addCollaboration,
     updateCollaboration,
     deleteCollaboration,

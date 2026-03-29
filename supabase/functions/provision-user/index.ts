@@ -24,39 +24,28 @@ type AccessRequestRow = {
 
 type ProvisionPayload = {
   access_request_id: string;
-  /**
-   * Existing `team_members.id` (workspace roster profile row). Links this row to the new sign-in by setting `user_id`.
-   * Not `auth.users.id`.
-   */
-  roster_row_id?: string;
-  /**
-   * Display name for the roster row: when creating a new row (no `roster_row_id`), or override when linking.
-   * Not the same as `auth.users.id`.
-   */
+  /** Workspace member list label (`organization_memberships.display_name`). */
+  display_name?: string;
+  /** @deprecated Use `display_name`. */
   roster_display_name?: string;
-  /** @deprecated Use `roster_row_id` (same as `team_members.id`). */
+  /** @deprecated No longer used; roster / `team_members` removed. */
+  roster_row_id?: string;
+  /** @deprecated */
   team_member_row_id?: string;
-  /** @deprecated Use `roster_display_name`. */
+  /** @deprecated Use `display_name`. */
   team_member_name?: string;
-  /** @deprecated Use `roster_row_id`. */
+  /** @deprecated */
   team_member_id?: string;
-  /** @deprecated Use `roster_row_id`. */
+  /** @deprecated */
   teamMember_id?: string;
   password?: string;
   approved_role?: DbRole;
   access_token?: string;
 };
 
-const resolveRosterFields = (payload: ProvisionPayload) => {
-  const rosterRowId = (
-    payload.roster_row_id ??
-    payload.team_member_row_id ??
-    payload.team_member_id ??
-    payload.teamMember_id ??
-    ''
-  ).trim();
-  const newRowDisplayName = (payload.roster_display_name ?? payload.team_member_name ?? '').trim();
-  return { rosterRowId, newRowDisplayName };
+const resolveMemberDisplayName = (payload: ProvisionPayload) => {
+  const name = (payload.display_name ?? payload.roster_display_name ?? payload.team_member_name ?? '').trim();
+  return name;
 };
 
 const json = (status: number, body: Record<string, unknown>, origin: string | null) =>
@@ -214,7 +203,9 @@ Deno.serve(async (request: Request) => {
 
   if (!provisionedUserId) return json(500, { error: 'User resolution failed.' }, origin);
 
-  const { rosterRowId, newRowDisplayName } = resolveRosterFields(payload);
+  const displayNameFromPayload = resolveMemberDisplayName(payload);
+  const membershipDisplayName =
+    displayNameFromPayload || resolvedLoginId.split('@')[0] || resolvedLoginId;
 
   // 2. Database Sync
   await adminClient.from('profiles').upsert({ 
@@ -227,73 +218,10 @@ Deno.serve(async (request: Request) => {
   await ensureOrgMembership(adminClient, provisionedUserId, targetOrgId, resolvedRole, {
     isDefaultOrg: true,
     status: 'active',
+    displayName: membershipDisplayName,
   });
 
-  // 3. Roster (`team_members`): row id is not auth user id — either link an existing row or create one.
-  if (rosterRowId) {
-    const { data: roster, error: rosterErr } = await adminClient
-      .from('team_members')
-      .select('id, user_id, name, org_id')
-      .eq('id', rosterRowId)
-      .eq('org_id', targetOrgId)
-      .maybeSingle();
-
-    if (rosterErr) {
-      throw new Error(`Unable to load roster row: ${rosterErr.message}`);
-    }
-    if (!roster) {
-      return json(400, { error: 'Roster row not found in this workspace.' }, origin);
-    }
-    if (roster.user_id && roster.user_id !== provisionedUserId) {
-      return json(409, { error: 'That roster entry is already linked to a different account.' }, origin);
-    }
-
-    const { data: otherRowForUser } = await adminClient
-      .from('team_members')
-      .select('id')
-      .eq('org_id', targetOrgId)
-      .eq('user_id', provisionedUserId)
-      .maybeSingle();
-
-    if (otherRowForUser && otherRowForUser.id !== roster.id) {
-      return json(409, {
-        error:
-          'This login already has another roster row in this workspace. Resolve duplicates before linking.',
-      }, origin);
-    }
-
-    const displayName =
-      newRowDisplayName ||
-      (roster.name ?? '').trim() ||
-      resolvedLoginId.split('@')[0];
-
-    const { error: linkErr } = await adminClient
-      .from('team_members')
-      .update({
-        user_id: provisionedUserId,
-        name: displayName,
-        staff_role: resolvedRole,
-      })
-      .eq('id', roster.id)
-      .eq('org_id', targetOrgId);
-
-    if (linkErr) {
-      throw new Error(`Unable to link roster row: ${linkErr.message}`);
-    }
-  } else if (newRowDisplayName) {
-    const { error: upsertErr } = await adminClient.from('team_members').upsert({
-      org_id: targetOrgId,
-      user_id: provisionedUserId,
-      name: newRowDisplayName,
-      staff_role: resolvedRole,
-    }, { onConflict: 'org_id,user_id' });
-
-    if (upsertErr) {
-      throw new Error(`Unable to create roster row: ${upsertErr.message}`);
-    }
-  }
-
-  // 4. Resolve Request
+  // 3. Resolve Request
   await adminClient.from('access_requests').update({
     status: 'approved',
     reviewed_by: callerUserId,

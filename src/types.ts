@@ -150,19 +150,14 @@ export interface AuditAnomaly {
   detail: string;
 }
 
-/** Workspace people row (`public.team_members`). UI: roster profile; distinct from auth user until `user_id` is set. */
-export interface RosterProfile {
+/** Active workspace accounts (`public.organization_memberships` + `display_name`). */
+export interface WorkspaceMember {
   id: string;
   org_id: string;
-  name: string;
-  staff_role: string;
-  role?: string;
-  status?: 'active' | 'inactive';
-  user_id?: string;
-  arrangement_type?: 'hourly' | 'fixed' | 'percentage';
-  overhead_weight?: number;
-  service_rate?: number;
-  tags?: string[];
+  user_id: string;
+  role: AppRole;
+  status: OrganizationMembership['status'];
+  display_name: string | null;
   created_at?: string;
   updated_at?: string;
 }

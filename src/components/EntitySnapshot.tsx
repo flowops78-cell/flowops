@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { X, Plus, Tag, User, Circle, Clock, Award, Activity } from 'lucide-react';
-import { Entity, RosterProfile } from '../types';
+import { X, Plus, Tag, User } from 'lucide-react';
+import { Entity } from '../types';
 import { formatValue, formatDate } from '../lib/utils';
 import { cn } from '../lib/utils';
 import { useLabels } from '../lib/labels';
 
 interface EntitySnapshotProps {
-  entity: Entity | RosterProfile;
-  type: 'entity' | 'rosterProfile';
+  entity: Entity;
+  type?: 'entity';
   onClose: () => void;
   onUpdateTags: (id: string, tags: string[]) => void;
   /** Applied ledger net only (increases − decreases), excluding `starting_total`. Must match `entity_balances.net − entity.starting_total`. */
@@ -15,7 +15,7 @@ interface EntitySnapshotProps {
   variant?: 'modal' | 'sidebar';
 }
 
-export default function EntitySnapshot({ entity, type, onClose, onUpdateTags, activityNet, variant = 'modal' }: EntitySnapshotProps) {
+export default function EntitySnapshot({ entity, type = 'entity', onClose, onUpdateTags, activityNet, variant = 'modal' }: EntitySnapshotProps) {
   const [newTag, setNewTag] = useState('');
   const [isAddingTag, setIsAddingTag] = useState(false);
   const { tx } = useLabels();
@@ -61,53 +61,36 @@ export default function EntitySnapshot({ entity, type, onClose, onUpdateTags, ac
       <div className="pt-12 pb-6 px-6 text-center flex-1 overflow-y-auto">
         <h2 className="text-xl font-bold text-stone-900 dark:text-stone-100">{entity.name}</h2>
         <p className="text-sm text-stone-500 dark:text-stone-400 capitalize flex items-center justify-center gap-1 mt-1">
-          {type === 'entity' ? <User size={12} className="mr-1" /> : <Activity size={12} className="mr-1" />}
-          {type === 'entity' ? 'Entity' : (entity as RosterProfile).role}
+          <User size={12} className="mr-1" />
+          Entity
         </p>
 
         {/* Stats Grid */}
         <div className="grid grid-cols-2 gap-4 mt-6">
-          {type === 'entity' ? (
-            <>
-              <div className="bg-stone-50 dark:bg-stone-800 p-3 rounded-xl border border-stone-200 dark:border-stone-700">
-                <p className="text-[10px] text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-1">Genesis</p>
-                <p className="text-sm font-mono font-medium text-stone-900 dark:text-stone-100">
-                  {formatValue((entity as Entity).starting_total || 0)}
-                </p>
-              </div>
-              <div className="bg-stone-50 dark:bg-stone-800 p-3 rounded-xl border border-stone-200 dark:border-stone-700">
-                <p className="text-[10px] text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-1">Ledger Net</p>
-                <p className={`text-sm font-mono font-medium ${activityNet! >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-                  {activityNet! >= 0 ? '+' : ''}{formatValue(activityNet || 0)}
-                </p>
-              </div>
-              {activityNet !== undefined && (
-                <div className="col-span-2 bg-stone-900 dark:bg-stone-100 p-4 rounded-xl shadow-inner mt-2">
-                  <p className="text-[10px] text-stone-400 dark:text-stone-500 uppercase tracking-widest mb-1 font-bold">Total Economic Balance</p>
-                  <div className="flex items-center justify-center gap-2">
-                      <span className={`text-2xl font-mono font-black ${((entity as Entity).starting_total || 0) + activityNet >= 0 ? 'text-emerald-400 dark:text-emerald-600' : 'text-rose-400 dark:text-rose-600'}`}>
-                        {formatValue(((entity as Entity).starting_total || 0) + activityNet)}
-                      </span>
-                  </div>
+          <>
+            <div className="bg-stone-50 dark:bg-stone-800 p-3 rounded-xl border border-stone-200 dark:border-stone-700">
+              <p className="text-[10px] text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-1">Genesis</p>
+              <p className="text-sm font-mono font-medium text-stone-900 dark:text-stone-100">
+                {formatValue(entity.starting_total || 0)}
+              </p>
+            </div>
+            <div className="bg-stone-50 dark:bg-stone-800 p-3 rounded-xl border border-stone-200 dark:border-stone-700">
+              <p className="text-[10px] text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-1">Ledger Net</p>
+              <p className={`text-sm font-mono font-medium ${activityNet! >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                {activityNet! >= 0 ? '+' : ''}{formatValue(activityNet || 0)}
+              </p>
+            </div>
+            {activityNet !== undefined && (
+              <div className="col-span-2 bg-stone-900 dark:bg-stone-100 p-4 rounded-xl shadow-inner mt-2">
+                <p className="text-[10px] text-stone-400 dark:text-stone-500 uppercase tracking-widest mb-1 font-bold">Total Economic Balance</p>
+                <div className="flex items-center justify-center gap-2">
+                    <span className={`text-2xl font-mono font-black ${(entity.starting_total || 0) + activityNet >= 0 ? 'text-emerald-400 dark:text-emerald-600' : 'text-rose-400 dark:text-rose-600'}`}>
+                      {formatValue((entity.starting_total || 0) + activityNet)}
+                    </span>
                 </div>
-              )}
-            </>
-          ) : (
-            <>
-              <div className="bg-stone-50 dark:bg-stone-800 p-3 rounded-xl">
-                <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Status</p>
-                <p className={`text-sm font-medium mt-1 capitalize ${(entity as RosterProfile).status === 'active' ? 'text-emerald-600' : 'text-stone-500'}`}>
-                  {(entity as RosterProfile).status}
-                </p>
               </div>
-              <div className="bg-stone-50 dark:bg-stone-800 p-3 rounded-xl">
-                <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-wider">Arrangement</p>
-                <p className="text-sm font-medium text-stone-900 dark:text-stone-100 mt-1 capitalize">
-                  {(entity as RosterProfile).arrangement_type || 'None'}
-                </p>
-              </div>
-            </>
-          )}
+            )}
+          </>
         </div>
 
         {/* Tags Section */}
@@ -167,18 +150,6 @@ export default function EntitySnapshot({ entity, type, onClose, onUpdateTags, ac
           )}
         </div>
 
-        {/* Contact Info */}
-        {type === 'rosterProfile' && (entity as RosterProfile).user_id && (
-          <div className="mt-6 pt-6 border-t border-stone-100 dark:border-stone-800 text-left">
-            <h3 className="text-xs font-medium text-stone-500 dark:text-stone-400 uppercase tracking-wider mb-3">Linked sign-in</h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-stone-500 dark:text-stone-400">Account user id</span>
-                <span className="text-stone-900 dark:text-stone-100 font-mono">{(entity as RosterProfile).user_id}</span>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   );

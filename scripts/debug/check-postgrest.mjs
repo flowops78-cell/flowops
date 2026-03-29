@@ -36,7 +36,7 @@ const resources = [
   { name: 'organizations' },
   { name: 'channels' },
   { name: 'collaborations' },
-  { name: 'team_members' },
+  { name: 'organization_memberships' },
   { name: 'audit_events' },
   { name: 'operator_activities' },
   { name: 'entity_balances' },

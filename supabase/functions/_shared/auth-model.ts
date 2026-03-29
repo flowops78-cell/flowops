@@ -247,10 +247,16 @@ export const ensureOrgMembership = async (
   userId: string,
   orgId: string,
   role: DbRole,
-  options?: { isDefaultOrg?: boolean; status?: 'active' | 'invited' | 'disabled' },
+  options?: {
+    isDefaultOrg?: boolean;
+    status?: 'active' | 'invited' | 'disabled';
+    /** Shown in workspace member lists; optional on upsert. */
+    displayName?: string | null;
+  },
 ) => {
   const desiredStatus = options?.status ?? 'active';
   const desiredDefault = options?.isDefaultOrg ?? false;
+  const displayNameTrimmed = (options?.displayName ?? '').trim();
 
   const { data: existingMembership, error: lookupError } = await adminClient
     .from('organization_memberships')
@@ -265,15 +271,20 @@ export const ensureOrgMembership = async (
 
   const nextRole = strongestRole(existingMembership?.role, role);
 
+  const membershipRow: Record<string, unknown> = {
+    user_id: userId,
+    org_id: orgId,
+    role: nextRole,
+    status: desiredStatus,
+    is_default_org: desiredDefault || existingMembership?.is_default_org === true,
+  };
+  if (displayNameTrimmed.length > 0) {
+    membershipRow.display_name = displayNameTrimmed;
+  }
+
   const { error: upsertError } = await adminClient
     .from('organization_memberships')
-    .upsert({
-      user_id: userId,
-      org_id: orgId,
-      role: nextRole,
-      status: desiredStatus,
-      is_default_org: desiredDefault || existingMembership?.is_default_org === true,
-    }, { onConflict: 'user_id,org_id' });
+    .upsert(membershipRow, { onConflict: 'user_id,org_id' });
 
   if (upsertError) {
     throw new Error(`Unable to sync organization membership: ${upsertError.message}`);

@@ -47,7 +47,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { to: '/entities', icon: <EntitiesIcon size={18} />, label: 'Entities', hint: 'Entity list and detailed profiles' },
         { to: '/channels', icon: <Circle size={18} />, label: 'Channels', hint: 'Channel tracking and settings overview' },
         { to: '/collaborations', icon: <Handshake size={18} />, label: 'Network', hint: 'Network profiles and linked entities' },
-        { to: '/roster', icon: <UserCog size={18} />, label: 'Roster', hint: 'Workspace people list, roles, and operator sessions' },
+        { to: '/roster', icon: <UserCog size={18} />, label: 'Members', hint: 'Workspace accounts and operator sessions' },
         { to: '/settings', icon: <Settings size={18} />, label: 'Settings', hint: 'System preferences and access control' },
 
       ],
@@ -60,7 +60,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       label: '',
       items: [
         { to: '/activity', icon: <History size={18} />, label: 'Activities', hint: 'Activity records and management' },
-        { to: '/roster', icon: <UserCog size={18} />, label: 'Roster', hint: 'Workspace people list, roles, and operator sessions' },
+        { to: '/roster', icon: <UserCog size={18} />, label: 'Members', hint: 'Workspace accounts and operator sessions' },
       ],
     },
   ];
@@ -222,7 +222,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           if (normalizedKey === 'm') {
             event.preventDefault();
             clearShortcutPrefix();
-            navigate('/roster?action=add-roster-profile');
+            navigate('/settings#settings-grant-access');
             return;
           }
 

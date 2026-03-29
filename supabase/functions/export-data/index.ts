@@ -9,7 +9,15 @@ const SB_SERVICE_ROLE_KEY =
   Deno.env.get('SB_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
 type ExportScope = 'cluster' | 'org';
-type ExportDataset = 'entities' | 'activities' | 'records' | 'team_members' | 'collaborations' | 'channels' | 'audit_events' | 'all';
+type ExportDataset =
+  | 'entities'
+  | 'activities'
+  | 'records'
+  | 'organization_memberships'
+  | 'collaborations'
+  | 'channels'
+  | 'audit_events'
+  | 'all';
 
 interface ExportPayload {
   scope: ExportScope;
@@ -52,7 +60,15 @@ async function fetchDataset(
   clusterOrgIds: string[],
 ): Promise<Record<string, { rows: unknown[]; count: number }>> {
   const tables = dataset === 'all'
-    ? ['entities', 'activities', 'records', 'team_members', 'collaborations', 'channels', 'audit_events']
+    ? [
+      'entities',
+      'activities',
+      'records',
+      'organization_memberships',
+      'collaborations',
+      'channels',
+      'audit_events',
+    ]
     : [dataset];
 
   const result: Record<string, { rows: unknown[]; count: number }> = {};

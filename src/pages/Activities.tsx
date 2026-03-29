@@ -304,13 +304,13 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               {canManageImpact && (
                 <button
                   type="button"
-                  onClick={() => navigate('/roster?action=add-roster-profile')}
+                  onClick={() => navigate('/settings#settings-grant-access')}
                   className="action-btn-secondary w-full sm:w-auto h-11 border-stone-200 dark:border-stone-700"
-                  title="Add someone to the workspace roster"
-                  aria-label="Add to roster"
+                  title="Invite someone to this workspace"
+                  aria-label="Invite member"
                 >
                   <UserCog size={16} className="shrink-0" aria-hidden />
-                  Add to roster
+                  Invite member
                 </button>
               )}
               <button

@@ -30,7 +30,7 @@ const shortcutGroups: Array<{ title: string; items: ShortcutItem[] }> = [
       { keys: 'P', action: 'Entities (admin); operators stay on Activities' },
       { keys: 'C', action: 'Network (admin)' },
       { keys: 'V', action: 'Channels (admin)' },
-      { keys: 'T', action: 'Roster' },
+      { keys: 'T', action: 'Members' },
       { keys: 'S', action: 'Settings (admin)' },
     ],
   },
@@ -53,9 +53,8 @@ const shortcutGroups: Array<{ title: string; items: ShortcutItem[] }> = [
     ],
   },
   {
-    title: 'Roster Page',
+    title: 'Members Page',
     items: [
-      { keys: 'Delete', action: 'Remove selected roster profile' },
       { keys: 'L', action: 'View operator log' },
     ],
   },

@@ -22,7 +22,7 @@ export default function ActivityDetail() {
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
   const navigate = useNavigate();
-  const { activities, records, entities, entityBalances, rosterProfiles, activityLogs, channels, loading, loadingProgress, addEntity, requestAdjustment, addRecord, addActivityLog, endActivityLog, updateRecord, deleteRecord, updateActivity, updateEntity, addChannelRecord, transferUnits } = useData();
+  const { activities, records, entities, entityBalances, workspaceMembers, activityLogs, channels, loading, loadingProgress, addEntity, requestAdjustment, addRecord, addActivityLog, endActivityLog, updateRecord, deleteRecord, updateActivity, updateEntity, addChannelRecord, transferUnits } = useData();
   const { role, canOperateLog, canManageImpact, canAlign } = useAppRole();
   const { notify } = useNotification();
   const { getActionText, tx } = useLabels();
@@ -54,7 +54,7 @@ export default function ActivityDetail() {
   const [didAddEntity, setDidAddEntity] = useState(false);
   const [isAddOptionsOpen, setIsAddOptionsOpen] = useState(false);
   const [isAdvancedOverlayOpen, setIsAdvancedOverlayOpen] = useState(false);
-  const [selectedOperatorProfileId, setSelectedOperatorProfileId] = useState('');
+  const [selectedOperatorUserId, setSelectedOperatorUserId] = useState('');
   const [isUpdatingWorkforce, setIsUpdatingWorkforce] = useState(false);
 
   const [totalRecord, setTotalRecord] = useState<ActivityRecord | null>(null);
@@ -244,7 +244,14 @@ export default function ActivityDetail() {
   const selectedPositionUnit = selectedPositionActivityRecord
     ? entities.find(unit => unit.id === selectedPositionActivityRecord.entity_id) ?? null
     : null;
-  const operators = rosterProfiles.filter(s => s.role === 'operator' || s.role === 'admin');
+  const workspaceMemberLabel = (userId: string) => {
+    const m = workspaceMembers.find((x) => x.user_id === userId);
+    const d = m?.display_name?.trim();
+    if (d) return d;
+    return `${userId.slice(0, 8)}…`;
+  };
+
+  const operators = workspaceMembers.filter((s) => s.role === 'operator' || s.role === 'admin');
   const activityWorkActivitys = activityLogs.filter(log => log.activity_id === activity?.id);
   const activeOperatorLogByUserId = new Map<string, typeof activityLogs[number]>();
   activityWorkActivitys.forEach(log => {
@@ -252,11 +259,7 @@ export default function ActivityDetail() {
       activeOperatorLogByUserId.set(log.actor_user_id ?? '', log);
     }
   });
-  const availableOperators = operators.filter(profile => {
-    const uid = profile.user_id ?? '';
-    if (!uid) return true;
-    return !activeOperatorLogByUserId.has(uid);
-  });
+  const availableOperators = operators.filter((profile) => !activeOperatorLogByUserId.has(profile.user_id));
   const isCompleted = activity?.status === 'completed';
   const isArchived = activity?.status === 'archived';
   const canAddUnits = canOperateLog && activity?.status === 'active';
@@ -511,23 +514,32 @@ export default function ActivityDetail() {
   };
 
   const openOperatorSessionForProfile = async () => {
-    if (!activity || !selectedOperatorProfileId) return;
+    if (!activity || !selectedOperatorUserId) return;
     if (!canManageWorkforce) {
       notify({ type: 'error', message: 'Operator logs can only be updated while this activity is active.' });
       return;
     }
- 
+
+    const target = operators.find((o) => o.user_id === selectedOperatorUserId);
+    if (!target) {
+      notify({ type: 'error', message: 'Selected operator is not in this workspace.' });
+      return;
+    }
+
     try {
       setIsUpdatingWorkforce(true);
       await addActivityLog({
         activity_id: activity.id,
         start_time: new Date().toISOString(),
         status: 'active',
+        actor_user_id: selectedOperatorUserId,
+        actor_label: workspaceMemberLabel(selectedOperatorUserId),
+        actor_role: target.role,
       });
-      setSelectedOperatorProfileId('');
+      setSelectedOperatorUserId('');
       notify({ type: 'success', message: 'Activity log opened.' });
     } catch (error: any) {
-      notify({ type: 'error', message: 'Unable to open activity log.' });
+      notify({ type: 'error', message: error?.message || 'Unable to open activity log.' });
     } finally {
       setIsUpdatingWorkforce(false);
     }
@@ -538,20 +550,16 @@ export default function ActivityDetail() {
       notify({ type: 'error', message: 'Operator logs can only be updated while this activity is active.' });
       return;
     }
-    const profile = rosterProfiles.find(item => item.user_id === operatorUserId);
     const activityLog = activityWorkActivitys.find(item => item.id === logId);
-    if (!activityLog || !profile) return;
+    if (!activityLog) return;
 
     const endTime = new Date().toISOString();
     const startTime = activityLog.start_time ? new Date(activityLog.start_time).getTime() : new Date().getTime();
     const durationHours = Math.max(0, (new Date(endTime).getTime() - startTime) / (1000 * 60 * 60));
-    const pay = profile.arrangement_type === 'hourly' && typeof (profile.overhead_weight ?? profile.service_rate) === 'number'
-      ? durationHours * (profile.overhead_weight ?? profile.service_rate ?? 0)
-      : undefined;
 
     try {
       setIsUpdatingWorkforce(true);
-      await endActivityLog(logId, endTime, durationHours, pay);
+      await endActivityLog(logId, endTime, durationHours, undefined);
       notify({ type: 'success', message: 'Activity log closed.' });
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to close activity log.' });
@@ -1393,7 +1401,9 @@ export default function ActivityDetail() {
                   >
                     <option value="">{tx('Select Operator...')}</option>
                     {operators.map(member => (
-                      <option key={member.id} value={member.id}>{member.name}</option>
+                      <option key={member.user_id} value={member.user_id}>
+                        {workspaceMemberLabel(member.user_id)}
+                      </option>
                     ))}
                   </select>
                 </div>
@@ -1413,19 +1423,21 @@ export default function ActivityDetail() {
                 <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
                   <select
                     className="control-input"
-                    value={selectedOperatorProfileId}
-                    onChange={event => setSelectedOperatorProfileId(event.target.value)}
+                    value={selectedOperatorUserId}
+                    onChange={event => setSelectedOperatorUserId(event.target.value)}
                     disabled={!canManageWorkforce || isUpdatingWorkforce}
                   >
-                    <option value="">Select roster profile…</option>
+                    <option value="">Select workspace member…</option>
                     {availableOperators.map(profile => (
-                      <option key={profile.id} value={profile.id}>{profile.name || 'Unnamed operator'}</option>
+                      <option key={profile.user_id} value={profile.user_id}>
+                        {workspaceMemberLabel(profile.user_id)}
+                      </option>
                     ))}
                   </select>
                   <button
                     type="button"
                     onClick={() => { void openOperatorSessionForProfile(); }}
-                    disabled={!canManageWorkforce || isUpdatingWorkforce || !selectedOperatorProfileId}
+                    disabled={!canManageWorkforce || isUpdatingWorkforce || !selectedOperatorUserId}
                     className="action-btn-primary justify-center"
                   >
                     <Play size={14} />
@@ -1438,8 +1450,10 @@ export default function ActivityDetail() {
                     <p className="text-sm text-stone-500 dark:text-stone-400">{LABELS.workforce.noOperatorLogsYet}</p>
                   )}
                   {activityWorkActivitys.map(activityLog => {
-                    const profile = rosterProfiles.find(item => item.user_id === activityLog.actor_user_id);
-                    const operatorName = profile ? (profile.name || 'Unnamed operator') : (activityLog.actor_label || 'Unknown operator');
+                    const uid = activityLog.actor_user_id ?? '';
+                    const operatorName = uid
+                      ? workspaceMemberLabel(uid)
+                      : (activityLog.actor_label || 'Unknown operator');
                     const windowLabel = `${(activityLog.start_time ? new Date(activityLog.start_time) : new Date()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${activityLog.end_time ? new Date(activityLog.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}`;
 
                     return (

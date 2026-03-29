@@ -19,7 +19,7 @@ FROM (VALUES
   ('organization_memberships'),
   ('channels'),
   ('collaborations'),
-  ('team_members'),
+  ('organization_memberships'),
   ('audit_events'),
   ('operator_activities')
 ) AS t(nm)
