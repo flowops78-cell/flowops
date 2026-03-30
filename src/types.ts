@@ -79,6 +79,8 @@ export interface ActivityRecord {
   transfer_group_id?: string | null;
   target_entity_id?: string | null;
   channel_label?: string;
+  /** Applied activity record that this deferred/pending row was created from (e.g. activity deferred inflow). */
+  source_record_id?: string | null;
   position_id?: number;
   sort_order?: number;
   left_at?: string;
@@ -150,7 +152,7 @@ export interface AuditAnomaly {
   detail: string;
 }
 
-/** Active workspace accounts (`public.organization_memberships` + `display_name`). */
+/** Active workspace accounts (`public.organization_memberships` + `display_name` / `account_email`). */
 export interface WorkspaceMember {
   id: string;
   org_id: string;
@@ -158,6 +160,8 @@ export interface WorkspaceMember {
   role: AppRole;
   status: OrganizationMembership['status'];
   display_name: string | null;
+  /** Copied from auth email for labels when display_name is empty. */
+  account_email: string | null;
   created_at?: string;
   updated_at?: string;
 }

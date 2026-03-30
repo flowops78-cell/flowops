@@ -1,13 +1,24 @@
 -- -------------------------------------------------------------
 -- 00000000000000_init_canonical_schema.sql
--- Single baseline: schema, RLS (no platform_roles), ledger/audit views,
--- entity starting_total + genesis-aware balances, internal patch log.
--- Access = organization_memberships + cluster_admin / cluster_operator on orgs.
+-- Full baseline (squashed 2026-03-29): schema, RLS (no platform_roles),
+-- ledger/audit views, entity starting_total + genesis-aware balances,
+-- roster fields on organization_memberships (no team_members),
+-- operator_activities single-active session + stricter RLS,
+-- records.source_record_id, membership account_email sync trigger.
+--
+-- Previously separate files now folded in (do not re-add as migrations):
+--   20260328140000_post_baseline_alignment.sql
+--   20260329100000_activity_mode_value_only.sql
+--   20260329130000_operator_single_active_session.sql
+--   20260329160000_intra_accounts_drop_team_members.sql
+--   20260329203000_organization_memberships_account_email.sql
+--   20260330120000_organization_memberships_account_email_trigger.sql
+--   20260330180000_records_source_record_id.sql
 --
 -- New project: supabase db reset / db push.
--- If a remote DB recorded migrations you removed locally (e.g. genesis / align
--- patch files), run: supabase migration repair --status reverted <timestamp>
--- for each removed version, then push.
+-- Existing remote DB that already applied the old timestamped migrations:
+--   keep schema_migrations as-is; do not re-run this file on top.
+-- If you removed migration rows locally only, use: supabase migration repair
 -- -------------------------------------------------------------
 
 BEGIN;
@@ -79,6 +90,8 @@ CREATE TABLE IF NOT EXISTS public.organization_memberships (
   role            app_role NOT NULL DEFAULT 'viewer',
   status          text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'invited', 'disabled', 'revoked')),
   is_default_org  boolean NOT NULL DEFAULT false,
+  display_name    text,
+  account_email   text,
   created_at      timestamptz NOT NULL DEFAULT now(),
   updated_at      timestamptz NOT NULL DEFAULT now(),
   UNIQUE (user_id, org_id)
@@ -149,18 +162,9 @@ CREATE TABLE IF NOT EXISTS public.records (
   position_id        integer,
   sort_order         integer,
   left_at            timestamptz,
+  source_record_id   uuid REFERENCES public.records(id) ON DELETE SET NULL,
   created_at         timestamptz NOT NULL DEFAULT now(),
   updated_at         timestamptz NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS public.team_members (
-  id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id      uuid NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
-  name        text NOT NULL,
-  staff_role  text NOT NULL,
-  user_id     uuid REFERENCES auth.users(id) ON DELETE SET NULL,
-  created_at  timestamptz NOT NULL DEFAULT now(),
-  updated_at  timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS public.channels (
@@ -253,6 +257,67 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
+CREATE OR REPLACE FUNCTION public.operator_activities_enforce_single_active()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF TG_OP = 'INSERT' AND NEW.is_active IS TRUE THEN
+    UPDATE public.operator_activities oa
+    SET
+      is_active = FALSE,
+      ended_at = now(),
+      duration_seconds = COALESCE(
+        oa.duration_seconds,
+        GREATEST(
+          0,
+          LEAST(2147483647, FLOOR(EXTRACT(EPOCH FROM (now() - oa.started_at)))::integer)
+        )
+      )
+    WHERE oa.org_id = NEW.org_id
+      AND oa.actor_user_id = NEW.actor_user_id
+      AND oa.is_active IS TRUE;
+  ELSIF TG_OP = 'UPDATE'
+    AND NEW.is_active IS TRUE
+    AND COALESCE(OLD.is_active, FALSE) IS FALSE
+  THEN
+    UPDATE public.operator_activities oa
+    SET
+      is_active = FALSE,
+      ended_at = now(),
+      duration_seconds = COALESCE(
+        oa.duration_seconds,
+        GREATEST(
+          0,
+          LEAST(2147483647, FLOOR(EXTRACT(EPOCH FROM (now() - oa.started_at)))::integer)
+        )
+      )
+    WHERE oa.org_id = NEW.org_id
+      AND oa.actor_user_id = NEW.actor_user_id
+      AND oa.is_active IS TRUE
+      AND oa.id <> NEW.id;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.organization_memberships_sync_account_email()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF NEW.account_email IS NOT NULL AND btrim(NEW.account_email) <> '' THEN
+    RETURN NEW;
+  END IF;
+  SELECT u.email INTO NEW.account_email
+  FROM auth.users u
+  WHERE u.id = NEW.user_id;
+  RETURN NEW;
+END;
+$$;
+
 -- 5. APPLY TRIGGERS
 DO $$
 DECLARE
@@ -276,6 +341,18 @@ BEGIN
   END LOOP;
 END;
 $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_operator_activities_single_active ON public.operator_activities;
+CREATE TRIGGER trg_operator_activities_single_active
+  BEFORE INSERT OR UPDATE ON public.operator_activities
+  FOR EACH ROW
+  EXECUTE FUNCTION public.operator_activities_enforce_single_active();
+
+DROP TRIGGER IF EXISTS trg_organization_memberships_sync_account_email ON public.organization_memberships;
+CREATE TRIGGER trg_organization_memberships_sync_account_email
+  BEFORE INSERT OR UPDATE OF user_id, account_email ON public.organization_memberships
+  FOR EACH ROW
+  EXECUTE FUNCTION public.organization_memberships_sync_account_email();
 
 -- 6. UTILITY FUNCTIONS
 CREATE OR REPLACE FUNCTION public.get_my_org_id()
@@ -389,6 +466,31 @@ AS $$
   );
 $$;
 
+CREATE OR REPLACE FUNCTION public.can_manage_operator_sessions_for_org(target_org uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1
+    FROM public.organization_memberships om
+    WHERE om.org_id = target_org
+      AND om.user_id = auth.uid()
+      AND om.status = 'active'
+      AND om.role = 'admin'
+  )
+  OR EXISTS (
+    SELECT 1
+    FROM public.organizations o
+    JOIN public.cluster_memberships cm ON cm.cluster_id = o.cluster_id
+    WHERE o.id = target_org
+      AND cm.user_id = auth.uid()
+      AND cm.role = 'cluster_admin'
+  );
+$$;
+
 CREATE OR REPLACE FUNCTION public.log_audit_event(
   p_action text,
   p_entity text DEFAULT NULL,
@@ -469,9 +571,8 @@ CREATE INDEX IF NOT EXISTS idx_records_entity_id ON public.records(entity_id);
 CREATE INDEX IF NOT EXISTS idx_records_transfer_group_id ON public.records(transfer_group_id);
 CREATE INDEX IF NOT EXISTS idx_records_activity_position ON public.records(activity_id, position_id);
 CREATE INDEX IF NOT EXISTS idx_records_entity_left_at ON public.records(entity_id, left_at);
-CREATE INDEX IF NOT EXISTS idx_team_members_org_id ON public.team_members(org_id);
-CREATE INDEX IF NOT EXISTS idx_team_members_user_id ON public.team_members(user_id);
-CREATE UNIQUE INDEX IF NOT EXISTS uq_team_members_org_user_id ON public.team_members(org_id, user_id) WHERE user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_records_source_record_id ON public.records(source_record_id)
+  WHERE source_record_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_channels_org_id ON public.channels(org_id);
 CREATE INDEX IF NOT EXISTS idx_channel_records_org_id ON public.channel_records(org_id);
 CREATE INDEX IF NOT EXISTS idx_channel_records_activity_id ON public.channel_records(activity_id);
@@ -479,6 +580,9 @@ CREATE INDEX IF NOT EXISTS idx_channel_records_channel_id ON public.channel_reco
 CREATE INDEX IF NOT EXISTS idx_channel_records_record_id ON public.channel_records(record_id);
 CREATE INDEX IF NOT EXISTS idx_operator_activities_org_id ON public.operator_activities(org_id);
 CREATE INDEX IF NOT EXISTS idx_operator_activities_actor_user_id ON public.operator_activities(actor_user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_operator_activities_one_active_per_org_actor
+  ON public.operator_activities (org_id, actor_user_id)
+  WHERE (is_active IS TRUE);
 CREATE INDEX IF NOT EXISTS idx_audit_events_org_id ON public.audit_events(org_id);
 CREATE INDEX IF NOT EXISTS idx_audit_events_entity_id ON public.audit_events(entity_id);
 CREATE INDEX IF NOT EXISTS idx_access_requests_org_id ON public.access_requests(org_id);
@@ -544,6 +648,7 @@ BEGIN
         'organization_memberships',
         'cluster_memberships',
         'profiles',
+        'operator_activities',
         '_flow_ops_schema_patch_runs'
       )
     GROUP BY t.table_name
@@ -564,6 +669,53 @@ BEGIN
   END LOOP;
 END;
 $$ LANGUAGE plpgsql;
+
+DROP POLICY IF EXISTS operator_activities_read ON public.operator_activities;
+DROP POLICY IF EXISTS operator_activities_write ON public.operator_activities;
+
+CREATE POLICY operator_activities_select ON public.operator_activities
+  FOR SELECT
+  USING (
+    public.user_has_org_access(org_id)
+    OR public.is_org_in_my_cluster(org_id)
+  );
+
+CREATE POLICY operator_activities_insert ON public.operator_activities
+  FOR INSERT
+  WITH CHECK (
+    (public.user_has_org_access(org_id) OR public.is_org_in_my_cluster(org_id))
+    AND (
+      actor_user_id = auth.uid()
+      OR public.can_manage_operator_sessions_for_org(org_id)
+    )
+  );
+
+CREATE POLICY operator_activities_update ON public.operator_activities
+  FOR UPDATE
+  USING (
+    (public.user_has_org_access(org_id) OR public.is_org_in_my_cluster(org_id))
+    AND (
+      actor_user_id = auth.uid()
+      OR public.can_manage_operator_sessions_for_org(org_id)
+    )
+  )
+  WITH CHECK (
+    (public.user_has_org_access(org_id) OR public.is_org_in_my_cluster(org_id))
+    AND (
+      actor_user_id = auth.uid()
+      OR public.can_manage_operator_sessions_for_org(org_id)
+    )
+  );
+
+CREATE POLICY operator_activities_delete ON public.operator_activities
+  FOR DELETE
+  USING (
+    (public.user_has_org_access(org_id) OR public.is_org_in_my_cluster(org_id))
+    AND (
+      actor_user_id = auth.uid()
+      OR public.can_manage_operator_sessions_for_org(org_id)
+    )
+  );
 
 -- 8A. LEDGER AND AUDIT VIEWS
 CREATE OR REPLACE VIEW public.audit_record_ledger
@@ -821,6 +973,12 @@ GRANT USAGE ON ALL SEQUENCES IN SCHEMA public TO authenticated, service_role;
 INSERT INTO public.profiles (id)
 SELECT id FROM auth.users
 ON CONFLICT (id) DO NOTHING;
+
+UPDATE public.organization_memberships om
+SET account_email = u.email
+FROM auth.users u
+WHERE u.id = om.user_id
+  AND (om.account_email IS NULL OR btrim(om.account_email) = '');
 
 INSERT INTO public._flow_ops_schema_patch_runs (label)
 VALUES ('00000000000000_init_canonical_schema');

@@ -219,6 +219,7 @@ Deno.serve(async (request: Request) => {
     isDefaultOrg: true,
     status: 'active',
     displayName: membershipDisplayName,
+    accountEmail: resolvedLoginId,
   });
 
   // 3. Resolve Request

@@ -1,8 +1,8 @@
 -- Run in Supabase Dashboard → SQL Editor (or psql). Shows result rows at the end.
--- Duplicates migration 20260329002000 + verification; safe to re-run.
+-- Drift repair / view alignment; safe to re-run against a DB that used an older init or manual edits.
 
 -- -----------------------------------------------------------------------------
--- 20260329002000_restoration_live_schema_audit_views.sql
+-- (Historical) restoration_live_schema_audit_views — logic kept here for SQL editor use.
 -- Idempotent restoration for databases that existed before the single baseline
 -- (00000000000000_init_canonical_schema.sql) or drifted after migration squash.
 --

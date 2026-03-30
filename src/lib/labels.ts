@@ -20,25 +20,17 @@ export const LABELS = {
 		noWorkspace: 'No workspace selected',
 		awaitingAccess: 'You need workspace access',
 		/** Shown on the waiting screen — avoid “group manager” alone; in-app that label means cluster operator, not the person who grants org access. */
-		awaitingAccessNextSteps:
-			'Ask a workspace admin or group admin to add you under Settings → Access (Add existing account). Then tap Check status below.',
-		awaitingAccessFooter: 'You can use the app after a workspace is assigned to your account.',
+		awaitingAccessNextSteps: 'Ask an admin to add you in Settings, then use Check status.',
+		awaitingAccessFooter: '',
 	},
 	/**
 	 * Keep these distinct from each other and from Settings → Export → Audit trail (exportable `audit_events`).
 	 */
 	workspacePanels: {
-		activityList: {
-			title: 'Activity list',
-			subtitle: 'Recent work sessions — open one to operate',
-			titleHint:
-				'Activity list — browse sessions (not workspace health, not the per-activity timeline)',
-		},
 		workspaceHealth: {
 			title: 'Workspace health',
-			subtitle: 'Balances, checks, and alerts for the whole workspace',
-			titleHint:
-				'Workspace health — integrity and alerts (not the activity list; full audit export: Settings → Export → Audit trail)',
+			subtitle: '',
+			titleHint: 'Workspace integrity',
 			sections: {
 				integrityIssues: 'Integrity issues',
 				snapshot: 'Workspace snapshot',
@@ -46,21 +38,41 @@ export const LABELS = {
 				recentAttributedActions: 'Recent attributed actions',
 			},
 			empty: {
-				noIntegrityIssues: 'No integrity issues flagged.',
-				noWatchlistItems: 'No watchlist items.',
-				noAttributedActions: 'No recent attributed actions.',
+				noIntegrityIssues: 'None',
+				noWatchlistItems: 'None',
+				noAttributedActions: 'None',
 			},
 		},
 		sessionTimeline: {
 			title: 'Session timeline',
-			subtitle: 'This activity only — inflow, outflow, and events',
-			titleHint: 'Session timeline — this activity (shortcut O)',
+			subtitle: '',
+			titleHint: 'This activity',
 		},
 	},
-	/** Operator shift records (`operator_activities`), not workspace health or Settings audit export. */
-	workforce: {
-		openOperatorLog: 'Open operator log',
-		noOperatorLogsYet: 'No operator logs yet.',
+	/**
+	 * Activity detail → Options modal: assignment (`assigned_user_id`) vs timed `operator_activities` shifts.
+	 */
+	activityAdvanced: {
+		toolbarButton: 'Options',
+		modalTitle: 'Options',
+		modalSubtitle: '',
+		statusSectionTitle: 'Status',
+		statusSectionHint: '',
+		assignmentSectionTitle: 'Assignee',
+		assignmentFieldLabel: 'Assignee',
+		assignmentFieldHint: '',
+		assignmentPlaceholder: '—',
+		assignmentSaveHint: '',
+		startNewShiftGroupLabel: '',
+		shiftsSectionTitle: 'Shifts',
+		shiftsSectionHint: '',
+		shiftsSelectPlaceholder: 'Member',
+		startShift: 'Start shift',
+		noShiftsYet: '',
+		endShift: 'End shift',
+		shiftsCountSingular: 'shift',
+		shiftsCountPlural: 'shifts',
+		shiftsActiveNow: 'active now',
 	},
 	entityHistory: {
 		operationsOnEntity: 'Operations on this entity',

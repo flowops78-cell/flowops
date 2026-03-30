@@ -1,9 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { LogIn, UserPlus, Eye, EyeOff, ShieldCheck, Mail, Info, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAuth } from '../context/AuthContext';
 import { AppRole } from '../lib/roles';
-import { AUTH_PERSIST_ACTIVITY_KEY, isSupabaseConfigured, supabase, SUPABASE_ANON_KEY } from '../lib/supabase';
+import { isSupabaseConfigured, supabase, SUPABASE_ANON_KEY } from '../lib/supabase';
 import { useNotification } from '../context/NotificationContext';
 import { LABELS, tx } from '../lib/labels';
 import { cn } from '../lib/utils';
@@ -31,20 +31,10 @@ export default function Auth() {
   const [requestUsername, setRequestUsername] = useState('');
   const [requestRole, setRequestRole] = useState<Exclude<RequestedRole, 'viewer'>>('operator');
   const [requestSuccess, setRequestSuccess] = useState<string | null>(null);
-  const [keepSignedIn, setKeepSignedIn] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [capsLockOn, setCapsLockOn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    const persisted = sessionStorage.getItem(AUTH_PERSIST_ACTIVITY_KEY);
-    if (persisted === '0') {
-      setKeepSignedIn(false);
-      return;
-    }
-    setKeepSignedIn(true);
-  }, []);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -78,7 +68,7 @@ export default function Auth() {
         if (requestError) throw requestError;
 
         const loginId = data?.login_id ?? `${username}@${ROLE_DOMAIN_MAP[requestRole]}`;
-        setRequestSuccess(`Access request submitted. Your login ID will be ${loginId}. After approval, sign in with the initial password set by your admin.`);
+        setRequestSuccess(`Submitted. Login ID: ${loginId}`);
         notify({ type: 'success', message: `Access request submitted for ${loginId}.` });
         setRequestInviteToken('');
         setRequestUsername('');
@@ -86,7 +76,7 @@ export default function Auth() {
       }
 
       const normalizedEmail = email.trim().toLowerCase();
-      await signInWithPassword(normalizedEmail, password, { keepSignedIn });
+      await signInWithPassword(normalizedEmail, password);
       notify({ type: 'success', message: 'Signed in successfully.' });
     } catch (authError: any) {
       const rawMessage = authError?.message || 'Request failed.';
@@ -180,14 +170,7 @@ export default function Auth() {
                       <Info size={16} className="shrink-0" />
                       <span className="font-bold uppercase tracking-tight">Configuration Required</span>
                     </div>
-                    <p className="pl-7 leading-relaxed opacity-90">
-                      The application cannot detect your Supabase URL or Keys. This usually happens after an environment variable rename.
-                    </p>
-                    <div className="pl-7 mt-1">
-                      <span className="inline-block px-2 py-1 rounded bg-amber-100 dark:bg-amber-900/40 font-mono text-[10px] border border-amber-200 dark:border-amber-800">
-                        Please restart your dev server (Ctrl+C & npm run dev)
-                      </span>
-                    </div>
+                    <p className="pl-7 text-[11px] opacity-90">Set Supabase env vars and restart the dev server.</p>
                   </motion.div>
                 )}
                 {error && (
@@ -247,14 +230,6 @@ export default function Auth() {
                         </div>
                         {capsLockOn && <p className="text-[10px] text-amber-600 dark:text-amber-400 font-medium px-1 animate-pulse">Caps Lock is Active</p>}
                       </div>
-
-                      <div className="flex flex-col gap-2 pt-2">
-                        <label className="flex items-center gap-2.5 text-xs text-stone-500 dark:text-stone-400 cursor-pointer group">
-                          <input type="checkbox" checked={keepSignedIn} onChange={e => setKeepSignedIn(e.target.checked)} className="rounded-md border-stone-300 dark:border-stone-700 text-stone-900 dark:text-stone-100 focus:ring-offset-0 focus:ring-0 w-4 h-4" />
-                          <span className="group-hover:text-stone-900 dark:group-hover:text-stone-100 transition-colors tracking-tight">Keep this tab signed in</span>
-                        </label>
-                        <p className="text-[10px] text-stone-400 dark:text-stone-500 px-1">Authentication is stored in session storage and clears when the browser tab is closed.</p>
-                      </div>
                     </>
                   ) : (
                     <>
@@ -298,7 +273,6 @@ export default function Auth() {
                           placeholder="Paste the invite token shared by admin"
                           autoCapitalize="none"
                         />
-                        <p className="text-[10px] text-stone-500 dark:text-stone-400 px-1">This invite decides which workspace you’re asking to join.</p>
                       </div>
                     </>
                   )}
@@ -326,20 +300,15 @@ export default function Auth() {
           
           {/* Legal Footer */}
           <div className="px-8 pb-8 pt-2 border-t border-stone-100 dark:border-stone-800/50 bg-stone-50/50 dark:bg-stone-900/40">
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col">
               <div className="flex items-center justify-between text-[11px] text-stone-500 dark:text-stone-400 font-medium">
                 <div className="flex gap-4">
                   <a href="/legal/terms.md" target="_blank" rel="noopener noreferrer" className="hover:text-stone-900 dark:hover:text-stone-100 transition-colors">Terms</a>
                   <a href="/legal/privacy.md" target="_blank" rel="noopener noreferrer" className="hover:text-stone-900 dark:hover:text-stone-100 transition-colors">Privacy</a>
-                  <a href="#license" className="hover:text-stone-900 dark:hover:text-stone-100 transition-colors">License</a>
                 </div>
                 <div>© 2026 Flow Ops</div>
               </div>
               
-              <div className="flex items-center gap-2 px-2.5 py-2 rounded-lg bg-stone-200/40 dark:bg-stone-800/20 text-[10px] text-stone-600 dark:text-stone-500 leading-tight">
-                <ShieldCheck size={12} className="shrink-0 text-emerald-500/70" />
-                <span>Enterprise Grade Security • 256-bit encryption • SOC-2 Compliance Path</span>
-              </div>
             </div>
           </div>
         </div>

@@ -37,6 +37,7 @@ function ActivityDetailRedirect() {
 
 function AppRoutes() {
   const { canAccessAdminUi } = useAppRole();
+  const { user } = useAuth();
   const { 
     activeOrgId, 
     loading: dataLoading,
@@ -81,7 +82,10 @@ function AppRoutes() {
           <Route path="/roster" element={<RosterPage />} />
           <Route path="/team" element={<Navigate to="/roster" replace />} />
           <Route path="/team-members" element={<Navigate to="/roster" replace />} />
-          <Route path="/settings" element={canAccessAdminUi ? <Settings /> : <Navigate to="/activity" replace />} />
+          <Route
+            path="/settings"
+            element={user && activeOrgId ? <Settings /> : <Navigate to="/activity" replace />}
+          />
           <Route path="/distribution" element={<Navigate to="/dashboard" replace />} />
           <Route path="/leaderboard" element={<Navigate to="/dashboard" replace />} />
           <Route path="/entities" element={canAccessAdminUi ? <Entities /> : <Navigate to="/activity" replace />} />

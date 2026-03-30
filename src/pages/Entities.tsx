@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useData, EntityBalance } from '../context/DataContext';
-import { Search, Plus, Tag, X, TrendingUp, TrendingDown, Calendar, Award, Edit2, Save, Eye, Clock, Download, LayoutGrid, List, ArrowRightLeft, Trash2 } from 'lucide-react';
+import { Search, Plus, Tag, X, TrendingUp, TrendingDown, Calendar, Award, Edit2, Save, Eye, Clock, Download, LayoutGrid, List, ArrowRightLeft, Trash2, Zap } from 'lucide-react';
 import { Collaboration, Entity } from '../types';
 
 import { formatValue, formatDate } from '../lib/utils';
@@ -655,15 +655,19 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
             <div
               onClick={e => e.stopPropagation()}
               className={cn(
-                'section-card w-full max-w-lg p-6 animate-in zoom-in-95 transition-shadow duration-300',
+                'section-card relative w-full max-w-lg min-h-[280px] overflow-hidden p-6 animate-in zoom-in-95 transition-shadow duration-300',
                 addEntityState === 'success' && 'ring-2 ring-emerald-400 dark:ring-emerald-500'
               )}
             >
               {/* ── SAVING state ── */}
-              {addEntityState === 'saving' && <OverlaySavingState state="saving" label="Adding entity…" />}
+              {addEntityState === 'saving' && (
+                <OverlaySavingState fillParent state="saving" label="Adding entity…" />
+              )}
 
               {/* ── SUCCESS state ── */}
-              {addEntityState === 'success' && <OverlaySavingState state="success" label="Entity added" />}
+              {addEntityState === 'success' && (
+                <OverlaySavingState fillParent state="success" label="Entity added" />
+              )}
 
               {/* ── IDLE / ERROR state ── */}
               {(addEntityState === 'idle' || addEntityState === 'error') && (
@@ -1455,13 +1459,40 @@ function EntityGridCard({
   onAction: (action: 'send' | 'adjust' | 'pending') => void;
   onDelete: () => void;
 }) {
+  const entityMoreMenuItems = useMemo(
+    () => {
+      const items: {
+        key: string;
+        label: string;
+        onClick: () => void;
+        icon?: React.ReactNode;
+        destructive?: boolean;
+      }[] = [
+        { key: 'quick', label: 'Quick', onClick: onOpenOverlay, icon: <Zap size={14} /> },
+        { key: 'snapshot', label: 'Snapshot', onClick: onOpenSnapshot, icon: <Eye size={14} /> },
+        { key: 'open', label: 'Open', onClick: onOpenProfile, icon: <Tag size={14} /> },
+      ];
+      if (canManageImpact) {
+        items.push({
+          key: 'delete',
+          label: 'Delete',
+          onClick: onDelete,
+          icon: <Trash2 size={14} />,
+          destructive: true,
+        });
+      }
+      return items;
+    },
+    [canManageImpact, onDelete, onOpenOverlay, onOpenProfile, onOpenSnapshot],
+  );
+
   return (
     <div className={cn(
-      "section-card-hover min-w-0",
-      activeAction ? "rounded-b-none border-b-0" : ""
+      'section-card-hover flex min-w-0 flex-col overflow-hidden',
+      activeAction ? 'rounded-b-none border-b-0' : '',
     )}>
       {/* Header: name + net */}
-      <div className="p-5 cursor-pointer" onClick={onOpenOverlay}>
+      <div className="cursor-pointer p-5" onClick={onOpenOverlay}>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="font-medium text-stone-900 dark:text-stone-100 truncate" title={getEntityDisplayName(entity.name)}>{getEntityDisplayName(entity.name)}</p>
@@ -1469,10 +1500,13 @@ function EntityGridCard({
               {stats.activitys > 0 ? `${stats.activitys} · ` : ''}{stats.lastActive ? formatDate(stats.lastActive) : 'No activity'}
             </p>
           </div>
-          <span className={cn(
-            "font-mono text-lg font-semibold tabular-nums shrink-0",
-            stats.net > 0 ? "text-emerald-600 dark:text-emerald-400" : stats.net < 0 ? "text-red-600 dark:text-red-400" : "text-stone-400 dark:text-stone-500"
-          )}>
+          <span
+            className={cn(
+              'shrink-0 font-mono text-lg font-semibold tabular-nums',
+              stats.net > 0 ? 'text-emerald-600 dark:text-emerald-400' : stats.net < 0 ? 'text-red-600 dark:text-red-400' : 'text-stone-400 dark:text-stone-500',
+            )}
+            title="Net balance"
+          >
             {formatValue(stats.net)}
           </span>
         </div>
@@ -1500,83 +1534,66 @@ function EntityGridCard({
         </div>
       </div>
 
-      {/* Action bar */}
-      <div className="px-4 pb-3 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5">
-          {canManageImpact && (
-            <button
-              onClick={e => { e.stopPropagation(); onAction('send'); }}
-              className={cn(
-                "flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-colors font-medium",
-                activeAction === 'send'
-                  ? "bg-amber-50 border-amber-200 text-amber-700 dark:bg-amber-900/20 dark:border-amber-700 dark:text-amber-400"
-                  : "border-stone-200 dark:border-stone-700 text-stone-500 dark:text-stone-400 hover:border-amber-300 hover:text-amber-600 dark:hover:text-amber-400"
-              )}
-            >
-              <ArrowRightLeft size={12} />
-              Send
-            </button>
-          )}
-          {canManageImpact && (
-            <button
-              onClick={e => { e.stopPropagation(); onAction('adjust'); }}
-              className={cn(
-                "flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-colors font-medium",
-                activeAction === 'adjust'
-                  ? "bg-sky-50 border-sky-200 text-sky-700 dark:bg-sky-900/20 dark:border-sky-700 dark:text-sky-400"
-                  : "border-stone-200 dark:border-stone-700 text-stone-500 dark:text-stone-400 hover:border-sky-300 hover:text-sky-600 dark:hover:text-sky-400"
-              )}
-            >
-              <Edit2 size={12} />
-              Adjust
-            </button>
-          )}
-          {canActivityRecordDeferred && (
-            <button
-              onClick={e => { e.stopPropagation(); onAction('pending'); }}
-              className={cn(
-                "flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg border transition-colors font-medium",
-                activeAction === 'pending'
-                  ? "bg-purple-50 border-purple-200 text-purple-700 dark:bg-purple-900/20 dark:border-purple-700 dark:text-purple-400"
-                  : "border-stone-200 dark:border-stone-700 text-stone-500 dark:text-stone-400 hover:border-purple-300 hover:text-purple-600 dark:hover:text-purple-400"
-              )}
-            >
-              <Clock size={12} />
-              Pending
-            </button>
-          )}
-        </div>
-        <div className="flex items-center gap-1">
+      {/* Action bar: primary full-width, secondary row + overflow menu (same handlers as before) */}
+      <div className="flex min-w-0 flex-col gap-2 px-4 pb-3 pt-0" onClick={e => e.stopPropagation()}>
+        {canManageImpact && (
           <button
-            onClick={e => { e.stopPropagation(); onOpenOverlay(); }}
-            className="action-btn-secondary text-xs px-2.5 py-1"
-            title="Quick actions"
+            type="button"
+            onClick={e => {
+              e.stopPropagation();
+              onAction('send');
+            }}
+            className={cn(
+              'flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold transition-colors',
+              activeAction === 'send'
+                ? 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-600 dark:bg-amber-900/25 dark:text-amber-300'
+                : 'border-stone-200 bg-stone-50 text-stone-700 hover:border-amber-300 hover:bg-amber-50/80 hover:text-amber-800 dark:border-stone-600 dark:bg-stone-800/80 dark:text-stone-200 dark:hover:border-amber-700 dark:hover:bg-amber-950/30',
+            )}
           >
-            Quick
+            <ArrowRightLeft size={14} className="shrink-0" />
+            Send
           </button>
-          <button
-            onClick={e => { e.stopPropagation(); onOpenSnapshot(); }}
-            className="p-1.5 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 rounded-md transition-colors"
-            title="Snapshot"
-          >
-            <Eye size={14} />
-          </button>
-          <button
-            onClick={e => { e.stopPropagation(); onOpenProfile(); }}
-            className="p-1.5 text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 rounded-md transition-colors"
-            title="Open"
-          >
-            <Tag size={14} />
-          </button>
-          {canManageImpact && (
-            <button
-              onClick={e => { e.stopPropagation(); onDelete(); }}
-              className="p-1.5 text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-md transition-colors"
-              title="Delete"
-            >
-              <Trash2 size={14} />
-            </button>
-          )}
+        )}
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            {canManageImpact && (
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  onAction('adjust');
+                }}
+                className={cn(
+                  'flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors',
+                  activeAction === 'adjust'
+                    ? 'border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300'
+                    : 'border-stone-200 text-stone-600 hover:border-sky-300 hover:text-sky-700 dark:border-stone-600 dark:text-stone-300 dark:hover:text-sky-400',
+                )}
+              >
+                <Edit2 size={12} className="shrink-0" />
+                Adjust
+              </button>
+            )}
+            {canActivityRecordDeferred && (
+              <button
+                type="button"
+                onClick={e => {
+                  e.stopPropagation();
+                  onAction('pending');
+                }}
+                className={cn(
+                  'flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors',
+                  activeAction === 'pending'
+                    ? 'border-purple-200 bg-purple-50 text-purple-800 dark:border-purple-700 dark:bg-purple-900/20 dark:text-purple-300'
+                    : 'border-stone-200 text-stone-600 hover:border-purple-300 hover:text-purple-700 dark:border-stone-600 dark:text-stone-300 dark:hover:text-purple-400',
+                )}
+              >
+                <Clock size={12} className="shrink-0" />
+                Pending
+              </button>
+            )}
+          </div>
+          <DataActionMenu variant="icon" label="More entity actions" items={entityMoreMenuItems} className="shrink-0" />
         </div>
       </div>
     </div>

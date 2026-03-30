@@ -8,8 +8,11 @@ export const DATA_SELECT = {
   activities:
     'id, org_id, label, date, start_time, status, channel_label, assigned_user_id, activity_mode, created_at, updated_at',
   records:
-    'id, org_id, activity_id, entity_id, direction, status, unit_amount, transfer_group_id, notes, channel_label, target_entity_id, position_id, sort_order, left_at, created_at, updated_at',
+    'id, org_id, activity_id, entity_id, direction, status, unit_amount, transfer_group_id, notes, channel_label, source_record_id, target_entity_id, position_id, sort_order, left_at, created_at, updated_at',
   organization_memberships:
+    'id, org_id, user_id, role, status, display_name, account_email, is_default_org, created_at, updated_at',
+  /** Same row shape minus `account_email` — use if DB migration not applied yet. */
+  organization_memberships_no_account_email:
     'id, org_id, user_id, role, status, display_name, is_default_org, created_at, updated_at',
   collaborations:
     'id, org_id, name, collaboration_type, status, participation_factor, overhead_weight_pct, rules, created_at, updated_at',

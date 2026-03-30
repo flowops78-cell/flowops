@@ -129,8 +129,9 @@ export default function GlobalTelemetryPanel({ isOpen, onClose }: GlobalTelemetr
             <Scale size={16} className="text-emerald-600 dark:text-emerald-400" />
             {LABELS.workspacePanels.workspaceHealth.title}
           </h3>
-          <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">{LABELS.workspacePanels.workspaceHealth.subtitle}</p>
-          <p className="mt-1 text-[10px] text-stone-400 dark:text-stone-500">Attributed actions here are a live slice — for a full trail export, use Settings → Export with dataset “Audit trail”.</p>
+          {LABELS.workspacePanels.workspaceHealth.subtitle ? (
+            <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">{LABELS.workspacePanels.workspaceHealth.subtitle}</p>
+          ) : null}
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-5 pb-[calc(env(safe-area-inset-bottom)+1rem)]">

@@ -14,8 +14,8 @@ Based on `supabase/migrations/00000000000000_init_canonical_schema.sql`, this do
 ### 4) Collaboration Domain
 `collaborations` replace associates and now back the Collaboration Network's profile model through `collaboration_type`, `status`, `participation_factor`, `overhead_weight_pct`, and structured `rules`.
 
-### 5) Team and Channel Domain
-`team_members` replace members for org-scoped staffing records. `channels` replace transfer accounts, and `channel_records` replace channel entries to link channel activity back to the canonical record stream.
+### 5) Roster and Channel Domain
+Workspace people are modeled only on `organization_memberships` (including `display_name` and `account_email` for roster UI). `channels` replace transfer accounts, and `channel_records` replace channel entries to link channel activity back to the canonical record stream.
 
 ### 6) Operational Observability
 `operator_activities`, `audit_events`, `access_requests`, and `access_invites` remain as supporting operational and access-control tables. `audit_events` now use `entity_id` instead of any unit-based reference. The canonical baseline also includes the ledger-backed views `audit_record_ledger`, `entity_balances`, `audit_activity_integrity`, `audit_entity_health`, `audit_channel_integrity`, `audit_org_integrity`, and `audit_record_anomalies`.

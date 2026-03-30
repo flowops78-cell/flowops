@@ -242,6 +242,12 @@ export const syncOrgGraph = async (
   }
 };
 
+const fetchAuthUserEmail = async (adminClient: AdminClient, userId: string): Promise<string> => {
+  const { data, error } = await adminClient.auth.admin.getUserById(userId);
+  if (error || !data?.user?.email) return '';
+  return String(data.user.email).trim();
+};
+
 export const ensureOrgMembership = async (
   adminClient: AdminClient,
   userId: string,
@@ -252,15 +258,18 @@ export const ensureOrgMembership = async (
     status?: 'active' | 'invited' | 'disabled';
     /** Shown in workspace member lists; optional on upsert. */
     displayName?: string | null;
+    /** Login email when known (e.g. provision / invite); otherwise loaded from Auth. */
+    accountEmail?: string | null;
   },
 ) => {
   const desiredStatus = options?.status ?? 'active';
   const desiredDefault = options?.isDefaultOrg ?? false;
   const displayNameTrimmed = (options?.displayName ?? '').trim();
+  const accountEmailHint = (options?.accountEmail ?? '').trim();
 
   const { data: existingMembership, error: lookupError } = await adminClient
     .from('organization_memberships')
-    .select('id, role, is_default_org')
+    .select('id, role, is_default_org, account_email')
     .eq('user_id', userId)
     .eq('org_id', orgId)
     .maybeSingle();
@@ -280,6 +289,15 @@ export const ensureOrgMembership = async (
   };
   if (displayNameTrimmed.length > 0) {
     membershipRow.display_name = displayNameTrimmed;
+  }
+
+  const existingEmail = String((existingMembership as { account_email?: string } | null)?.account_email ?? '').trim();
+  const resolvedEmail =
+    accountEmailHint ||
+    (await fetchAuthUserEmail(adminClient, userId)) ||
+    existingEmail;
+  if (resolvedEmail.length > 0) {
+    membershipRow.account_email = resolvedEmail;
   }
 
   const { error: upsertError } = await adminClient

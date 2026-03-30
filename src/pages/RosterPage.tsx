@@ -1,17 +1,13 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Clock, UserCircle, Users } from 'lucide-react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { useAppRole } from '../context/AppRoleContext';
 import { cn, formatDate } from '../lib/utils';
+import { workspaceMemberDisplayLabel } from '../lib/workspaceMemberDisplayLabel';
 import LoadingLine from '../components/LoadingLine';
 import type { WorkspaceMember } from '../types';
-
-const memberLabel = (m: WorkspaceMember) => {
-  const d = m.display_name?.trim();
-  if (d) return d;
-  return `${m.user_id.slice(0, 8)}…`;
-};
+import { useAuth } from '../context/AuthContext';
 
 export default function RosterPage({ embedded = false }: { embedded?: boolean }) {
   const location = useLocation();
@@ -23,11 +19,20 @@ export default function RosterPage({ embedded = false }: { embedded?: boolean })
     loadingProgress,
   } = useData();
   const { canAccessAdminUi } = useAppRole();
+  const { user: authUser } = useAuth();
+
+  const memberLabel = useCallback(
+    (m: WorkspaceMember) =>
+      workspaceMemberDisplayLabel(m, {
+        currentUserId: authUser?.id ?? null,
+        currentUserEmail: authUser?.email ?? null,
+      }),
+    [authUser?.id, authUser?.email],
+  );
 
   const workspaceMembers = useMemo(
-    () =>
-      [...(rawMembers ?? [])].sort((a, b) => memberLabel(a).localeCompare(memberLabel(b))),
-    [rawMembers],
+    () => [...(rawMembers ?? [])].sort((a, b) => memberLabel(a).localeCompare(memberLabel(b))),
+    [rawMembers, memberLabel],
   );
   const activityLogs = useMemo(() => rawActivityLogs ?? [], [rawActivityLogs]);
 
@@ -101,9 +106,6 @@ export default function RosterPage({ embedded = false }: { embedded?: boolean })
             </div>
             <div>
               <h2 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Members</h2>
-              <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
-                People with accounts in this workspace. Invite or change roles in Settings.
-              </p>
             </div>
           </div>
           {canAccessAdminUi && (
@@ -126,9 +128,7 @@ export default function RosterPage({ embedded = false }: { embedded?: boolean })
           {!embedded && (
             <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">No members yet</h3>
           )}
-          <p className="max-w-sm text-sm text-stone-500 dark:text-stone-400">
-            Workspace members are real accounts. Use Settings to invite someone or approve an access request.
-          </p>
+          <p className="max-w-sm text-sm text-stone-500 dark:text-stone-400">Settings → Add people</p>
           {canAccessAdminUi && (
             <button
               type="button"

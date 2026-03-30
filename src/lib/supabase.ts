@@ -6,8 +6,6 @@ const supabasePublishableKey =
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || import.meta.env.VITE_SUPABASE_ANON_KEY;
 export const SUPABASE_ANON_KEY = supabasePublishableKey;
 
-export const AUTH_PERSIST_ACTIVITY_KEY = 'flow_ops_auth_persist_activity';
-
 export const isSupabaseConfigured = 
   supabaseUrl && 
   supabasePublishableKey && 

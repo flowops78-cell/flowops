@@ -256,7 +256,9 @@ export default function TelemetrySidebar({ activity, records, entities, isOpen, 
                 <ActivityIcon size={18} className="text-emerald-600 dark:text-emerald-400" />
                 {LABELS.workspacePanels.sessionTimeline.title}
               </h3>
-              <p className="mt-1 text-[10px] text-stone-500 dark:text-stone-400 pr-2">{LABELS.workspacePanels.sessionTimeline.subtitle}</p>
+              {LABELS.workspacePanels.sessionTimeline.subtitle ? (
+                <p className="mt-1 text-[10px] text-stone-500 dark:text-stone-400 pr-2">{LABELS.workspacePanels.sessionTimeline.subtitle}</p>
+              ) : null}
             </div>
             <button 
               onClick={toggleNotifications}

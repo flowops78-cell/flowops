@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { PieChart, TrendingUp } from 'lucide-react';
-import { formatValue } from '../../lib/utils';
+import { formatDate, formatValue } from '../../lib/utils';
 import {
   Area,
   AreaChart,
   CartesianGrid,
   Cell,
-  Legend,
   Pie,
   PieChart as RePieChart,
   Tooltip,
@@ -94,56 +93,147 @@ export default function ChannelCharts({ historyData, distributionData, theme }: 
       ? `${((selectedSlice.value / totalDistribution) * 100).toFixed(1)}%`
       : '0%';
 
+  const historyExtent = useMemo(() => {
+    let minV = 0;
+    let maxV = 0;
+    for (const d of historyData) {
+      if (d.total < minV) minV = d.total;
+      if (d.total > maxV) maxV = d.total;
+    }
+    return { minV, maxV };
+  }, [historyData]);
+
+  const historyFlatZero = historyExtent.minV === 0 && historyExtent.maxV === 0;
+
+  const historyAriaLabel = useMemo(() => {
+    if (historyData.length === 0) return 'Channel history: no data.';
+    if (historyFlatZero) {
+      return 'Channel history: no net channel flow over the last 30 days.';
+    }
+    const peak = historyExtent.maxV >= Math.abs(historyExtent.minV) ? historyExtent.maxV : historyExtent.minV;
+    const peakDay = historyData.reduce((best, d) =>
+      Math.abs(d.total) > Math.abs(best.total) ? d : best,
+    historyData[0]);
+    return `Channel history: daily net flow over 30 days. Largest move ${formatValue(peak)} on ${formatDate(peakDay.fullDate)}.`;
+  }, [historyData, historyExtent, historyFlatZero]);
+
+  const tickFill = theme === 'dark' ? '#a3a3a3' : '#78716c';
+  const gridStroke = theme === 'dark' ? '#3f3f46' : '#e7e5e4';
+  const tooltipSurface = theme === 'dark'
+    ? { backgroundColor: '#1c1917', border: '1px solid #44403c', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.35)' }
+    : { backgroundColor: '#fff', border: '1px solid #e7e5e4', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)' };
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 lg:gap-5">
       <div className="lg:col-span-2 min-w-0 bg-white dark:bg-stone-900 p-4 lg:p-5 rounded-xl border border-stone-200 dark:border-stone-800">
-        <div className="flex items-center gap-2 mb-4">
-          <TrendingUp className="text-stone-400" size={16} />
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">Channel History</h3>
+        <div className="mb-1 flex items-start gap-2">
+          <TrendingUp className="mt-0.5 shrink-0 text-stone-400 dark:text-stone-300" size={16} aria-hidden />
+          <div className="min-w-0">
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">
+              Channel History
+            </h3>
+            <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">
+              Daily net flow · last 30 days
+            </p>
+          </div>
         </div>
-        <MeasuredChart className="h-56 w-full min-w-0">
-          {({ width, height }) => (
-            <AreaChart width={width} height={height} data={historyData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
-              <defs>
-                <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.15} />
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={theme === 'dark' ? '#292524' : '#f5f5f4'} />
-              <XAxis 
-                dataKey="date" 
-                axisLine={false} 
-                tickLine={false} 
-                tick={{ fill: '#a8a29e', fontSize: 10 }} 
-                dy={5} 
-              />
-              <YAxis
-                axisLine={false}
-                tickLine={false}
-                tick={{ fill: '#a8a29e', fontSize: 10 }}
-                tickFormatter={(value) => value.toString()}
-              />
-              <Tooltip
-                contentStyle={{
-                  backgroundColor: theme === 'dark' ? '#1c1917' : '#fff',
-                  borderRadius: '12px',
-                  border: 'none',
-                  boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)',
-                  padding: '8px 12px',
-                }}
-                labelStyle={{ fontSize: '11px', fontWeight: 'bold', marginBottom: '4px', color: theme === 'dark' ? '#f5f5f4' : '#1c1917' }}
-                formatter={(value?: number) => [formatValue(value ?? 0), 'Total']}
-              />
-              <Area type="monotone" dataKey="total" stroke="#10b981" strokeWidth={2.5} fillOpacity={1} fill="url(#colorTotal)" />
-            </AreaChart>
+        <div
+          className="relative mt-3"
+          role="img"
+          aria-label={historyAriaLabel}
+        >
+          <MeasuredChart className="h-56 w-full min-w-0">
+            {({ width, height }) => {
+              const xMinTickGap = width < 420 ? 36 : width < 640 ? 28 : 20;
+              return (
+                <AreaChart
+                  width={width}
+                  height={height}
+                  data={historyData}
+                  margin={{ top: 8, right: 8, left: 4, bottom: 4 }}
+                >
+                  <defs>
+                    <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.15} />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={gridStroke} />
+                  <XAxis
+                    dataKey="date"
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: tickFill, fontSize: 10 }}
+                    dy={6}
+                    interval="preserveStartEnd"
+                    minTickGap={xMinTickGap}
+                  />
+                  <YAxis
+                    width={44}
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fill: tickFill, fontSize: 10 }}
+                    tickFormatter={(value) => value.toString()}
+                    domain={
+                      historyFlatZero
+                        ? [0, 1]
+                        : historyExtent.minV < 0
+                          ? ['auto', 'auto']
+                          : [0, 'auto']
+                    }
+                    ticks={historyFlatZero ? [0] : undefined}
+                    allowDecimals
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      ...tooltipSurface,
+                      borderRadius: '12px',
+                      padding: '8px 12px',
+                    }}
+                    labelStyle={{
+                      fontSize: '11px',
+                      fontWeight: 'bold',
+                      marginBottom: '4px',
+                      color: theme === 'dark' ? '#f5f5f4' : '#1c1917',
+                    }}
+                    labelFormatter={(_, payload) => {
+                      const row = payload?.[0]?.payload as HistoryPoint | undefined;
+                      return row?.fullDate ? formatDate(row.fullDate) : '';
+                    }}
+                    formatter={(value?: number) => [formatValue(value ?? 0), 'Net flow']}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="total"
+                    stroke="#10b981"
+                    strokeWidth={2.5}
+                    fillOpacity={1}
+                    fill="url(#colorTotal)"
+                    activeDot={{
+                      r: 4,
+                      strokeWidth: 2,
+                      stroke: theme === 'dark' ? '#1c1917' : '#fff',
+                      fill: '#10b981',
+                    }}
+                    isAnimationActive={!historyFlatZero}
+                  />
+                </AreaChart>
+              );
+            }}
+          </MeasuredChart>
+          {historyFlatZero && (
+            <div className="pointer-events-none absolute inset-x-2 top-8 bottom-11 flex items-center justify-center">
+              <p className="max-w-[16rem] text-center text-xs leading-snug text-stone-500 dark:text-stone-400">
+                No net channel flow in the last 30 days
+              </p>
+            </div>
           )}
-        </MeasuredChart>
+        </div>
       </div>
 
       <div className="min-w-0 bg-white dark:bg-stone-900 p-4 lg:p-5 rounded-xl border border-stone-200 dark:border-stone-800">
-        <div className="flex items-center gap-2 mb-4">
-          <PieChart className="text-stone-400" size={16} />
+        <div className="mb-4 flex items-center gap-2">
+          <PieChart className="text-stone-400 dark:text-stone-300" size={16} aria-hidden />
           <h3 className="text-sm font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">Values Distribution</h3>
         </div>
         <div className="h-72 w-full min-w-0">
@@ -179,7 +269,12 @@ export default function ChannelCharts({ historyData, distributionData, theme }: 
                       </Pie>
                       <Tooltip
                         formatter={(value?: number) => formatValue(value ?? 0)}
-                        contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e5e5e5' }}
+                        contentStyle={{
+                          ...tooltipSurface,
+                          borderRadius: '8px',
+                          padding: '6px 10px',
+                        }}
+                        labelStyle={{ color: theme === 'dark' ? '#f5f5f4' : '#1c1917', fontSize: '11px', fontWeight: 600 }}
                       />
                     </RePieChart>
                   );

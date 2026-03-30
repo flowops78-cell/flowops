@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
-import { ArrowLeft, AlertCircle, User, Users, Activity, Play, Square, ChevronDown, SlidersHorizontal, X } from 'lucide-react';
+import { ArrowLeft, AlertCircle, User, Users, Activity, Play, Square, SlidersHorizontal, X, UserCheck, Timer } from 'lucide-react';
 import { formatValue, formatDate } from '../lib/utils';
+import { workspaceMemberDisplayLabel } from '../lib/workspaceMemberDisplayLabel';
 import { ActivityRecord, Entity } from '../types';
 import { cn } from '../lib/utils';
 
@@ -16,6 +17,7 @@ import { useNotification } from '../context/NotificationContext';
 import LoadingLine from '../components/LoadingLine';
 import EmptyState from '../components/EmptyState';
 import { useLabels, LABELS } from '../lib/labels';
+import { useAuth } from '../context/AuthContext';
 import { EntriesRow } from './ActivityDetailEntriesRow';
 
 export default function ActivityDetail() {
@@ -26,6 +28,7 @@ export default function ActivityDetail() {
   const { role, canOperateLog, canManageImpact, canAlign } = useAppRole();
   const { notify } = useNotification();
   const { getActionText, tx } = useLabels();
+  const { user: authUser } = useAuth();
   
   const activity = activities.find(g => g.id === id);
   const activityEntries = records.filter(l => l.activity_id === id);
@@ -246,20 +249,25 @@ export default function ActivityDetail() {
     : null;
   const workspaceMemberLabel = (userId: string) => {
     const m = workspaceMembers.find((x) => x.user_id === userId);
-    const d = m?.display_name?.trim();
-    if (d) return d;
-    return `${userId.slice(0, 8)}…`;
+    if (!m) return `Not in roster · ${userId.slice(0, 8)}…`;
+    return workspaceMemberDisplayLabel(m, {
+      currentUserId: authUser?.id ?? null,
+      currentUserEmail: authUser?.email ?? null,
+    });
   };
 
-  const operators = workspaceMembers.filter((s) => s.role === 'operator' || s.role === 'admin');
+  /** All active workspace members — assignment and logs are not limited to operator/admin roles. */
+  const rosterMembers = workspaceMembers;
   const activityWorkActivitys = activityLogs.filter(log => log.activity_id === activity?.id);
+  const activeOperatorLogCount = activityWorkActivitys.filter(log => log.status === 'active').length;
   const activeOperatorLogByUserId = new Map<string, typeof activityLogs[number]>();
   activityWorkActivitys.forEach(log => {
     if (log.status === 'active' && !activeOperatorLogByUserId.has(log.actor_user_id ?? '')) {
       activeOperatorLogByUserId.set(log.actor_user_id ?? '', log);
     }
   });
-  const availableOperators = operators.filter((profile) => !activeOperatorLogByUserId.has(profile.user_id));
+  /** Open log: anyone in the roster except users who already have an active session on this activity. */
+  const availableForOperatorLog = rosterMembers.filter((profile) => !activeOperatorLogByUserId.has(profile.user_id));
   const isCompleted = activity?.status === 'completed';
   const isArchived = activity?.status === 'archived';
   const canAddUnits = canOperateLog && activity?.status === 'active';
@@ -380,7 +388,7 @@ export default function ActivityDetail() {
         return;
       }
 
-      await addRecord({
+      const newAppliedRecordId = await addRecord({
         activity_id: activity.id,
         entity_id: entityId,
         unit_amount: parsedrecordValue,
@@ -412,6 +420,7 @@ export default function ActivityDetail() {
           type: 'input',
           channel_label: recordTransferMethod || activity.channel_label,
           requested_at: new Date().toISOString(),
+          source_record_id: newAppliedRecordId,
         });
       }
 
@@ -449,12 +458,19 @@ export default function ActivityDetail() {
   };
 
   const handleUpdateOperations = async () => {
+    if (!activity) return;
     if (!canManageImpact) {
       notify({ type: 'error', message: 'Only admin/operator can update operations.' });
       return;
     }
     if (isCompleted || isArchived) {
       notify({ type: 'error', message: 'Completed or archived activities are locked.' });
+      return;
+    }
+    const persistedAssignee = activity.assigned_user_id || '';
+    if (role !== 'admin' && persistedAssignee && assignedOperator === '') {
+      setAssignedOperator(persistedAssignee);
+      notify({ type: 'error', message: 'Only a workspace admin can unassign this activity.' });
       return;
     }
     try {
@@ -520,9 +536,9 @@ export default function ActivityDetail() {
       return;
     }
 
-    const target = operators.find((o) => o.user_id === selectedOperatorUserId);
+    const target = rosterMembers.find((o) => o.user_id === selectedOperatorUserId);
     if (!target) {
-      notify({ type: 'error', message: 'Selected operator is not in this workspace.' });
+      notify({ type: 'error', message: 'Selected person is not in this workspace.' });
       return;
     }
 
@@ -1023,9 +1039,11 @@ export default function ActivityDetail() {
               type="button"
               onClick={() => setIsAdvancedOverlayOpen(true)}
               className="action-pill action-pill-neutral"
+              aria-haspopup="dialog"
+              aria-expanded={isAdvancedOverlayOpen}
             >
-              <ChevronDown size={14} />
-              <span>Advanced</span>
+              <SlidersHorizontal size={14} aria-hidden />
+              <span>{LABELS.activityAdvanced.toolbarButton}</span>
             </button>
             {!isMobileViewport && (
               <button 
@@ -1099,7 +1117,7 @@ export default function ActivityDetail() {
                   {canAddUnits ? 'Ready' : 'Locked'}
                 </span>
               </div>
-              <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">Entity, amount, add. Advanced valueing stays available without taking over the page.</p>
+              <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">Entity, amount, add. Use More add modes for alternate flows.</p>
             </div>
             <button
               type="button"
@@ -1108,7 +1126,7 @@ export default function ActivityDetail() {
               disabled={!canAddUnits || isAddingEntity}
             >
               <SlidersHorizontal size={14} />
-              Options
+              More add modes
             </button>
           </div>
 
@@ -1314,30 +1332,57 @@ export default function ActivityDetail() {
       )}
 
       {isAdvancedOverlayOpen && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm" onClick={() => !isUpdatingWorkforce && !isActivityTransitioning && setIsAdvancedOverlayOpen(false)}>
-          <div className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-[28px] border border-stone-200 bg-white p-5 shadow-2xl dark:border-stone-800 dark:bg-stone-900 lg:p-6" onClick={event => event.stopPropagation()}>
+        <div
+          className="fixed inset-0 z-40 flex items-center justify-center bg-black/45 p-4 backdrop-blur-sm"
+          role="presentation"
+          onClick={() => !isUpdatingWorkforce && !isActivityTransitioning && setIsAdvancedOverlayOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="activity-options-title"
+            className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-stone-200 bg-white p-5 shadow-2xl dark:border-stone-800 dark:bg-stone-900 lg:p-6"
+            onClick={event => event.stopPropagation()}
+          >
             <div className="flex items-start justify-between gap-4 border-b border-stone-200 pb-4 dark:border-stone-800">
-              <div>
-                <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">Advanced</h3>
-                <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">Workforce, operator assignment, and state changes stay available without living in the main column.</p>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-stone-200 bg-stone-50 text-stone-500 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-400">
+                    <SlidersHorizontal size={18} aria-hidden />
+                  </span>
+                  <h3 id="activity-options-title" className="text-lg font-semibold tracking-tight text-stone-900 dark:text-stone-100">
+                    {LABELS.activityAdvanced.modalTitle}
+                  </h3>
+                </div>
+                {LABELS.activityAdvanced.modalSubtitle ? (
+                  <p className="mt-2 text-sm leading-snug text-stone-500 dark:text-stone-400">
+                    {LABELS.activityAdvanced.modalSubtitle}
+                  </p>
+                ) : null}
               </div>
               <button
                 type="button"
                 onClick={() => setIsAdvancedOverlayOpen(false)}
-                className="rounded-full p-2 text-stone-500 hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-800"
+                className="shrink-0 rounded-xl p-2 text-stone-500 transition-colors hover:bg-stone-100 dark:text-stone-400 dark:hover:bg-stone-800"
                 disabled={isUpdatingWorkforce || isActivityTransitioning}
+                aria-label="Close activity options"
               >
-                <X size={16} />
+                <X size={18} />
               </button>
             </div>
 
-            <div className="mt-5 grid gap-5 lg:grid-cols-[0.92fr_1.08fr]">
-              <div className="space-y-5">
-                <div className="rounded-2xl border border-stone-200 bg-stone-50/80 p-4 dark:border-stone-800 dark:bg-stone-800/40">
-                  <h4 className="flex items-center gap-2 text-sm font-semibold text-stone-900 dark:text-stone-100">
-                    <User size={16} />
-                    Activity state
+            <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.12fr)]">
+              <div className="space-y-4">
+                <div className="rounded-xl border border-stone-200 border-l-[3px] border-l-stone-400 bg-stone-50/90 p-4 dark:border-stone-800 dark:border-l-stone-500 dark:bg-stone-800/50">
+                  <h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">
+                    <User size={14} className="text-stone-400" aria-hidden />
+                    {LABELS.activityAdvanced.statusSectionTitle}
                   </h4>
+                  {LABELS.activityAdvanced.statusSectionHint ? (
+                    <p className="mt-2 text-xs leading-relaxed text-stone-500 dark:text-stone-400">
+                      {LABELS.activityAdvanced.statusSectionHint}
+                    </p>
+                  ) : null}
                   <div className="mt-3 grid gap-2">
                     {activity.status === 'active' && (
                       <button
@@ -1383,72 +1428,121 @@ export default function ActivityDetail() {
                       </button>
                     )}
                   </div>
-                  <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">
-                    {activity.status === 'active'
-                      ? 'Complete once every active entry has been recorded and totaled.'
-                      : 'Use this panel to move the activity forward or reopen it.'}
-                  </p>
                 </div>
 
-                <div className="rounded-2xl border border-stone-200 bg-stone-50/80 p-4 dark:border-stone-800 dark:bg-stone-800/40">
-                  <label className="mb-1 block text-xs font-medium text-stone-500 dark:text-stone-400">{tx('Assigned Operator')}</label>
+                <div className="rounded-xl border border-stone-200 border-l-[3px] border-l-emerald-500/70 bg-stone-50/90 p-4 dark:border-stone-800 dark:border-l-emerald-500/50 dark:bg-stone-800/50">
+                  <h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">
+                    <UserCheck size={14} className="text-emerald-600/80 dark:text-emerald-400/90" aria-hidden />
+                    {LABELS.activityAdvanced.assignmentSectionTitle}
+                  </h4>
+                  {LABELS.activityAdvanced.assignmentFieldHint ? (
+                    <p className="mt-2 text-xs leading-relaxed text-stone-500 dark:text-stone-400">
+                      {LABELS.activityAdvanced.assignmentFieldHint}
+                    </p>
+                  ) : null}
+                  <label className="mt-3 mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-stone-600 dark:text-stone-300">
+                    {LABELS.activityAdvanced.assignmentFieldLabel}
+                  </label>
                   <select
                     className="control-input w-full"
                     value={assignedOperator}
                     onChange={e => setAssignedOperator(e.target.value)}
                     onBlur={handleUpdateOperations}
                     disabled={!canManageImpact || isCompleted || isArchived}
+                    aria-label={LABELS.activityAdvanced.assignmentFieldLabel}
                   >
-                    <option value="">{tx('Select Operator...')}</option>
-                    {operators.map(member => (
+                    {(role === 'admin' || !activity.assigned_user_id) && (
+                      <option value="">{LABELS.activityAdvanced.assignmentPlaceholder}</option>
+                    )}
+                    {rosterMembers.map(member => (
                       <option key={member.user_id} value={member.user_id}>
                         {workspaceMemberLabel(member.user_id)}
                       </option>
                     ))}
                   </select>
+                  {LABELS.activityAdvanced.assignmentSaveHint ? (
+                    <p className="mt-2 text-[10px] leading-relaxed text-stone-400 dark:text-stone-500">
+                      {LABELS.activityAdvanced.assignmentSaveHint}
+                    </p>
+                  ) : null}
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-stone-200 p-4 dark:border-stone-800">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h4 className="text-sm font-semibold text-stone-900 dark:text-stone-100">Workforce</h4>
-                    <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">Open operator logs, close active shifts, and review who touched this activity.</p>
+              <div className="rounded-xl border border-stone-200 border-l-[3px] border-l-violet-500/70 bg-white p-4 dark:border-stone-800 dark:border-l-violet-500/50 dark:bg-stone-900/40">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+                  <div className="min-w-0 flex-1">
+                    <h4 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">
+                      <Timer size={14} className="text-violet-500 dark:text-violet-400" aria-hidden />
+                      {LABELS.activityAdvanced.shiftsSectionTitle}
+                    </h4>
+                    {LABELS.activityAdvanced.shiftsSectionHint ? (
+                      <p className="mt-2 text-xs leading-relaxed text-stone-500 dark:text-stone-400">
+                        {LABELS.activityAdvanced.shiftsSectionHint}
+                      </p>
+                    ) : null}
                   </div>
-                  <span className="rounded-full bg-stone-100 px-2 py-1 text-[11px] text-stone-700 dark:bg-stone-800 dark:text-stone-300">
-                    {activityWorkActivitys.length} operator logs
-                  </span>
+                  <div
+                    className="flex shrink-0 flex-wrap items-center gap-2"
+                    title={`${activityWorkActivitys.length} ${activityWorkActivitys.length === 1 ? LABELS.activityAdvanced.shiftsCountSingular : LABELS.activityAdvanced.shiftsCountPlural} on this activity`}
+                  >
+                    <div className="inline-flex min-h-9 items-center gap-2 whitespace-nowrap rounded-xl border border-stone-200 bg-stone-50 px-3 py-1.5 dark:border-stone-600 dark:bg-stone-800/90">
+                      <span className="font-mono text-lg font-semibold tabular-nums leading-none text-stone-900 dark:text-stone-100">
+                        {activityWorkActivitys.length}
+                      </span>
+                      <span className="h-4 w-px shrink-0 bg-stone-200 dark:bg-stone-600" aria-hidden />
+                      <span className="text-[11px] font-medium text-stone-600 dark:text-stone-300">
+                        {activityWorkActivitys.length === 1
+                          ? LABELS.activityAdvanced.shiftsCountSingular
+                          : LABELS.activityAdvanced.shiftsCountPlural}
+                      </span>
+                    </div>
+                    {activeOperatorLogCount > 0 && (
+                      <span className="inline-flex items-center rounded-lg bg-emerald-500/12 px-2.5 py-1.5 text-[11px] font-semibold text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300">
+                        {activeOperatorLogCount} {LABELS.activityAdvanced.shiftsActiveNow}
+                      </span>
+                    )}
+                  </div>
                 </div>
 
-                <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-[1fr_auto]">
-                  <select
-                    className="control-input"
-                    value={selectedOperatorUserId}
-                    onChange={event => setSelectedOperatorUserId(event.target.value)}
-                    disabled={!canManageWorkforce || isUpdatingWorkforce}
-                  >
-                    <option value="">Select workspace member…</option>
-                    {availableOperators.map(profile => (
-                      <option key={profile.user_id} value={profile.user_id}>
-                        {workspaceMemberLabel(profile.user_id)}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => { void openOperatorSessionForProfile(); }}
-                    disabled={!canManageWorkforce || isUpdatingWorkforce || !selectedOperatorUserId}
-                    className="action-btn-primary justify-center"
-                  >
-                    <Play size={14} />
-                    {isUpdatingWorkforce ? 'Updating…' : LABELS.workforce.openOperatorLog}
-                  </button>
+                <div className="mt-4 rounded-lg border border-stone-100 bg-stone-50/80 p-3 dark:border-stone-800 dark:bg-stone-800/40">
+                  {LABELS.activityAdvanced.startNewShiftGroupLabel ? (
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-stone-400 dark:text-stone-500">
+                      {LABELS.activityAdvanced.startNewShiftGroupLabel}
+                    </p>
+                  ) : null}
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-stretch">
+                    <select
+                      className="control-input"
+                      value={selectedOperatorUserId}
+                      onChange={event => setSelectedOperatorUserId(event.target.value)}
+                      disabled={!canManageWorkforce || isUpdatingWorkforce}
+                      aria-label={LABELS.activityAdvanced.shiftsSelectPlaceholder}
+                    >
+                      <option value="">{LABELS.activityAdvanced.shiftsSelectPlaceholder}</option>
+                      {availableForOperatorLog.map(profile => (
+                        <option key={profile.user_id} value={profile.user_id}>
+                          {workspaceMemberLabel(profile.user_id)}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => { void openOperatorSessionForProfile(); }}
+                      disabled={!canManageWorkforce || isUpdatingWorkforce || !selectedOperatorUserId}
+                      className="action-btn-primary h-[42px] justify-center sm:h-auto sm:min-h-[42px]"
+                    >
+                      <Play size={14} aria-hidden />
+                      {isUpdatingWorkforce ? 'Updating…' : LABELS.activityAdvanced.startShift}
+                    </button>
+                  </div>
                 </div>
 
                 <div className="mt-4 space-y-2">
-                  {activityWorkActivitys.length === 0 && (
-                    <p className="text-sm text-stone-500 dark:text-stone-400">{LABELS.workforce.noOperatorLogsYet}</p>
-                  )}
+                  {activityWorkActivitys.length === 0 && LABELS.activityAdvanced.noShiftsYet ? (
+                    <p className="rounded-lg border border-dashed border-stone-200 px-3 py-3 text-center text-sm text-stone-500 dark:border-stone-700 dark:text-stone-400">
+                      {LABELS.activityAdvanced.noShiftsYet}
+                    </p>
+                  ) : null}
                   {activityWorkActivitys.map(activityLog => {
                     const uid = activityLog.actor_user_id ?? '';
                     const operatorName = uid
@@ -1457,10 +1551,10 @@ export default function ActivityDetail() {
                     const windowLabel = `${(activityLog.start_time ? new Date(activityLog.start_time) : new Date()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - ${activityLog.end_time ? new Date(activityLog.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '...'}`;
 
                     return (
-                      <div key={activityLog.id} className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 px-3 py-2 dark:border-stone-800">
-                        <div>
-                          <p className="mb-1 text-[10px] font-semibold uppercase tracking-wider text-stone-400 dark:text-stone-500">{operatorName}</p>
-                          <p className="text-xs text-stone-500 dark:text-stone-400">{windowLabel} · {activityLog.duration_hours ? `${activityLog.duration_hours.toFixed(2)}h` : tx('in progress')}</p>
+                      <div key={activityLog.id} className="flex items-center justify-between gap-3 rounded-xl border border-stone-200 bg-stone-50/50 px-3 py-2.5 dark:border-stone-800 dark:bg-stone-800/30">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-stone-900 dark:text-stone-100">{operatorName}</p>
+                          <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">{windowLabel} · {activityLog.duration_hours ? `${activityLog.duration_hours.toFixed(2)}h` : tx('in progress')}</p>
                         </div>
                         <div className="flex items-center gap-2">
                           <span className={cn(
@@ -1478,8 +1572,8 @@ export default function ActivityDetail() {
                               disabled={!canManageWorkforce || isUpdatingWorkforce}
                               className="action-btn-secondary text-xs"
                             >
-                              <Square size={12} />
-                              End
+                              <Square size={12} aria-hidden />
+                              {LABELS.activityAdvanced.endShift}
                             </button>
                           )}
                         </div>

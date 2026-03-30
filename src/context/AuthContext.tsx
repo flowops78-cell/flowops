@@ -1,13 +1,13 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
-import { AUTH_PERSIST_ACTIVITY_KEY, isSupabaseConfigured, supabase } from '../lib/supabase';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { invokeRevokeOtherSessions } from '../lib/revokeOtherSessions';
 
 type AuthContextType = {
   user: User | null;
   activity: Session | null;
   loading: boolean;
-  signInWithPassword: (email: string, password: string, options?: { keepSignedIn?: boolean }) => Promise<void>;
+  signInWithPassword: (email: string, password: string) => Promise<void>;
   signOut: (options?: { scope?: 'local' | 'global' }) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
 };
@@ -230,11 +230,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [activity?.user?.id, clearClientSessionState, performSignOut, sessionId]);
 
-  const signInWithPassword = async (email: string, password: string, options?: { keepSignedIn?: boolean }) => {
+  const signInWithPassword = async (email: string, password: string) => {
     if (!supabase) throw new Error('Supabase is not configured.');
-    if (typeof window !== 'undefined' && typeof options?.keepSignedIn === 'boolean') {
-      sessionStorage.setItem(AUTH_PERSIST_ACTIVITY_KEY, options.keepSignedIn ? '1' : '0');
-    }
 
     await performSignOut('local');
 

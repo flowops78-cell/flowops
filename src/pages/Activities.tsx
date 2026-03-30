@@ -270,7 +270,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
     <div className={cn("page-shell", embedded && "p-0")}>
       {!embedded && role === 'viewer' && (
         <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-900 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200">
-          You are viewing as <span className="font-medium">viewer</span>. Open activities and details are read-only; you cannot create, edit, or delete records.
+          Viewer — read-only.
         </div>
       )}
       {!embedded && (
@@ -281,7 +281,6 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
             </div>
             <div>
               <h2 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Activities</h2>
-              <p className="text-xs text-stone-500 dark:text-stone-400 mt-1">Manage and track your operational work sessions.</p>
             </div>
           </div>
           <div className="flex flex-col items-start lg:items-end gap-3 font-mono">
@@ -301,7 +300,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
                   {LABELS.workspacePanels.workspaceHealth.title}
                 </button>
               )}
-              {canManageImpact && (
+              {canAccessAdminUi && (
                 <button
                   type="button"
                   onClick={() => navigate('/settings#settings-grant-access')}
@@ -447,14 +446,22 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               className="overlay-card w-full max-w-2xl relative overflow-hidden"
               onClick={e => e.stopPropagation()}
             >
-              {activityState !== 'idle' && (
-                <OverlaySavingState 
-                  state={activityState as 'saving' | 'success' | 'error'} 
-                  label={activityState === 'saving' ? "Creating activity..." : "Activity created"} 
+              {(activityState === 'saving' || activityState === 'success') && (
+                <OverlaySavingState
+                  fillParent
+                  state={activityState}
+                  label={activityState === 'saving' ? 'Creating activity…' : 'Activity created'}
                 />
               )}
 
-              <div style={{ opacity: activityState === 'idle' ? 1 : 0, visibility: activityState === 'idle' ? 'visible' : 'hidden', transition: 'opacity 0.2s' }}>
+              <div
+                style={{
+                  opacity: activityState === 'idle' || activityState === 'error' ? 1 : 0,
+                  visibility:
+                    activityState === 'idle' || activityState === 'error' ? 'visible' : 'hidden',
+                  transition: 'opacity 0.2s',
+                }}
+              >
                 <div className="overlay-header">
                   <div>
                     <h3 className="font-medium text-stone-900 dark:text-stone-100">{tx('Create Activity')}</h3>

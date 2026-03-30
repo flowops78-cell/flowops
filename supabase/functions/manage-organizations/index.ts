@@ -565,6 +565,8 @@ Deno.serve(async (request: Request) => {
       const orgId = normalizeId(payload.org_id);
       let targetUserId = normalizeId(payload.target_user_id);
       const targetEmail = normalizeId(payload.target_email);
+      const targetEmailRaw =
+        typeof payload.target_email === 'string' ? payload.target_email.trim() : '';
       const rawRole = payload.target_role;
       const role: DbRole =
         rawRole === 'operator' || rawRole === 'viewer' || rawRole === 'admin' ? rawRole : 'admin';
@@ -593,6 +595,7 @@ Deno.serve(async (request: Request) => {
       await ensureOrgMembership(adminClient, targetUserId, orgId, role, {
         isDefaultOrg: true,
         status: 'active',
+        accountEmail: targetEmailRaw || undefined,
       });
 
       const { data: orgRow, error: orgLookupErr } = await adminClient

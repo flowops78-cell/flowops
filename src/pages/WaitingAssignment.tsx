@@ -67,7 +67,9 @@ export default function WaitingAssignment() {
           </button>
         </div>
         
-        <p className="text-center text-xs text-stone-400">{LABELS.states.awaitingAccessFooter}</p>
+        {LABELS.states.awaitingAccessFooter ? (
+          <p className="text-center text-xs text-stone-400">{LABELS.states.awaitingAccessFooter}</p>
+        ) : null}
       </div>
     </div>
   );

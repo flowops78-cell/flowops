@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useData } from '../context/DataContext';
 import { Plus, ArrowUpRight, ArrowDownLeft, Circle, SquareStack, AlertCircle, Trash2, Pencil, X, Radio, Clock, Archive, ChevronDown, ChevronUp, MoreVertical, Minus, ArrowRight, ExternalLink } from 'lucide-react';
 import { formatCompactValue, formatValue, formatDate } from '../lib/utils';
@@ -173,7 +173,6 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       return [];
     }
   });
-  const [isArchivedActivityRecordsExpanded, setIsArchivedActivityRecordsExpanded] = useState(false);
   const [transferFromMethod, setTransferFromMethod] = useState('');
   const [transferFromQuery, setTransferFromQuery] = useState('');
   const [transferToChannelLabel, setTransferToChannelLabel] = useState('');
@@ -305,7 +304,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       return [];
     }
   });
-  const [isArchivedAdjustmentsExpanded, setIsArchivedAdjustmentsExpanded] = useState(false);
+  const [isArchivedLedgerExpanded, setIsArchivedLedgerExpanded] = useState(false);
+  const [ledgerViewFilter, setLedgerViewFilter] = useState<'all' | 'posted' | 'action'>('all');
   const [orgSearchQuery, setOrgSearchQuery] = useState('');
   const [orgTypeFilter, setOrgTypeFilter] = useState<'all' | 'increment' | 'decrement'>('all');
   const [orgDateStart, setOrgDateStart] = useState('');
@@ -574,6 +574,43 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       .sort((a, b) => b.requested_at.localeCompare(a.requested_at)),
     [adjustmentRequests],
   );
+
+  const proposalSummary = useMemo(() => {
+    const pending = activeAdjustments.filter(a => a.status === 'pending');
+    const deferred = activeAdjustments.filter(a => a.status === 'deferred');
+    return {
+      pendingCount: pending.length,
+      deferredCount: deferred.length,
+      pendingSum: pending.reduce((s, a) => s + (a.amount || 0), 0),
+      deferredSum: deferred.reduce((s, a) => s + (a.amount || 0), 0),
+    };
+  }, [activeAdjustments]);
+
+  const unifiedActiveLedgerRows = useMemo(() => {
+    type PostedRow = (typeof filteredActiveChannelEntries)[number];
+    type WfRow = (typeof filteredActiveAdjustments)[number];
+    const postedPart = filteredActiveChannelEntries.map((posted: PostedRow) => ({
+      rowKind: 'posted' as const,
+      sortKey: posted.created_at || '',
+      posted,
+    }));
+    const wfPart = filteredActiveAdjustments.map((workflow: WfRow) => ({
+      rowKind: (workflow.status === 'pending' ? 'pending' : 'deferred') as 'pending' | 'deferred',
+      sortKey: workflow.date || '',
+      workflow,
+    }));
+    let merged = [...postedPart, ...wfPart].sort((a, b) => b.sortKey.localeCompare(a.sortKey));
+    if (ledgerViewFilter === 'posted') merged = merged.filter(r => r.rowKind === 'posted');
+    if (ledgerViewFilter === 'action') merged = merged.filter(r => r.rowKind !== 'posted');
+    return merged;
+  }, [filteredActiveChannelEntries, filteredActiveAdjustments, ledgerViewFilter]);
+
+  const linkedActivityIdForSourceRecord = useCallback((sourceRecordId: string | null | undefined) => {
+    if (!sourceRecordId) return null;
+    const source = records.find(r => r.id === sourceRecordId);
+    const aid = source?.activity_id;
+    return aid && String(aid).trim() ? String(aid) : null;
+  }, [records]);
 
   useEffect(() => {
     if (!autoArchiveEnabled) return;
@@ -1349,27 +1386,26 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
           {isAddingAccount && (
             <div className="overlay-backdrop" onClick={() => accountState === 'idle' && closeAccountOverlay()}>
-              <div 
-                className="overlay-card" 
+              <div
+                className="overlay-card relative min-h-[260px] overflow-hidden"
                 onClick={(e) => e.stopPropagation()}
-                style={{ maxWidth: '480px', position: 'relative' }}
+                style={{ maxWidth: '480px' }}
               >
                 {(accountState === 'saving' || accountState === 'success') && (
-                  <div className="px-6">
-                    <OverlaySavingState
-                      compact
-                      state={accountState}
-                      label={
-                        accountState === 'saving'
-                          ? editingAccount
-                            ? 'Updating channel...'
-                            : 'Creating channel...'
-                          : editingAccount
-                            ? 'Channel updated'
-                            : 'Channel created'
-                      }
-                    />
-                  </div>
+                  <OverlaySavingState
+                    compact
+                    fillParent
+                    state={accountState}
+                    label={
+                      accountState === 'saving'
+                        ? editingAccount
+                          ? 'Updating channel…'
+                          : 'Creating channel…'
+                        : editingAccount
+                          ? 'Channel updated'
+                          : 'Channel created'
+                    }
+                  />
                 )}
 
                 <div
@@ -1446,14 +1482,50 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
           )}
 
           <div ref={recordHistoryRef} className="section-card p-4">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h3 className="font-medium text-stone-900 dark:text-stone-100">Channel activity</h3>
-                <p className="hidden md:block text-xs text-stone-500 dark:text-stone-400 mt-1">
-                  <span className="font-mono text-stone-900 dark:text-stone-100">{formatValue(totalChannel)}</span> · activity records across all channels
+            <div className="flex justify-between items-center mb-4 gap-3">
+              <div className="min-w-0">
+                <h3 className="font-medium text-stone-900 dark:text-stone-100">Channel ledger</h3>
+                <p className="text-xs text-stone-500 dark:text-stone-400 mt-1 space-y-1">
+                  <span className="block">
+                    <span className="font-mono text-stone-900 dark:text-stone-100 font-medium">{formatValue(totalChannel)}</span>
+                    <span className="text-stone-500 dark:text-stone-400"> posted total (authoritative reserve)</span>
+                  </span>
+                  <span className="block text-[11px] leading-relaxed">
+                    Proposed: {proposalSummary.pendingCount} pending ({formatValue(proposalSummary.pendingSum)}), {proposalSummary.deferredCount} deferred ({formatValue(proposalSummary.deferredSum)}). Pending and deferred do not change posted totals until approved and settled.
+                  </span>
                 </p>
+                <div className="flex flex-wrap gap-1.5 mt-2" role="tablist" aria-label="Ledger view">
+                  {(['all', 'posted', 'action'] as const).map(key => (
+                    <button
+                      key={key}
+                      type="button"
+                      role="tab"
+                      aria-selected={ledgerViewFilter === key}
+                      onClick={() => setLedgerViewFilter(key)}
+                      className={cn(
+                        'rounded-md px-2.5 py-1 text-[11px] font-medium border transition-colors',
+                        ledgerViewFilter === key
+                          ? 'border-stone-900 bg-stone-900 text-white dark:border-stone-100 dark:bg-stone-100 dark:text-stone-900'
+                          : 'border-stone-200 dark:border-stone-600 text-stone-600 dark:text-stone-400 hover:bg-stone-50 dark:hover:bg-stone-800/60',
+                      )}
+                    >
+                      {key === 'all' ? 'All' : key === 'posted' ? 'Posted' : 'Needs action'}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div className="flex flex-wrap justify-end gap-2">
+              <div className="flex flex-wrap justify-end gap-2 shrink-0">
+                {canOperateValue && (
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingAdjustment(true)}
+                    className="action-btn-secondary text-xs"
+                    title="Add live deferred record"
+                  >
+                    <Plus size={13} />
+                    Add live record
+                  </button>
+                )}
                 {canOperateValue && (
                   <>
                     <button
@@ -1496,6 +1568,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
               </div>
             </div>
 
+            {ledgerViewFilter !== 'action' && (
             <div className="mb-4 pt-3 border-t border-stone-200/80 dark:border-stone-800/80">
               <button
                 type="button"
@@ -1503,7 +1576,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                 className="action-btn-secondary text-xs mb-3"
                 title="Toggle Filters (F)"
               >
-                {isTxControlsVisible ? 'Hide Filters' : 'Filters'}
+                {isTxControlsVisible ? 'Hide Filters' : 'Posted filters'}
               </button>
               {isTxControlsVisible && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
@@ -1581,6 +1654,63 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
               </div>
               )}
             </div>
+            )}
+
+            {ledgerViewFilter !== 'posted' && (
+            <div className="mb-4 pt-3 border-t border-stone-200/80 dark:border-stone-800/80">
+              <button
+                type="button"
+                onClick={() => setIsAdjustmentControlsVisible(v => !v)}
+                className="action-btn-secondary text-xs mb-3"
+              >
+                {isAdjustmentControlsVisible ? 'Hide Filters' : 'Workflow filters'}
+              </button>
+              {isAdjustmentControlsVisible && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    <input
+                      className="control-input"
+                      placeholder="Search entities..."
+                      value={adjustmentSearchQuery}
+                      onChange={event => setAdjustmentSearchQuery(event.target.value)}
+                    />
+                    <select
+                      className="control-input"
+                      value={adjustmentTypeFilter}
+                      onChange={event => setAdjustmentTypeFilter(event.target.value as typeof adjustmentTypeFilter)}
+                    >
+                      <option value="all">All directions</option>
+                      <option value="input">Inflow</option>
+                      <option value="output">Outflow</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleArchiveSettledOrOldAdjustments}
+                      disabled={!canOperateValue}
+                      className="action-btn-secondary text-xs disabled:opacity-50"
+                    >
+                      Archive Settled/Old Entries
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleRestoreAllArchivedAdjustments}
+                      disabled={!canOperateValue || archivedAdjustmentIds.length === 0}
+                      className="action-btn-secondary text-xs disabled:opacity-50"
+                    >
+                      Restore All Archived
+                    </button>
+                  </div>
+                </div>
+              </div>
+              )}
+            </div>
+            )}
 
             {isAddingActivityRecord && (
               <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm animate-in fade-in duration-200">
@@ -1595,11 +1725,18 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     </button>
                   </div>
 
-                  <div className="p-6">
+                  <div
+                    className={cn(
+                      'p-6',
+                      activityRecordState !== 'idle' && 'relative min-h-[240px]',
+                    )}
+                  >
                     {activityRecordState !== 'idle' ? (
-                      <OverlaySavingState 
-                        state={activityRecordState as any} 
-                        label={activityRecordState === 'saving' ? "Saving record..." : "Record saved"}
+                      <OverlaySavingState
+                        fillParent
+                        compact
+                        state={activityRecordState as 'saving' | 'success'}
+                        label={activityRecordState === 'saving' ? 'Saving record…' : 'Record saved'}
                       />
                     ) : (
                       <form onSubmit={handleAddActivityRecord} className="space-y-4">
@@ -1715,11 +1852,18 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     </button>
                   </div>
 
-                  <div className="p-6">
+                  <div
+                    className={cn(
+                      'p-6',
+                      transferState !== 'idle' && 'relative min-h-[240px]',
+                    )}
+                  >
                     {transferState !== 'idle' ? (
-                      <OverlaySavingState 
-                        state={transferState as any} 
-                        label={transferState === 'saving' ? "Processing transfer..." : "Transfer complete"}
+                      <OverlaySavingState
+                        fillParent
+                        compact
+                        state={transferState as 'saving' | 'success'}
+                        label={transferState === 'saving' ? 'Processing transfer…' : 'Transfer complete'}
                       />
                     ) : (
                       <form onSubmit={handleTransferInternalToChannel} className="space-y-4">
@@ -1809,439 +1953,12 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
               </div>
             )}
 
-            <div className="md:hidden divide-y divide-stone-100 dark:divide-stone-800">
-              {filteredActiveChannelEntries.map(t => (
-                <MobileActivityRecordCard
-                  key={t.id}
-                  title={<span className="text-xs text-stone-500 dark:text-stone-400 font-normal">{formatDate(t.created_at || '')}</span>}
-                  right={(
-                    <p className={cn(
-                      "font-mono font-medium text-sm",
-                      t.direction === 'increase' ? "amount-positive" : "amount-negative"
-                    )}>
-                      {t.direction === 'increase' ? '+' : '-'}{formatValue(t.unit_amount)}
-                    </p>
-                  )}
-                  meta={(
-                    <span className="inline-flex items-center gap-1.5 capitalize">
-                      {isTransferActivityRecord(t) && (
-                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                          Transfer
-                        </span>
-                      )}
-                      <span>{t.direction === 'increase' ? 'Inflow' : 'Outflow'} • {formatMethodLabel(t.notes)}</span>
-                    </span>
-                  )}
-                >
-                  <div className="mt-2 flex justify-end gap-2">
-                    {canOperateValue && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={() => handleArchiveChannelActivityRecord(t.id)}
-                          className="action-btn-tertiary px-2.5 py-1 text-xs"
-                        >
-                          Archive
-                        </button>
-                        {canManageImpact && (
-                          <button
-                            type="button"
-                            onClick={() => { void handleDeleteChannelActivityRecord(t.id); }}
-                            disabled={deletingChannelActivityRecordId === t.id}
-                            className="action-btn-tertiary px-2.5 py-1 text-xs text-red-600 dark:text-red-400 disabled:opacity-50"
-                          >
-                            {deletingChannelActivityRecordId === t.id ? 'Deleting…' : 'Delete'}
-                          </button>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </MobileActivityRecordCard>
-              ))}
-              {filteredActiveChannelEntries.length === 0 && (
-                <div className="px-6 py-8 text-center text-stone-400 text-sm">No records recorded.</div>
-              )}
-            </div>
-
-            {archivedChannelEntries.length > 0 && (
-              <div className="mt-4 rounded-lg border border-stone-200 dark:border-stone-700 bg-stone-50/60 dark:bg-stone-800/40 p-3 md:hidden">
-                <div className="flex items-center justify-between gap-3">
-                  <h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">Archived Records</h4>
-                  <button
-                    type="button"
-                    onClick={() => setIsArchivedActivityRecordsExpanded(prev => !prev)}
-                    className="action-btn-secondary px-2.5 py-1 text-xs"
-                  >
-                    {isArchivedActivityRecordsExpanded ? 'Hide' : `Show (${filteredArchivedChannelEntries.length})`}
-                  </button>
-                </div>
-                {isArchivedActivityRecordsExpanded && (
-                  <div className="mt-3 divide-y divide-stone-100 dark:divide-stone-800">
-                    {filteredArchivedChannelEntries.map(t => (
-                      <MobileActivityRecordCard
-                        key={t.id}
-                        title={<span className="text-xs text-stone-500 dark:text-stone-400 font-normal">{formatDate(t.created_at || '')}</span>}
-                        right={(
-                          <p className={cn(
-                            "font-mono font-medium text-sm",
-                            t.direction === 'increase' ? "amount-positive" : "amount-negative"
-                          )}>
-                            {t.direction === 'increase' ? '+' : '-'}{formatValue(t.unit_amount)}
-                          </p>
-                        )}
-                        meta={<span className="capitalize">{t.direction} • {formatMethodLabel(t.notes)}</span>}
-                      >
-                        <div className="mt-2 flex justify-end gap-2">
-                          {canOperateValue && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => handleUnarchiveChannelActivityRecord(t.id)}
-                                className="action-btn-tertiary px-2.5 py-1 text-xs"
-                              >
-                                Unarchive
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => { void handleDeleteChannelActivityRecord(t.id); }}
-                                disabled={deletingChannelActivityRecordId === t.id}
-                                className="action-btn-tertiary px-2.5 py-1 text-xs text-red-600 dark:text-red-400 disabled:opacity-50"
-                              >
-                                {deletingChannelActivityRecordId === t.id ? 'Deleting…' : 'Delete'}
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </MobileActivityRecordCard>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="hidden md:block border-t border-stone-100 dark:border-stone-800 -mx-4">
-              <div className="divide-y divide-stone-100 dark:divide-stone-800 max-h-[600px] overflow-y-auto overflow-x-hidden scrollbar-thin">
-                {filteredActiveChannelEntries.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center py-12 gap-3 text-stone-400 dark:text-stone-500">
-                    <Radio size={28} strokeWidth={1.5} />
-                    <p className="text-sm">No activity recorded yet</p>
-                  </div>
-                ) : (
-                  filteredActiveChannelEntries.map(t => {
-                    const isIncrease = t.direction === 'increase';
-                    const isTransfer = isTransferActivityRecord(t);
-                    return (
-                      <div
-                        key={t.id}
-                        className={cn(
-                          "group flex items-center gap-4 px-5 py-3 hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-all",
-                          isTransfer && "bg-blue-50/30 dark:bg-blue-900/10"
-                        )}
-                      >
-                        {/* Feed Line / Icon */}
-                        <div className={cn(
-                          "flex items-center justify-center w-8 h-8 rounded-full shrink-0 border-2",
-                          isIncrease 
-                            ? "border-emerald-100 bg-emerald-50 text-emerald-600 dark:border-emerald-900/50 dark:bg-emerald-900/30 dark:text-emerald-400" 
-                            : "border-red-100 bg-red-50 text-red-600 dark:border-red-900/50 dark:bg-red-900/30 dark:text-red-400"
-                        )}>
-                          {isIncrease ? <Plus size={14} /> : <ArrowDownLeft size={14} />}
-                        </div>
-
-                        {/* Event Details */}
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <p className="text-sm font-medium text-stone-900 dark:text-stone-100 truncate">
-                              {formatMethodLabel(t.method ?? t.notes ?? 'Activity')}
-                            </p>
-                            {isTransfer && (
-                              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-                                Transfer
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <p className="text-[11px] text-stone-400 dark:text-stone-500 flex items-center gap-1">
-                              <Clock size={10} />
-                              {formatDate(t.created_at || '')}
-                            </p>
-                            <span className="w-1 h-1 rounded-full bg-stone-200 dark:bg-stone-700" />
-                            <p className="text-[11px] text-stone-400 dark:text-stone-500 italic max-w-[200px] truncate">
-                              {t.notes && t.notes !== t.method ? t.notes : 'Operational record'}
-                            </p>
-                          </div>
-                        </div>
-
-                        {/* Financial Delta */}
-                        <div className="flex items-center gap-5 shrink-0">
-                          <div className="text-right">
-                            <p className={cn(
-                              "text-sm font-mono font-bold leading-none",
-                              isIncrease ? "text-emerald-600 dark:text-emerald-400" : "text-red-500 dark:text-red-400"
-                            )}>
-                              {isIncrease ? '+' : '−'}{formatValue(t.unit_amount)}
-                            </p>
-                            <p className="text-[10px] text-stone-400 dark:text-stone-500 mt-1 uppercase tracking-tight">
-                              {t.channel_label || 'Other'}
-                            </p>
-                          </div>
-
-                          {/* Action Reveal */}
-                          {canOperateValue && (
-                            <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button
-                                type="button"
-                                onClick={() => handleArchiveChannelActivityRecord(t.id)}
-                                className="p-1.5 rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-200 dark:hover:bg-stone-700"
-                                title="Archive"
-                              >
-                                <Archive size={14} />
-                              </button>
-                              {canManageImpact && (
-                                <button
-                                  type="button"
-                                  onClick={() => { void handleDeleteChannelActivityRecord(t.id); }}
-                                  disabled={deletingChannelActivityRecordId === t.id}
-                                  className="p-1.5 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 disabled:opacity-50"
-                                  title="Delete"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-
-            {archivedChannelEntries.length > 0 && (
-              <div className="hidden md:block mt-4">
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsArchivedActivityRecordsExpanded(prev => !prev)}
-                    className="action-btn-secondary text-xs px-2.5 py-1.5"
-                  >
-                    {isArchivedActivityRecordsExpanded ? 'Hide' : `Show (${filteredArchivedChannelEntries.length})`}
-                  </button>
-                </div>
-                {isArchivedActivityRecordsExpanded && (
-                  <CollapsibleActivitySection
-                    title="Archived Activity"
-                    summary={`${archivedChannelEntries.length} records`}
-                    defaultExpanded={false}
-                    maxExpandedHeightClass="max-h-[420px]"
-                    maxCollapsedHeightClass="max-h-[96px]"
-                    contentClassName="bg-white dark:bg-stone-900"
-                  >
-                    <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] activity-fixed bg-white dark:bg-stone-900 text-left text-[13px]">
-                      <thead className="sticky top-0 z-10 bg-stone-50 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-700">
-                        <tr>
-                          <th className="sticky-col px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Date</th>
-                          <th className="px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Type</th>
-                          <th className="px-6 py-2.5 w-[170px] text-[11px] font-semibold uppercase tracking-wide">Channel</th>
-                          <th className="px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Account</th>
-                          <th className="px-6 py-2.5 w-[150px] text-right text-[11px] font-semibold uppercase tracking-wide">Amount</th>
-                          <th className="sticky-col-right px-6 py-2.5 w-[170px] text-right text-[11px] font-semibold uppercase tracking-wide">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-stone-100 bg-white dark:divide-stone-800 dark:bg-stone-900">
-                        {filteredArchivedChannelEntries.map(t => (
-                          <tr key={t.id} className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors">
-                            <td className="sticky-col px-6 py-2.5 text-stone-500 dark:text-stone-400">{formatDate(t.date)}</td>
-                            <td className="px-6 py-2.5">{t.direction === 'increase' ? 'Inflow' : 'Outflow'}</td>
-                            <td className="px-6 py-2.5 text-stone-900 dark:text-stone-100">{formatMethodLabel(t.method)}</td>
-                            <td className="px-6 py-2.5 text-stone-500 dark:text-stone-400">
-                            </td>
-                            <td className={cn(
-                              "px-6 py-2.5 text-right font-mono font-medium",
-                              t.direction === 'increase' ? "amount-positive" : "amount-negative"
-                            )}>
-                              {t.direction === 'increase' ? '+' : '-'}{formatValue(t.amount)}
-                            </td>
-                            <td className="sticky-col-right px-6 py-2.5 text-right">
-                              {canOperateValue && (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleUnarchiveChannelActivityRecord(t.id)}
-                                    className="action-btn-tertiary px-2 py-1 text-[11px] mr-1.5"
-                                  >
-                                    Unarchive
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => { void handleDeleteChannelActivityRecord(t.id); }}
-                                    disabled={deletingChannelActivityRecordId === t.id}
-                                    className="inline-flex items-center justify-center p-1.5 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title={deletingChannelActivityRecordId === t.id ? 'Deleting…' : 'Delete'}
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                </>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                        {filteredArchivedChannelEntries.length === 0 && (
-                          <tr>
-                            <td colSpan={5} className="px-6 py-8 text-center text-stone-400">No archived records match current filters.</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </CollapsibleActivitySection>
-                )}
-              </div>
-            )}
-
-          </div>
-
-        <div className="section-card p-4">
-            <div className="flex justify-between items-center mb-4">
-              <div>
-                <h3 className="font-medium text-stone-900 dark:text-stone-100">Deferred Tracking</h3>
-                <p className="text-sm text-stone-500 dark:text-stone-400"><span className="font-mono text-stone-900 dark:text-stone-100 font-medium">{formatValue(totalOutstanding)}</span> · {filteredActiveAdjustments.length} live · {pendingAdjustmentRequests.length} pending</p>
-              </div>
-              <div className="flex flex-wrap justify-end gap-2">
-                {canOperateValue && (
-                  <button
-                    type="button"
-                    onClick={() => setIsAddingAdjustment(true)}
-                    className="action-btn-secondary text-xs"
-                    title="Add Live Record"
-                  >
-                    <Plus size={13} />
-                    Add Live Record
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {(pendingAdjustmentRequests.length > 0 || canOperateValue) && (
-              <div className="mb-4 rounded-xl border border-stone-200 dark:border-stone-800 bg-stone-50/80 dark:bg-stone-900/50 p-4">
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <div>
-                    <h4 className="text-sm font-medium text-stone-900 dark:text-stone-100">Pending Deferred Approvals</h4>
-                    <p className="text-xs text-stone-500 dark:text-stone-400">Operator-submitted deferred records stay here until admin approves or rejects them.</p>
-                  </div>
-                  <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
-                    {pendingAdjustmentRequests.length} pending
-                  </span>
-                </div>
-
-                {pendingAdjustmentRequests.length === 0 ? (
-                  <p className="text-sm text-stone-500 dark:text-stone-400">No pending deferred records.</p>
-                ) : (
-                  <div className="space-y-3">
-                    {pendingAdjustmentRequests.map(request => {
-                      const unit = entities.find(item => item.id === request.entity_id);
-                      return (
-                        <div key={request.id} className="flex flex-col gap-3 rounded-lg border border-stone-200 dark:border-stone-700 bg-white dark:bg-stone-900 px-4 py-3 md:flex-row md:items-center md:justify-between">
-                          <div className="space-y-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-medium text-stone-900 dark:text-stone-100">{unit?.name || 'Unknown'}</span>
-                              <span className={cn(
-                                'inline-flex items-center gap-1 rounded-full px-2 py-1 text-[11px] font-medium',
-                                request.type === 'input'
-                                  ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300'
-                                  : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
-                              )}>
-                                {request.type === 'input' ? 'Outflow' : 'Inflow'}
-                              </span>
-                            </div>
-                            <p className="text-xs text-stone-500 dark:text-stone-400">Requested {formatDate(request.requested_at)} · {formatValue(request.amount)}</p>
-                          </div>
-                          <div className="flex flex-wrap items-center justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() => void handleResolveAdjustment(request.id, 'rejected')}
-                              disabled={!canOperateValue}
-                              className="action-btn-tertiary px-2.5 py-1.5 text-xs text-red-600 dark:text-red-400 disabled:opacity-50"
-                            >
-                              Reject
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => void handleResolveAdjustment(request.id, 'approved')}
-                              disabled={!canOperateValue}
-                              className="rounded-md bg-emerald-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                              Approve
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="mb-4 pt-3 border-t border-stone-200/80 dark:border-stone-800/80">
-              <button
-                type="button"
-                onClick={() => setIsAdjustmentControlsVisible(v => !v)}
-                className="action-btn-secondary text-xs mb-3"
-              >
-                {isAdjustmentControlsVisible ? 'Hide Filters' : 'Filters'}
-              </button>
-              {isAdjustmentControlsVisible && (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-                <div className="space-y-2">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    <input
-                      className="control-input"
-                      placeholder="Search entities..."
-                      value={adjustmentSearchQuery}
-                      onChange={event => setAdjustmentSearchQuery(event.target.value)}
-                    />
-                    <select
-                      className="control-input"
-                      value={adjustmentTypeFilter}
-                      onChange={event => setAdjustmentTypeFilter(event.target.value as typeof adjustmentTypeFilter)}
-                    >
-                      <option value="all">All directions</option>
-                      <option value="input">Inflow</option>
-                      <option value="output">Outflow</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={handleArchiveSettledOrOldAdjustments}
-                      disabled={!canOperateValue}
-                      className="action-btn-secondary text-xs disabled:opacity-50"
-                    >
-                      Archive Settled/Old Entries
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleRestoreAllArchivedAdjustments}
-                      disabled={!canOperateValue || archivedAdjustmentIds.length === 0}
-                      className="action-btn-secondary text-xs disabled:opacity-50"
-                    >
-                      Restore All Archived
-                    </button>
-                  </div>
-                </div>
-              </div>
-              )}
-            </div>
-
             {isAddingAdjustment && (
               <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm animate-in fade-in duration-200">
                 <div className="w-full max-w-lg bg-white dark:bg-stone-900 rounded-2xl shadow-xl border border-stone-200 dark:border-stone-800 overflow-hidden animate-in zoom-in-95 duration-200">
                   <div className="px-6 py-4 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between">
                     <h3 className="font-semibold text-stone-900 dark:text-stone-100">Add Live Record</h3>
-                    <button 
+                    <button
                       onClick={() => setIsAddingAdjustment(false)}
                       className="p-1 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-full transition-colors"
                     >
@@ -2249,11 +1966,18 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     </button>
                   </div>
 
-                  <div className="p-6">
+                  <div
+                    className={cn(
+                      'p-6',
+                      adjustmentState !== 'idle' && 'relative min-h-[240px]',
+                    )}
+                  >
                     {adjustmentState !== 'idle' ? (
-                      <OverlaySavingState 
-                        state={adjustmentState as any} 
-                        label={adjustmentState === 'saving' ? "Saving entry..." : "Entry saved"}
+                      <OverlaySavingState
+                        fillParent
+                        compact
+                        state={adjustmentState as 'saving' | 'success'}
+                        label={adjustmentState === 'saving' ? 'Saving entry…' : 'Entry saved'}
                       />
                     ) : (
                       <form onSubmit={handleAddAdjustment} className="space-y-4">
@@ -2278,7 +2002,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                             <select
                               className="control-input"
                               value={adjustmentType}
-                              onChange={e => setAdjustmentType(e.target.value as any)}
+                              onChange={e => setAdjustmentType(e.target.value as 'input' | 'output')}
                             >
                               <option value="input">Outflow</option>
                               <option value="output">Inflow</option>
@@ -2298,15 +2022,15 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                         </div>
 
                         <div className="pt-4 flex gap-3">
-                          <button 
-                            type="button" 
+                          <button
+                            type="button"
                             onClick={() => setIsAddingAdjustment(false)}
                             className="flex-1 px-4 py-2.5 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 rounded-xl font-medium hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors"
                           >
                             Cancel
                           </button>
-                          <button 
-                            type="submit" 
+                          <button
+                            type="submit"
                             disabled={!canOperateValue}
                             className="flex-[2] px-4 py-2.5 bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 rounded-xl font-semibold hover:bg-stone-800 dark:hover:bg-stone-200 transition-colors disabled:opacity-50"
                           >
@@ -2321,16 +2045,136 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
             )}
 
             <div className="md:hidden divide-y divide-stone-100 dark:divide-stone-800">
-              {filteredActiveAdjustments.map(l => {
+              {unifiedActiveLedgerRows.map(row => {
+                if (row.rowKind === 'posted') {
+                  const t = row.posted;
+                  return (
+                    <MobileActivityRecordCard
+                      key={t.id}
+                      title={<span className="text-xs text-stone-500 dark:text-stone-400 font-normal">{formatDate(t.created_at || '')}</span>}
+                      right={(
+                        <p className={cn(
+                          'font-mono font-medium text-sm',
+                          t.direction === 'increase' ? 'amount-positive' : 'amount-negative',
+                        )}>
+                          {t.direction === 'increase' ? '+' : '-'}{formatValue(t.unit_amount)}
+                        </p>
+                      )}
+                      meta={(
+                        <span className="inline-flex items-center gap-1.5 capitalize flex-wrap">
+                          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-stone-200/90 text-stone-700 dark:bg-stone-700 dark:text-stone-200">
+                            Posted
+                          </span>
+                          {isTransferActivityRecord(t) && (
+                            <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
+                              Transfer
+                            </span>
+                          )}
+                          <span>{t.direction === 'increase' ? 'Inflow' : 'Outflow'} • {formatMethodLabel(t.notes)}</span>
+                        </span>
+                      )}
+                    >
+                      <div className="mt-2 flex justify-end gap-2">
+                        {canOperateValue && (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleArchiveChannelActivityRecord(t.id)}
+                              className="action-btn-tertiary px-2.5 py-1 text-xs"
+                            >
+                              Archive
+                            </button>
+                            {canManageImpact && (
+                              <button
+                                type="button"
+                                onClick={() => { void handleDeleteChannelActivityRecord(t.id); }}
+                                disabled={deletingChannelActivityRecordId === t.id}
+                                className="action-btn-tertiary px-2.5 py-1 text-xs text-red-600 dark:text-red-400 disabled:opacity-50"
+                              >
+                                {deletingChannelActivityRecordId === t.id ? 'Deleting…' : 'Delete'}
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    </MobileActivityRecordCard>
+                  );
+                }
+                const l = row.workflow;
                 const unit = entities.find(p => p.id === l.entity_id);
+                const src = l as ActivityRecord;
+                const linkAid = linkedActivityIdForSourceRecord(src.source_record_id);
+                if (row.rowKind === 'pending') {
+                  return (
+                    <MobileActivityRecordCard
+                      key={l.id}
+                      title={unit?.name || 'Unknown'}
+                      right={<p className="font-mono text-stone-900 dark:text-stone-100">{formatValue(l.amount)}</p>}
+                      meta={(
+                        <span className="inline-flex flex-wrap items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300">
+                            Pending
+                          </span>
+                          <span className="text-xs text-stone-500 dark:text-stone-400">
+                            {formatDate(l.date)} · {l.type === 'input' ? 'Outflow' : 'Inflow'}
+                          </span>
+                        </span>
+                      )}
+                    >
+                      {linkAid && (
+                        <button
+                          type="button"
+                          className="mt-1 text-left text-xs font-medium text-sky-600 dark:text-sky-400 hover:underline"
+                          onClick={() => navigate(`/activity/${linkAid}`)}
+                        >
+                          Linked activity
+                        </button>
+                      )}
+                      <div className="mt-2 flex justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleResolveAdjustment(l.id, 'rejected')}
+                          disabled={!canOperateValue}
+                          className="action-btn-tertiary px-2.5 py-1 text-xs text-red-600 dark:text-red-400 disabled:opacity-50"
+                        >
+                          Reject
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleResolveAdjustment(l.id, 'approved')}
+                          disabled={!canOperateValue}
+                          className="rounded-md bg-emerald-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          Approve
+                        </button>
+                      </div>
+                    </MobileActivityRecordCard>
+                  );
+                }
                 return (
                   <MobileActivityRecordCard
                     key={l.id}
                     title={unit?.name || 'Unknown'}
                     right={<p className="font-mono text-stone-900 dark:text-stone-100">{formatValue(l.amount)}</p>}
-                    meta={formatDate(l.date)}
+                    meta={(
+                      <span className="inline-flex flex-wrap items-center gap-1.5">
+                        <span className="px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300">
+                          Deferred
+                        </span>
+                        <span className="text-xs text-stone-500 dark:text-stone-400">{formatDate(l.date)}</span>
+                      </span>
+                    )}
                   >
-                    <p className="text-xs text-stone-500 dark:text-stone-400">{l.type === 'input' ? 'Outflow' : 'Inflow'} · Active</p>
+                    {linkAid && (
+                      <button
+                        type="button"
+                        className="mt-1 text-left text-xs font-medium text-sky-600 dark:text-sky-400 hover:underline"
+                        onClick={() => navigate(`/activity/${linkAid}`)}
+                      >
+                        Linked activity
+                      </button>
+                    )}
+                    <p className="text-xs text-stone-500 dark:text-stone-400">{l.type === 'input' ? 'Outflow' : 'Inflow'} · proposed</p>
                     {settlingActivityRecordId === l.id && (
                       <div className="mt-2 flex flex-wrap items-center gap-2 p-2 bg-stone-50 dark:bg-stone-800/60 rounded-lg border border-stone-200 dark:border-stone-700">
                         <select
@@ -2406,257 +2250,471 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                   </MobileActivityRecordCard>
                 );
               })}
-              {filteredActiveAdjustments.length === 0 && (
-                <div className="px-6 py-8 text-center text-stone-400 text-sm">No deferred records yet.</div>
+              {unifiedActiveLedgerRows.length === 0 && (
+                <div className="px-6 py-8 text-center text-stone-400 text-sm">No rows match this view.</div>
               )}
             </div>
 
-            {archivedAdjustments.length > 0 && (
-              <div className="mt-4 rounded-lg border border-stone-200 dark:border-stone-700 bg-stone-50/60 dark:bg-stone-800/40 p-3 md:hidden">
-                <div className="flex items-center justify-between gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsArchivedAdjustmentsExpanded(prev => !prev)}
-                    className="action-btn-secondary px-2.5 py-1 text-xs"
-                  >
-                    {isArchivedAdjustmentsExpanded ? 'Hide' : `Show (${filteredArchivedAdjustments.length})`}
-                  </button>
-                </div>
-                {isArchivedAdjustmentsExpanded && (
-                  <div className="mt-3 divide-y divide-stone-100 dark:divide-stone-800">
-                    {filteredArchivedAdjustments.map(l => {
-                      const unit = entities.find(p => p.id === l.entity_id);
+            <div className="hidden md:block border-t border-stone-100 dark:border-stone-800 -mx-4">
+              <div className="divide-y divide-stone-100 dark:divide-stone-800 max-h-[600px] overflow-y-auto overflow-x-hidden scrollbar-thin">
+                {unifiedActiveLedgerRows.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 gap-3 text-stone-400 dark:text-stone-500">
+                    <Radio size={28} strokeWidth={1.5} />
+                    <p className="text-sm">No rows match this view</p>
+                  </div>
+                ) : (
+                  unifiedActiveLedgerRows.map(row => {
+                    if (row.rowKind === 'posted') {
+                      const t = row.posted;
+                      const isIncrease = t.direction === 'increase';
+                      const isTransfer = isTransferActivityRecord(t);
                       return (
-                        <MobileActivityRecordCard
-                          key={l.id}
-                          title={unit?.name || 'Unknown'}
-                          right={<p className="font-mono text-stone-900 dark:text-stone-100">{formatValue(l.amount)}</p>}
-                          meta={formatDate(l.date)}
+                        <div
+                          key={t.id}
+                          className={cn(
+                            'group flex items-center gap-4 px-5 py-3 hover:bg-stone-50 dark:hover:bg-stone-800/50 transition-all',
+                            isTransfer && 'bg-blue-50/30 dark:bg-blue-900/10',
+                          )}
                         >
-                          <p className="text-xs text-stone-500 dark:text-stone-400">{l.type === 'input' ? 'Outflow' : 'Inflow'} · Settled</p>
-                          <div className="mt-2 flex justify-end gap-2">
+                          <div className={cn(
+                            'flex items-center justify-center w-8 h-8 rounded-full shrink-0 border-2',
+                            isIncrease
+                              ? 'border-emerald-100 bg-emerald-50 text-emerald-600 dark:border-emerald-900/50 dark:bg-emerald-900/30 dark:text-emerald-400'
+                              : 'border-red-100 bg-red-50 text-red-600 dark:border-red-900/50 dark:bg-red-900/30 dark:text-red-400',
+                          )}>
+                            {isIncrease ? <Plus size={14} /> : <ArrowDownLeft size={14} />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-stone-200/90 text-stone-700 dark:bg-stone-700 dark:text-stone-200">
+                                Posted
+                              </span>
+                              <p className="text-sm font-medium text-stone-900 dark:text-stone-100 truncate">
+                                {formatMethodLabel(t.method ?? t.notes ?? 'Activity')}
+                              </p>
+                              {isTransfer && (
+                                <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
+                                  Transfer
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <p className="text-[11px] text-stone-400 dark:text-stone-500 flex items-center gap-1">
+                                <Clock size={10} />
+                                {formatDate(t.created_at || '')}
+                              </p>
+                              <span className="w-1 h-1 rounded-full bg-stone-200 dark:bg-stone-700" />
+                              <p className="text-[11px] text-stone-400 dark:text-stone-500 italic max-w-[200px] truncate">
+                                {t.notes && t.notes !== t.method ? t.notes : 'Operational record'}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-5 shrink-0">
+                            <div className="text-right">
+                              <p className={cn(
+                                'text-sm font-mono font-bold leading-none',
+                                isIncrease ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400',
+                              )}>
+                                {isIncrease ? '+' : '−'}{formatValue(t.unit_amount)}
+                              </p>
+                              <p className="text-[10px] text-stone-400 dark:text-stone-500 mt-1 uppercase tracking-tight">
+                                {t.channel_label || 'Other'}
+                              </p>
+                            </div>
                             {canOperateValue && (
-                              <>
+                              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <button
                                   type="button"
-                                  onClick={() => handleUnarchiveAdjustment(l.id)}
-                                  className="action-btn-tertiary px-2.5 py-1 text-xs"
+                                  onClick={() => handleArchiveChannelActivityRecord(t.id)}
+                                  className="p-1.5 rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-200 dark:hover:bg-stone-700"
+                                  title="Archive"
                                 >
-                                  Unarchive
+                                  <Archive size={14} />
                                 </button>
-                                <button
-                                  type="button"
-                                  onClick={() => { void handleDeleteAdjustment(l.id); }}
-                                  disabled={deletingAdjustmentId === l.id}
-                                  className="action-btn-tertiary px-2.5 py-1 text-xs text-red-600 dark:text-red-400 disabled:opacity-50"
-                                >
-                                  {deletingAdjustmentId === l.id ? 'Deleting…' : 'Delete'}
-                                </button>
-                              </>
+                                {canManageImpact && (
+                                  <button
+                                    type="button"
+                                    onClick={() => { void handleDeleteChannelActivityRecord(t.id); }}
+                                    disabled={deletingChannelActivityRecordId === t.id}
+                                    className="p-1.5 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 disabled:opacity-50"
+                                    title="Delete"
+                                  >
+                                    <Trash2 size={14} />
+                                  </button>
+                                )}
+                              </div>
                             )}
                           </div>
-                        </MobileActivityRecordCard>
+                        </div>
                       );
-                    })}
+                    }
+                    const l = row.workflow;
+                    const unit = entities.find(p => p.id === l.entity_id);
+                    const src = l as ActivityRecord;
+                    const linkAid = linkedActivityIdForSourceRecord(src.source_record_id);
+                    if (row.rowKind === 'pending') {
+                      return (
+                        <div
+                          key={l.id}
+                          className="group flex flex-wrap items-center gap-4 px-5 py-3 bg-amber-50/25 dark:bg-amber-900/10 hover:bg-amber-50/40 dark:hover:bg-amber-900/15 transition-all"
+                        >
+                          <div className="flex items-center justify-center w-8 h-8 rounded-full shrink-0 border-2 border-amber-200 bg-amber-100 text-amber-700 dark:border-amber-800 dark:bg-amber-900/40 dark:text-amber-300">
+                            <Clock size={14} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-200/80 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200">
+                                Pending
+                              </span>
+                              <p className="text-sm font-medium text-stone-900 dark:text-stone-100">{unit?.name || 'Unknown'}</p>
+                            </div>
+                            <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">
+                              {formatDate(l.date)} · {l.type === 'input' ? 'Outflow' : 'Inflow'} · {formatValue(l.amount)}
+                            </p>
+                            {linkAid && (
+                              <button
+                                type="button"
+                                className="mt-1 text-[11px] font-medium text-sky-600 dark:text-sky-400 hover:underline"
+                                onClick={() => navigate(`/activity/${linkAid}`)}
+                              >
+                                Linked activity
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => void handleResolveAdjustment(l.id, 'rejected')}
+                              disabled={!canOperateValue}
+                              className="action-btn-tertiary px-2 py-1 text-[11px] text-red-600 dark:text-red-400 disabled:opacity-50"
+                            >
+                              Reject
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleResolveAdjustment(l.id, 'approved')}
+                              disabled={!canOperateValue}
+                              className="rounded-md bg-emerald-600 px-2.5 py-1 text-[11px] font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                            >
+                              Approve
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div
+                        key={l.id}
+                        className="group flex flex-col gap-2 px-5 py-3 bg-violet-50/20 dark:bg-violet-950/20 hover:bg-violet-50/35 dark:hover:bg-violet-950/30 transition-all border-l-2 border-violet-300/60 dark:border-violet-700/50"
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className="flex items-center justify-center w-8 h-8 rounded-full shrink-0 border-2 border-violet-200 bg-violet-100 text-violet-700 dark:border-violet-800 dark:bg-violet-900/40 dark:text-violet-300">
+                            <Minus size={14} />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-violet-200/80 text-violet-900 dark:bg-violet-900/50 dark:text-violet-200">
+                                Deferred
+                              </span>
+                              <p className="text-sm font-medium text-stone-900 dark:text-stone-100">{unit?.name || 'Unknown'}</p>
+                            </div>
+                            <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">
+                              {formatDate(l.date)} · {l.type === 'input' ? 'Outflow' : 'Inflow'} · {formatValue(l.amount)}
+                            </p>
+                            {linkAid && (
+                              <button
+                                type="button"
+                                className="mt-1 text-[11px] font-medium text-sky-600 dark:text-sky-400 hover:underline"
+                                onClick={() => navigate(`/activity/${linkAid}`)}
+                              >
+                                Linked activity
+                              </button>
+                            )}
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-sm font-mono font-bold text-stone-900 dark:text-stone-100">{formatValue(l.amount)}</p>
+                          </div>
+                        </div>
+                        {settlingActivityRecordId === l.id && (
+                          <div className="flex flex-wrap items-center justify-end gap-1.5 pl-12">
+                            <select
+                              className="control-input text-xs w-[130px]"
+                              value={settleAccountBase}
+                              onChange={e => setSettleAccountBase(e.target.value)}
+                              disabled={isSettlingActivityRecord}
+                            >
+                              <option value="">Select channel</option>
+                              {availableChannelCategories.map(category => (
+                                <option key={category.value} value={category.value}>{category.label}</option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              onClick={openAddAccount}
+                              disabled={!canOperateValue || isSettlingActivityRecord}
+                              className="action-btn-secondary px-2 py-1 text-[11px]"
+                            >
+                              <Plus size={12} />
+                              Add channel
+                            </button>
+                            <input
+                              className="control-input text-xs w-[110px]"
+                              placeholder="Label (opt.)"
+                              value={settleAccountLabel}
+                              onChange={e => setSettleAccountLabel(e.target.value)}
+                              disabled={isSettlingActivityRecord}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void handleSettleActivityRecord(l.id)}
+                              disabled={isSettlingActivityRecord}
+                              className="px-2 py-1 text-[11px] bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-60"
+                            >
+                              {isSettlingActivityRecord ? 'Settling…' : 'Confirm'}
+                            </button>
+                            <button type="button" onClick={() => setSettlingActivityRecordId(null)} disabled={isSettlingActivityRecord} className="action-btn-tertiary px-2 py-1 text-[11px]">Cancel</button>
+                          </div>
+                        )}
+                        {canOperateValue && (
+                          <div className="flex flex-wrap justify-end gap-2 pl-12">
+                            {settlingActivityRecordId !== l.id && (
+                              <button
+                                type="button"
+                                onClick={() => { setSettlingActivityRecordId(l.id); setSettleAccountBase(defaultChannelCategory); setSettleAccountLabel(''); }}
+                                className="action-btn-tertiary px-2 py-1 text-[11px] text-emerald-700 dark:text-emerald-400"
+                              >
+                                Settle
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleArchiveAdjustment(l.id)}
+                              className="action-btn-tertiary px-2 py-1 text-[11px]"
+                            >
+                              Archive
+                            </button>
+                            {canManageImpact && (
+                              <button
+                                type="button"
+                                onClick={() => { void handleDeleteAdjustment(l.id); }}
+                                disabled={deletingAdjustmentId === l.id}
+                                className="action-btn-tertiary px-2 py-1 text-[11px] text-red-600 dark:text-red-400 disabled:opacity-50"
+                              >
+                                {deletingAdjustmentId === l.id ? 'Removing…' : 'Remove'}
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {(archivedChannelEntries.length > 0 || archivedAdjustments.length > 0) && (
+              <div className="mt-4 rounded-lg border border-stone-200 dark:border-stone-700 bg-stone-50/60 dark:bg-stone-800/40 p-3">
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className="text-xs font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400">Archived ledger</h4>
+                  <button
+                    type="button"
+                    onClick={() => setIsArchivedLedgerExpanded(prev => !prev)}
+                    className="action-btn-secondary px-2.5 py-1 text-xs"
+                  >
+                    {isArchivedLedgerExpanded
+                      ? 'Hide'
+                      : `Show (${filteredArchivedChannelEntries.length + filteredArchivedAdjustments.length})`}
+                  </button>
+                </div>
+                {isArchivedLedgerExpanded && (
+                  <div className="mt-3 space-y-5">
+                    {filteredArchivedChannelEntries.length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400 mb-2">Posted channel</p>
+                        <div className="md:hidden divide-y divide-stone-100 dark:divide-stone-800">
+                          {filteredArchivedChannelEntries.map(t => (
+                            <MobileActivityRecordCard
+                              key={t.id}
+                              title={<span className="text-xs text-stone-500 dark:text-stone-400 font-normal">{formatDate(t.created_at || '')}</span>}
+                              right={(
+                                <p className={cn(
+                                  'font-mono font-medium text-sm',
+                                  t.direction === 'increase' ? 'amount-positive' : 'amount-negative',
+                                )}>
+                                  {t.direction === 'increase' ? '+' : '-'}{formatValue(t.unit_amount)}
+                                </p>
+                              )}
+                              meta={<span className="capitalize">{t.direction} • {formatMethodLabel(t.notes)}</span>}
+                            >
+                              <div className="mt-2 flex justify-end gap-2">
+                                {canOperateValue && (
+                                  <>
+                                    <button type="button" onClick={() => handleUnarchiveChannelActivityRecord(t.id)} className="action-btn-tertiary px-2.5 py-1 text-xs">Unarchive</button>
+                                    <button
+                                      type="button"
+                                      onClick={() => { void handleDeleteChannelActivityRecord(t.id); }}
+                                      disabled={deletingChannelActivityRecordId === t.id}
+                                      className="action-btn-tertiary px-2.5 py-1 text-xs text-red-600 dark:text-red-400 disabled:opacity-50"
+                                    >
+                                      {deletingChannelActivityRecordId === t.id ? 'Deleting…' : 'Delete'}
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </MobileActivityRecordCard>
+                          ))}
+                        </div>
+                        <div className="hidden md:block">
+                          <CollapsibleActivitySection
+                            title="Archived posted"
+                            summary={`${filteredArchivedChannelEntries.length} records`}
+                            defaultExpanded={false}
+                            maxExpandedHeightClass="max-h-[420px]"
+                            maxCollapsedHeightClass="max-h-[96px]"
+                            contentClassName="bg-white dark:bg-stone-900"
+                          >
+                            <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] activity-fixed bg-white dark:bg-stone-900 text-left text-[13px]">
+                              <thead className="sticky top-0 z-10 bg-stone-50 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-700">
+                                <tr>
+                                  <th className="sticky-col px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Date</th>
+                                  <th className="px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Type</th>
+                                  <th className="px-6 py-2.5 w-[170px] text-[11px] font-semibold uppercase tracking-wide">Channel</th>
+                                  <th className="px-6 py-2.5 text-[11px] font-semibold uppercase tracking-wide">Account</th>
+                                  <th className="px-6 py-2.5 w-[150px] text-right text-[11px] font-semibold uppercase tracking-wide">Amount</th>
+                                  <th className="sticky-col-right px-6 py-2.5 w-[170px] text-right text-[11px] font-semibold uppercase tracking-wide">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-stone-100 bg-white dark:divide-stone-800 dark:bg-stone-900">
+                                {filteredArchivedChannelEntries.map(t => (
+                                  <tr key={t.id} className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors">
+                                    <td className="sticky-col px-6 py-2.5 text-stone-500 dark:text-stone-400">{formatDate(t.date)}</td>
+                                    <td className="px-6 py-2.5">{t.direction === 'increase' ? 'Inflow' : 'Outflow'}</td>
+                                    <td className="px-6 py-2.5 text-stone-900 dark:text-stone-100">{formatMethodLabel(t.method)}</td>
+                                    <td className="px-6 py-2.5 text-stone-500 dark:text-stone-400" />
+                                    <td className={cn(
+                                      'px-6 py-2.5 text-right font-mono font-medium',
+                                      t.direction === 'increase' ? 'amount-positive' : 'amount-negative',
+                                    )}>
+                                      {t.direction === 'increase' ? '+' : '-'}{formatValue(t.amount)}
+                                    </td>
+                                    <td className="sticky-col-right px-6 py-2.5 text-right">
+                                      {canOperateValue && (
+                                        <>
+                                          <button type="button" onClick={() => handleUnarchiveChannelActivityRecord(t.id)} className="action-btn-tertiary px-2 py-1 text-[11px] mr-1.5">Unarchive</button>
+                                          <button
+                                            type="button"
+                                            onClick={() => { void handleDeleteChannelActivityRecord(t.id); }}
+                                            disabled={deletingChannelActivityRecordId === t.id}
+                                            className="inline-flex items-center justify-center p-1.5 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                            title={deletingChannelActivityRecordId === t.id ? 'Deleting…' : 'Delete'}
+                                          >
+                                            <Trash2 size={14} />
+                                          </button>
+                                        </>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </CollapsibleActivitySection>
+                        </div>
+                      </div>
+                    )}
+                    {filteredArchivedAdjustments.length > 0 && (
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-stone-500 dark:text-stone-400 mb-2">Workflow (pending / deferred)</p>
+                        <div className="md:hidden divide-y divide-stone-100 dark:divide-stone-800">
+                          {filteredArchivedAdjustments.map(l => {
+                            const unit = entities.find(p => p.id === l.entity_id);
+                            return (
+                              <MobileActivityRecordCard
+                                key={l.id}
+                                title={unit?.name || 'Unknown'}
+                                right={<p className="font-mono text-stone-900 dark:text-stone-100">{formatValue(l.amount)}</p>}
+                                meta={formatDate(l.date)}
+                              >
+                                <p className="text-xs text-stone-500 dark:text-stone-400">{l.type === 'input' ? 'Outflow' : 'Inflow'} · Archived</p>
+                                <div className="mt-2 flex justify-end gap-2">
+                                  {canOperateValue && (
+                                    <>
+                                      <button type="button" onClick={() => handleUnarchiveAdjustment(l.id)} className="action-btn-tertiary px-2.5 py-1 text-xs">Unarchive</button>
+                                      <button
+                                        type="button"
+                                        onClick={() => { void handleDeleteAdjustment(l.id); }}
+                                        disabled={deletingAdjustmentId === l.id}
+                                        className="action-btn-tertiary px-2.5 py-1 text-xs text-red-600 dark:text-red-400 disabled:opacity-50"
+                                      >
+                                        {deletingAdjustmentId === l.id ? 'Deleting…' : 'Delete'}
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </MobileActivityRecordCard>
+                            );
+                          })}
+                        </div>
+                        <div className="hidden md:block">
+                          <CollapsibleActivitySection
+                            title="Archived workflow"
+                            summary={`${filteredArchivedAdjustments.length} records`}
+                            defaultExpanded={false}
+                            maxExpandedHeightClass="max-h-[420px]"
+                            maxCollapsedHeightClass="max-h-[96px]"
+                          >
+                            <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] activity-fixed text-left text-[13px]">
+                              <thead className="sticky top-0 z-10 bg-stone-50 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-700">
+                                <tr>
+                                  <th className="sticky-col px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Date</th>
+                                  <th className="px-6 py-2.5 w-[220px] text-[11px] font-semibold uppercase tracking-wide">Entity</th>
+                                  <th className="px-6 py-2.5 w-[170px] text-[11px] font-semibold uppercase tracking-wide">Action</th>
+                                  <th className="px-6 py-2.5 w-[150px] text-right text-[11px] font-semibold uppercase tracking-wide">Amount</th>
+                                  <th className="sticky-col-right px-6 py-2.5 w-[170px] text-right text-[11px] font-semibold uppercase tracking-wide">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
+                                {filteredArchivedAdjustments.map(l => {
+                                  const unit = entities.find(p => p.id === l.entity_id);
+                                  return (
+                                    <tr key={l.id} className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors">
+                                      <td className="sticky-col px-6 py-2.5 text-stone-500 dark:text-stone-400">{formatDate(l.date)}</td>
+                                      <td className="px-6 py-2.5 font-medium text-stone-900 dark:text-stone-100">{unit?.name || 'Unknown'}</td>
+                                      <td className="px-6 py-2.5 capitalize">{l.type === 'input' ? 'Outflow' : 'Inflow'} · Archived</td>
+                                      <td className="px-6 py-2.5 text-right font-mono font-medium text-stone-900 dark:text-stone-100">{formatValue(l.amount)}</td>
+                                      <td className="sticky-col-right px-6 py-2.5 text-right">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleUnarchiveAdjustment(l.id)}
+                                          disabled={!canOperateValue}
+                                          className="action-btn-tertiary px-2 py-1 text-[11px] mr-1.5 disabled:opacity-50"
+                                        >
+                                          Unarchive
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => { if (canOperateValue) void handleDeleteAdjustment(l.id); }}
+                                          disabled={!canOperateValue || deletingAdjustmentId === l.id}
+                                          className="inline-flex items-center justify-center p-1.5 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
+                                          title={deletingAdjustmentId === l.id ? 'Deleting…' : 'Delete'}
+                                        >
+                                          <Trash2 size={14} />
+                                        </button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </CollapsibleActivitySection>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
             )}
 
-            <CollapsibleActivitySection
-              title="Deferred Tracking"
-              summary={`${filteredActiveAdjustments.length} records`}
-              className="hidden md:block"
-              defaultExpanded={false}
-              maxExpandedHeightClass="max-h-[560px]"
-              maxCollapsedHeightClass="max-h-[96px]"
-            >
-              <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] activity-fixed text-left text-[13px]">
-                <thead className="sticky top-0 z-10 bg-stone-50 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-700">
-                  <tr>
-                    <th className="sticky-col px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Date</th>
-                    <th className="px-6 py-2.5 w-[220px] text-[11px] font-semibold uppercase tracking-wide">Entity</th>
-                    <th className="px-6 py-2.5 w-[170px] text-[11px] font-semibold uppercase tracking-wide">Direction</th>
-                    <th className="px-6 py-2.5 w-[150px] text-right text-[11px] font-semibold uppercase tracking-wide">Amount</th>
-                    <th className="sticky-col-right px-6 py-2.5 w-[170px] text-right text-[11px] font-semibold uppercase tracking-wide">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                  {filteredActiveAdjustments.map(l => {
-                    const unit = entities.find(p => p.id === l.entity_id);
-                    return (
-                      <tr key={l.id} className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors">
-                        <td className="sticky-col px-6 py-2.5 text-stone-500 dark:text-stone-400">{formatDate(l.date)}</td>
-                        <td className="px-6 py-2.5 font-medium text-stone-900 dark:text-stone-100">{unit?.name || 'Unknown'}</td>
-                        <td className="px-6 py-2.5">
-                          <span className={cn(
-                            "inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium",
-                            l.type === 'input' 
-                              ? "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-400" 
-                              : "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400"
-                          )}>
-                            {l.type === 'input' ? 'Outflow' : 'Inflow'}
-                          </span>
-                        </td>
-                        <td className="px-6 py-2.5 text-right font-mono font-medium text-stone-900 dark:text-stone-100">{formatValue(l.amount)}</td>
-                        <td className="sticky-col-right px-6 py-2.5 text-right">
-                          {settlingActivityRecordId === l.id ? (
-                            <div className="flex flex-wrap items-center justify-end gap-1.5">
-                              <select
-                                className="control-input text-xs w-[130px]"
-                                value={settleAccountBase}
-                                onChange={e => setSettleAccountBase(e.target.value)}
-                                disabled={isSettlingActivityRecord}
-                              >
-                                <option value="">Select channel</option>
-                                {availableChannelCategories.map(category => (
-                                  <option key={category.value} value={category.value}>{category.label}</option>
-                                ))}
-                              </select>
-                              <button
-                                type="button"
-                                onClick={openAddAccount}
-                                disabled={!canOperateValue || isSettlingActivityRecord}
-                                className="action-btn-secondary px-2 py-1 text-[11px]"
-                              >
-                                <Plus size={12} />
-                                Add channel
-                              </button>
-                              <input
-                                className="control-input text-xs w-[110px]"
-                                placeholder="Label (opt.)"
-                                value={settleAccountLabel}
-                                onChange={e => setSettleAccountLabel(e.target.value)}
-                                disabled={isSettlingActivityRecord}
-                              />
-                              <button
-                                type="button"
-                                onClick={() => void handleSettleActivityRecord(l.id)}
-                                disabled={isSettlingActivityRecord}
-                                className="px-2 py-1 text-[11px] bg-emerald-600 text-white rounded-md hover:bg-emerald-700 disabled:opacity-60"
-                              >
-                                {isSettlingActivityRecord ? 'Settling…' : 'Confirm'}
-                              </button>
-                              <button type="button" onClick={() => setSettlingActivityRecordId(null)} disabled={isSettlingActivityRecord} className="action-btn-tertiary px-2 py-1 text-[11px]">Cancel</button>
-                            </div>
-                          ) : (
-                            <>
-                              {canOperateValue && (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => { setSettlingActivityRecordId(l.id); setSettleAccountBase(defaultChannelCategory); setSettleAccountLabel(''); }}
-                                    className="action-btn-tertiary px-2 py-1 text-[11px] mr-1.5 text-emerald-700 dark:text-emerald-400"
-                                  >
-                                    Settle
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleArchiveAdjustment(l.id)}
-                                    className="action-btn-tertiary px-2 py-1 text-[11px] mr-1.5"
-                                  >
-                                    Archive
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => { void handleDeleteAdjustment(l.id); }}
-                                    disabled={deletingAdjustmentId === l.id}
-                                    className="inline-flex items-center justify-center p-1.5 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    title={deletingAdjustmentId === l.id ? 'Removing…' : 'Remove'}
-                                  >
-                                    <Trash2 size={14} />
-                                  </button>
-                                </>
-                              )}
-                            </>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                  {filteredActiveAdjustments.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-6 py-8 text-center text-stone-400">
-                        No deferred records yet.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </CollapsibleActivitySection>
-
-            {archivedAdjustments.length > 0 && (
-              <div className="hidden md:block mt-4">
-                <div className="flex items-center justify-between gap-3 mb-3">
-                  <button
-                    type="button"
-                    onClick={() => setIsArchivedAdjustmentsExpanded(prev => !prev)}
-                    className="action-btn-secondary text-xs px-2.5 py-1.5"
-                  >
-                    {isArchivedAdjustmentsExpanded ? 'Hide' : `Show (${filteredArchivedAdjustments.length})`}
-                  </button>
-                </div>
-                {isArchivedAdjustmentsExpanded && (
-                  <CollapsibleActivitySection
-                    title="Archived Deferred"
-                    summary={`${filteredArchivedAdjustments.length} records`}
-                    defaultExpanded={false}
-                    maxExpandedHeightClass="max-h-[420px]"
-                    maxCollapsedHeightClass="max-h-[96px]"
-                  >
-                    <table className="desktop-grid desktop-sticky-first desktop-sticky-last w-full min-w-[900px] activity-fixed text-left text-[13px]">
-                      <thead className="sticky top-0 z-10 bg-stone-50 dark:bg-stone-800 text-stone-500 dark:text-stone-400 border-b border-stone-200 dark:border-stone-700">
-                        <tr>
-                          <th className="sticky-col px-6 py-2.5 w-[140px] text-[11px] font-semibold uppercase tracking-wide">Date</th>
-                          <th className="px-6 py-2.5 w-[220px] text-[11px] font-semibold uppercase tracking-wide">Entity</th>
-                          <th className="px-6 py-2.5 w-[170px] text-[11px] font-semibold uppercase tracking-wide">Action</th>
-                          <th className="px-6 py-2.5 w-[150px] text-right text-[11px] font-semibold uppercase tracking-wide">Amount</th>
-                          <th className="sticky-col-right px-6 py-2.5 w-[170px] text-right text-[11px] font-semibold uppercase tracking-wide">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
-                        {filteredArchivedAdjustments.map(l => {
-                          const unit = entities.find(p => p.id === l.entity_id);
-                          return (
-                            <tr key={l.id} className="odd:bg-white even:bg-stone-50/60 dark:odd:bg-stone-900 dark:even:bg-stone-900/60 hover:bg-stone-100/70 dark:hover:bg-stone-800 transition-colors">
-                              <td className="sticky-col px-6 py-2.5 text-stone-500 dark:text-stone-400">{formatDate(l.date)}</td>
-                              <td className="px-6 py-2.5 font-medium text-stone-900 dark:text-stone-100">{unit?.name || 'Unknown'}</td>
-                              <td className="px-6 py-2.5 capitalize">{l.type === 'input' ? 'Outflow' : 'Inflow'} · Settled</td>
-                              <td className="px-6 py-2.5 text-right font-mono font-medium text-stone-900 dark:text-stone-100">{formatValue(l.amount)}</td>
-                              <td className="sticky-col-right px-6 py-2.5 text-right">
-                                <button
-                                  type="button"
-                                  onClick={() => handleUnarchiveAdjustment(l.id)}
-                                  disabled={!canOperateValue}
-                                  className="action-btn-tertiary px-2 py-1 text-[11px] mr-1.5 disabled:opacity-50"
-                                >
-                                  Unarchive
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => { if (canOperateValue) void handleDeleteAdjustment(l.id); }}
-                                  disabled={!canOperateValue || deletingAdjustmentId === l.id}
-                                  className="inline-flex items-center justify-center p-1.5 rounded-md text-stone-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                                  title={deletingAdjustmentId === l.id ? 'Deleting…' : 'Delete ActivityRecord'}
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                        {filteredArchivedAdjustments.length === 0 && (
-                          <tr>
-                            <td colSpan={5} className="px-6 py-8 text-center text-stone-400">No archived deferred records.</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </CollapsibleActivitySection>
-                )}
-              </div>
-            )}
-        </div>
+          </div>
 
       </div>
 

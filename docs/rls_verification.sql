@@ -1,5 +1,5 @@
 -- Flow Ops Canonical Backend Verification
--- Use after applying all migrations under supabase/migrations/ (platform_roles removed in 20260329160000).
+-- Use after applying supabase/migrations/00000000000000_init_canonical_schema.sql (single squashed baseline).
 
 -- 1) Schema sanity
 select table_name
@@ -15,7 +15,6 @@ where table_schema = 'public'
     'entities',
     'activities',
     'records',
-    'team_members',
     'channels',
     'channel_records',
     'operator_activities',
@@ -64,7 +63,8 @@ select indexname, indexdef
 from pg_indexes
 where schemaname = 'public'
   and indexname in (
-    'uq_team_members_org_user_id',
+    'idx_operator_activities_one_active_per_org_actor',
+    'idx_records_source_record_id',
     'idx_records_activity_id',
     'idx_records_entity_id',
     'idx_channel_records_record_id',
@@ -90,19 +90,19 @@ where table_schema = 'public'
     ))
     or
     (table_name = 'activities' and column_name in (
-      'org_id', 'label', 'date', 'start_time', 'status', 'channel_label', 'assigned_user_id'
+      'org_id', 'label', 'date', 'start_time', 'status', 'channel_label', 'assigned_user_id', 'activity_mode'
     ))
     or
     (table_name = 'records' and column_name in (
-      'org_id', 'activity_id', 'entity_id', 'direction', 'status', 'unit_amount', 'transfer_group_id', 'notes'
+      'org_id', 'activity_id', 'entity_id', 'direction', 'status', 'unit_amount', 'transfer_group_id', 'notes', 'source_record_id'
     ))
     or
     (table_name = 'collaborations' and column_name in (
       'org_id', 'name', 'collaboration_type', 'status', 'participation_factor', 'overhead_weight_pct', 'rules'
     ))
     or
-    (table_name = 'team_members' and column_name in (
-      'org_id', 'name', 'staff_role', 'user_id'
+    (table_name = 'organization_memberships' and column_name in (
+      'display_name', 'account_email'
     ))
     or
     (table_name = 'channels' and column_name in (
@@ -151,7 +151,8 @@ where table_schema = 'public'
       'user_roles',
       'org_clusters',
       'orgs',
-      'org_memberships'
+      'org_memberships',
+      'team_members'
     )
     or
     (table_name = 'records' and column_name in ('workspace_id', 'unit_id', 'input_amount', 'output_amount'))
@@ -159,8 +160,6 @@ where table_schema = 'public'
     (table_name = 'entities' and column_name in ('attributed_associate_id', 'referred_by_partner_id'))
     or
     (table_name = 'activities' and column_name in ('assigned_operator_id', 'channel'))
-    or
-    (table_name = 'team_members' and column_name in ('member_id', 'role'))
   )
 order by table_name, column_name;
 
@@ -175,7 +174,10 @@ where specific_schema = 'public'
     'user_has_cluster_access',
     'is_org_in_my_cluster',
     'log_audit_event',
-    'update_updated_at_column'
+    'update_updated_at_column',
+    'can_manage_operator_sessions_for_org',
+    'operator_activities_enforce_single_active',
+    'organization_memberships_sync_account_email'
   )
 order by routine_name;
 
@@ -194,7 +196,6 @@ where n.nspname = 'public'
     'entities',
     'activities',
     'records',
-    'team_members',
     'channels',
     'channel_records',
     'operator_activities',
@@ -227,13 +228,16 @@ where schemaname = 'public'
     or
     (tablename = 'records' and policyname in ('records_read', 'records_write'))
     or
-    (tablename = 'team_members' and policyname in ('team_members_read', 'team_members_write'))
-    or
     (tablename = 'channels' and policyname in ('channels_read', 'channels_write'))
     or
     (tablename = 'channel_records' and policyname in ('channel_records_read', 'channel_records_write'))
     or
-    (tablename = 'operator_activities' and policyname in ('operator_activities_read', 'operator_activities_write'))
+    (tablename = 'operator_activities' and policyname in (
+      'operator_activities_select',
+      'operator_activities_insert',
+      'operator_activities_update',
+      'operator_activities_delete'
+    ))
     or
     (tablename = 'audit_events' and policyname in ('audit_events_read', 'audit_events_write'))
     or

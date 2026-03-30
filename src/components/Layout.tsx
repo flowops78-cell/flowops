@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, UserCog, History, Settings, Sun, Moon, Keyboard, LogOut, Landmark, BarChart3, Briefcase, Handshake, Circle, Scale, Zap } from 'lucide-react';
+import { LayoutDashboard, Users, UserCog, History, Settings, Sun, Moon, Keyboard, LogOut, Landmark, BarChart3, Briefcase, Handshake, Circle, Scale } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { useTheme } from '../context/ThemeContext';
 import { useData } from '../context/DataContext';
@@ -11,12 +11,12 @@ import { isSupabaseConfigured } from '../lib/supabase';
 import { SECTION_SHORTCUT_EVENT, SectionShortcutDirection } from '../lib/sectionShortcuts';
 import ShortcutHelpModal from './ShortcutHelpModal';
 import GlobalTelemetryPanel from './GlobalTelemetryPanel';
-import LiveFeedPanel from './LiveFeedPanel';
 import IdentityBadge from './IdentityBadge';
 import { preloadRoute } from '../lib/routePreloaders';
 import { ChevronDown, Globe } from 'lucide-react';
 import EntitiesIcon from './icons/EntitiesIcon';
 import { getRoleLabel, LABELS } from '../lib/labels';
+import { SETTINGS_PASSWORD_HASH } from '../lib/settingsDeepLinks';
 import { LiveFeedUIProvider } from '../context/LiveFeedUIContext';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
@@ -26,13 +26,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const activeOrg = availableOrgs[activeOrgId || ''];
 
   const { role, isClusterAdmin, canAccessAdminUi, canOperateLog, canManageImpact, canAlign } = useAppRole();
+  /** Workspace managers (operator role) do not see keyboard shortcut help or the sidebar shortcuts control. */
+  const showShortcutHelpUi = role !== 'operator';
   const { user, signOut } = useAuth();
   const navigate = useNavigate();
-  const location = useLocation();
   const [isFocusFullscreen, setIsFocusFullscreen] = useState(false);
   const [isShortcutHelpOpen, setIsShortcutHelpOpen] = useState(false);
   const [isTelemetryOpen, setIsTelemetryOpen] = useState(false);
-  const [isLiveFeedOpen, setIsLiveFeedOpen] = useState(false);
   const [isOrgSwitcherOpen, setIsOrgSwitcherOpen] = useState(false);
   const [shortcutPrefix, setShortcutPrefix] = useState<'n' | null>(null);
   const contentScrollRef = useRef<HTMLDivElement | null>(null);
@@ -54,7 +54,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     },
   ];
 
-  // Match App.tsx: non-admins are redirected away from dashboard, entities, channels, collaborations, settings.
+  // Match App.tsx: non-admins are redirected away from dashboard, entities, channels, collaborations; Settings is open to any signed-in member with a workspace (password, export, etc.).
   const operatorNavGroups = [
     {
       label: '',
@@ -97,14 +97,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  const openLiveFeed = useCallback(() => {
-    setIsTelemetryOpen(false);
-    setIsLiveFeedOpen(true);
-  }, []);
   const openWorkspaceHealth = useCallback(() => {
-    setIsLiveFeedOpen(false);
     setIsTelemetryOpen(true);
   }, []);
+
+  const openPasswordSettings = useCallback(() => {
+    navigate(`/settings${SETTINGS_PASSWORD_HASH}`);
+    setIsOrgSwitcherOpen(false);
+  }, [navigate]);
 
   const clearShortcutPrefix = useCallback(() => {
     setShortcutPrefix(null);
@@ -126,6 +126,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    if (!showShortcutHelpUi) setIsShortcutHelpOpen(false);
+  }, [showShortcutHelpUi]);
+
+  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const normalizedKey = typeof event.key === 'string' ? event.key.toLowerCase() : '';
       const target = event.target as HTMLElement | null;
@@ -142,7 +146,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      if ((normalizedKey === '?' || (normalizedKey === '/' && event.shiftKey)) && !event.metaKey && !event.ctrlKey && !event.altKey) {
+      if (
+        showShortcutHelpUi &&
+        (normalizedKey === '?' || (normalizedKey === '/' && event.shiftKey)) &&
+        !event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey
+      ) {
         if (isTypingTarget) return;
         if (window.innerWidth < 1024) return;
         event.preventDefault();
@@ -275,7 +285,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     activities,
     isFocusFullscreen,
 
-    role === 'admin',
+    canAccessAdminUi,
+    showShortcutHelpUi,
     isShortcutHelpOpen,
     navigate,
     shortcutPrefix,
@@ -363,15 +374,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </button>
           {isSupabaseConfigured && user && (
             <div className="flex items-center gap-2">
-              <span
+              <button
+                type="button"
+                onClick={openPasswordSettings}
                 className={cn(
-                  'text-[11px] px-2.5 py-1 rounded-full border font-semibold',
+                  'text-[11px] px-2.5 py-1 rounded-full border font-semibold transition-opacity hover:opacity-90',
                   mobileRoleBadgeClass,
                 )}
                 title={roleSummary}
+                aria-label="Change password (opens Settings)"
               >
                 {roleLabel}
-              </span>
+              </button>
 
               <button
                 onClick={() => { void signOut(); }}
@@ -416,21 +430,39 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <div className="px-3 py-4 border-b border-stone-200 dark:border-stone-800/60">
             <div className="relative">
               <button
+                type="button"
                 onClick={() => setIsOrgSwitcherOpen(!isOrgSwitcherOpen)}
-                className="w-full group grid grid-cols-[1fr_auto] items-center gap-3 px-3 py-2.5 rounded-xl bg-stone-100/50 dark:bg-stone-800/40 hover:bg-stone-200/50 dark:hover:bg-stone-800/60 border border-stone-200 dark:border-stone-700/50 transition-all"
+                className="w-full group flex items-center justify-between gap-3 px-3 py-2.5 rounded-xl bg-stone-100/50 dark:bg-stone-800/40 hover:bg-stone-200/50 dark:hover:bg-stone-800/60 border border-stone-200 dark:border-stone-700/50 transition-all"
               >
-                <div className="flex items-center gap-3 min-w-0 pr-1">
-                  <div className="w-8 h-8 rounded-lg bg-stone-900 dark:bg-emerald-500/20 flex items-center justify-center shrink-0 shadow-sm border border-stone-800 dark:border-emerald-500/10">
+                <div className="flex min-w-0 flex-1 items-center gap-3 pr-1">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-stone-800 bg-stone-900 shadow-sm dark:border-emerald-500/10 dark:bg-emerald-500/20">
                     <Globe size={14} className="text-white dark:text-emerald-400" />
                   </div>
-                  <div className="text-left min-w-0 flex-1 flex flex-col gap-1">
-                    <span className="text-xs font-bold text-stone-900 dark:text-stone-100 leading-none">Workspace</span>
-                    <div className={cn("inline-flex items-center px-2 py-0.5 rounded-full border text-[9px] font-bold uppercase tracking-tight w-fit shrink-0", desktopRoleBadgeClass)}>
-                      {roleLabel}
-                    </div>
+                  <div className="min-w-0 flex-1 text-left">
+                    <span className="block text-xs font-bold leading-none text-stone-900 dark:text-stone-100">Workspace</span>
+                    <span className="mt-0.5 block truncate text-[10px] font-medium text-stone-500 dark:text-stone-400">
+                      {activeOrg?.name || activeOrg?.tag || activeOrgId?.slice(0, 8) || '—'}
+                    </span>
                   </div>
                 </div>
-                <ChevronDown size={15} className={cn("text-stone-400 shrink-0 transition-transform duration-200", isOrgSwitcherOpen && "rotate-180")} />
+                <ChevronDown size={15} className={cn('shrink-0 text-stone-400 transition-transform duration-200', isOrgSwitcherOpen && 'rotate-180')} />
+              </button>
+
+              <button
+                type="button"
+                onClick={openPasswordSettings}
+                className="mt-2 flex w-full items-center rounded-xl border border-transparent px-3 py-1.5 text-left transition-colors hover:border-stone-200 hover:bg-stone-100/80 dark:hover:border-stone-700 dark:hover:bg-stone-800/50"
+                title={roleSummary}
+                aria-label="Change password (opens Settings)"
+              >
+                <span
+                  className={cn(
+                    'inline-flex w-fit items-center rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-tight',
+                    desktopRoleBadgeClass,
+                  )}
+                >
+                  {roleLabel}
+                </span>
               </button>
 
               {isOrgSwitcherOpen && (
@@ -492,26 +524,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* Sidebar footer */}
         <div className="border-t border-stone-200 dark:border-stone-800/60 px-3 py-3 space-y-2 shrink-0">
           <div className="flex items-center gap-1 px-1">
-            <button
-              onClick={() => setIsShortcutHelpOpen(true)}
-              className="interactive-3d inline-flex h-8 w-8 items-center justify-center rounded-lg text-stone-500 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800"
-              title="Keyboard shortcuts (?)"
-              aria-label="Keyboard Shortcuts"
-            >
-              <Keyboard size={15} />
-            </button>
-            <button
-              type="button"
-              onClick={openLiveFeed}
-              className={cn(
-                'interactive-3d inline-flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20',
-                location.pathname === '/activity' && 'lg:hidden'
-              )}
-              title={LABELS.workspacePanels.activityList.titleHint}
-              aria-label={LABELS.workspacePanels.activityList.title}
-            >
-              <Zap size={15} />
-            </button>
+            {showShortcutHelpUi && (
+              <button
+                onClick={() => setIsShortcutHelpOpen(true)}
+                className="interactive-3d inline-flex h-8 w-8 items-center justify-center rounded-lg text-stone-500 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800"
+                title="Keyboard shortcuts (?)"
+                aria-label="Keyboard Shortcuts"
+              >
+                <Keyboard size={15} />
+              </button>
+            )}
             <button
               onClick={openWorkspaceHealth}
               className="interactive-3d inline-flex h-8 w-8 items-center justify-center rounded-lg text-stone-500 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800"
@@ -575,7 +597,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           isFocusFullscreen ? "pt-4 lg:pt-4" : "pt-[calc(4rem+env(safe-area-inset-top,0px))] lg:pt-8"
         )}
         >
-          <LiveFeedUIProvider openLiveFeed={openLiveFeed} openWorkspaceHealth={openWorkspaceHealth}>
+          <LiveFeedUIProvider openWorkspaceHealth={openWorkspaceHealth}>
             <div className="desktop-pro w-full min-w-0">
               {children}
             </div>
@@ -586,9 +608,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {/* Mobile Dock */}
       {!isFocusFullscreen && <MobileDock />}
 
-      <ShortcutHelpModal isOpen={isShortcutHelpOpen} onClose={() => setIsShortcutHelpOpen(false)} />
+      {showShortcutHelpUi && (
+        <ShortcutHelpModal isOpen={isShortcutHelpOpen} onClose={() => setIsShortcutHelpOpen(false)} />
+      )}
       <GlobalTelemetryPanel isOpen={isTelemetryOpen} onClose={() => setIsTelemetryOpen(false)} />
-      <LiveFeedPanel isOpen={isLiveFeedOpen} onClose={() => setIsLiveFeedOpen(false)} />
     </div>
   );
 }

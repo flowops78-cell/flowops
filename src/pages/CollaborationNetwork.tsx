@@ -7,6 +7,7 @@ import {
   ChevronRight,
   Handshake,
   Link2,
+  Loader2,
   Plus,
   RotateCcw,
   Trash2,
@@ -435,26 +436,26 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
           <section className="section-card overflow-hidden">
             {selectedProfile ? (
               <>
-                <div className="border-b border-stone-200 px-5 py-4 dark:border-stone-800 lg:px-6">
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                    <div className="flex items-start gap-3">
-                      <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-stone-200 bg-stone-50 text-stone-600 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300">
-                        <Handshake size={18} aria-hidden />
-                      </span>
-                      <div>
-                        <h3 className="text-xl font-semibold tracking-tight text-stone-900 dark:text-stone-100">{getProfileName(selectedProfile.name)}</h3>
-                        <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">Profile detail and links</p>
-                      </div>
+                <div className="border-b border-stone-200 px-5 py-3.5 dark:border-stone-800 lg:px-6">
+                  <div className="flex items-start gap-3 sm:gap-4">
+                    <span className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-stone-200 bg-stone-50 text-stone-600 dark:border-stone-700 dark:bg-stone-800 dark:text-stone-300">
+                      <Handshake size={18} aria-hidden />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-lg font-semibold tracking-tight text-stone-900 sm:text-xl dark:text-stone-100">
+                        {getProfileName(selectedProfile.name)}
+                      </h3>
+                      <p className="mt-0.5 text-xs text-stone-500 dark:text-stone-400">Profile detail and links</p>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex shrink-0 items-center gap-1.5">
                       {selectedProfile.status === 'inactive' && (
                         <button
                           type="button"
                           onClick={() => { void handleRestoreProfile(selectedProfile.id); }}
                           disabled={!canManageImpact}
-                          className="action-btn-secondary disabled:opacity-50"
+                          className="action-btn-secondary h-9 gap-1.5 px-3 py-0 text-xs disabled:opacity-50"
                         >
-                          <RotateCcw size={14} />
+                          <RotateCcw size={14} aria-hidden />
                           Show
                         </button>
                       )}
@@ -463,18 +464,36 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
                           type="button"
                           onClick={() => { void handleDeleteProfile(selectedProfile.id); }}
                           disabled={deletingProfileId === selectedProfile.id}
-                          className="action-btn-tertiary text-red-600 dark:text-red-400 disabled:opacity-50"
+                          title="Remove profile permanently"
+                          aria-label={
+                            deletingProfileId === selectedProfile.id
+                              ? 'Removing profile…'
+                              : 'Remove profile permanently'
+                          }
+                          aria-busy={deletingProfileId === selectedProfile.id}
+                          className={cn(
+                            'inline-flex h-9 w-9 items-center justify-center rounded-lg border transition-colors',
+                            'border-stone-200 bg-white text-stone-500',
+                            'hover:border-red-300 hover:bg-red-500/10 hover:text-red-600',
+                            'dark:border-stone-600 dark:bg-stone-900 dark:text-stone-400',
+                            'dark:hover:border-red-500/45 dark:hover:bg-red-950/35 dark:hover:text-red-400',
+                            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500/35 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-stone-950',
+                            'disabled:pointer-events-none disabled:opacity-45',
+                          )}
                         >
-                          <Trash2 size={14} />
-                          {deletingProfileId === selectedProfile.id ? 'Removing' : 'Remove permanently'}
+                          {deletingProfileId === selectedProfile.id ? (
+                            <Loader2 size={17} className="animate-spin text-red-600 dark:text-red-400" aria-hidden />
+                          ) : (
+                            <Trash2 size={17} strokeWidth={2} aria-hidden />
+                          )}
                         </button>
                       )}
                     </div>
                   </div>
                 </div>
 
-                <div className="space-y-5 p-5 lg:p-6">
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="space-y-4 p-5 lg:space-y-5 lg:p-6">
+                  <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
                     <BasicMetric icon={<Users size={14} className="text-stone-400" aria-hidden />} label="Linked" value={String(selectedMetrics.linked)} />
                     <BasicMetric icon={<Link2 size={14} className="text-stone-400" aria-hidden />} label="Flow" value={formatValue(selectedMetrics.flow)} tone={selectedMetrics.flow > 0 ? 'positive' : selectedMetrics.flow < 0 ? 'negative' : 'neutral'} />
                     <BasicMetric icon={<ActivityWaveIcon size={14} className="text-stone-400" aria-hidden />} label="Activities" value={String(selectedMetrics.activities)} />
@@ -649,15 +668,19 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
           <div
             onClick={e => e.stopPropagation()}
             className={cn(
-              'w-full max-w-md rounded-3xl border border-stone-200 bg-white p-5 shadow-2xl dark:border-stone-800 dark:bg-stone-950 animate-in zoom-in-95 transition-shadow duration-300',
+              'relative min-h-[260px] w-full max-w-md overflow-hidden rounded-3xl border border-stone-200 bg-white p-5 shadow-2xl dark:border-stone-800 dark:bg-stone-950 animate-in zoom-in-95 transition-shadow duration-300',
               addProfileState === 'success' && 'ring-2 ring-emerald-400 dark:ring-emerald-500'
             )}
           >
             {/* ── SAVING ── */}
-            {addProfileState === 'saving' && <OverlaySavingState state="saving" label="Adding profile…" />}
+            {addProfileState === 'saving' && (
+              <OverlaySavingState fillParent state="saving" label="Adding profile…" />
+            )}
 
             {/* ── SUCCESS ── */}
-            {addProfileState === 'success' && <OverlaySavingState state="success" label="Profile added" />}
+            {addProfileState === 'success' && (
+              <OverlaySavingState fillParent state="success" label="Profile added" />
+            )}
 
             {/* ── IDLE / ERROR ── */}
             {(addProfileState === 'idle' || addProfileState === 'error') && (
@@ -766,21 +789,21 @@ function BasicMetric({
       : 'text-stone-900 dark:text-stone-100';
 
   return (
-    <div className="rounded-xl border border-stone-200 bg-white px-3 py-2.5 dark:border-stone-800 dark:bg-stone-900">
-      <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-stone-500 dark:text-stone-400">
+    <div className="rounded-xl border border-stone-200 bg-white px-3 py-2 dark:border-stone-800 dark:bg-stone-900">
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">
         {icon}
         {label}
       </div>
-      <div className={cn('mt-1 font-mono text-base font-semibold tabular-nums', toneClass)}>{value}</div>
+      <div className={cn('mt-0.5 font-mono text-base font-semibold leading-tight tabular-nums', toneClass)}>{value}</div>
     </div>
   );
 }
 
 function InfoCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-stone-200 bg-white px-4 py-3 dark:border-stone-800 dark:bg-stone-900">
-      <div className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">{label}</div>
-      <div className="mt-1 text-sm font-medium text-stone-900 dark:text-stone-100">{value}</div>
+    <div className="rounded-xl border border-stone-200 bg-white px-3 py-2 dark:border-stone-800 dark:bg-stone-900">
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-stone-500 dark:text-stone-400">{label}</div>
+      <div className="mt-0.5 text-sm font-medium leading-tight text-stone-900 dark:text-stone-100">{value}</div>
     </div>
   );
 }

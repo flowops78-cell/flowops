@@ -21,6 +21,33 @@ import { DATA_SELECT } from '../lib/dataFetchSelects';
 import { useAppRole } from './AppRoleContext';
 import { useAuth } from './AuthContext';
 
+/** PostgREST rejects unknown columns; retry without `account_email` until migration is applied. */
+function isMissingAccountEmailPostgrestError(error: unknown): boolean {
+  const msg = `${(error as { message?: string })?.message ?? ''} ${(error as { details?: string })?.details ?? ''}`.toLowerCase();
+  return msg.includes('account_email');
+}
+
+async function fetchOrganizationMemberships(orgId: string) {
+  if (!supabase) {
+    return { data: null, error: new Error('Supabase not configured') } as const;
+  }
+  let res = await supabase
+    .from('organization_memberships')
+    .select(DATA_SELECT.organization_memberships)
+    .eq('org_id', orgId)
+    .eq('status', 'active')
+    .order('display_name', { ascending: true });
+  if (res.error && isMissingAccountEmailPostgrestError(res.error)) {
+    res = await supabase
+      .from('organization_memberships')
+      .select(DATA_SELECT.organization_memberships_no_account_email)
+      .eq('org_id', orgId)
+      .eq('status', 'active')
+      .order('display_name', { ascending: true });
+  }
+  return res;
+}
+
 export interface EntityBalance {
   id: string;
   org_id: string;
@@ -69,7 +96,7 @@ interface DataContextType {
   deleteActivity: (id: string) => Promise<void>;
 
   // Records Actions
-  addRecord: (record: any) => Promise<void>;
+  addRecord: (record: any) => Promise<string | undefined>;
   updateRecord: (record: ActivityRecord) => Promise<void>;
   deleteRecord: (id: string) => Promise<void>;
 
@@ -274,12 +301,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         supabase.from('entities').select(DATA_SELECT.entities).eq('org_id', orgSnapshot).order('name'),
         supabase.from('activities').select(DATA_SELECT.activities).eq('org_id', orgSnapshot).order('date', { ascending: false }),
         supabase.from('records').select(DATA_SELECT.records).eq('org_id', orgSnapshot).order('created_at', { ascending: false }),
-        supabase
-          .from('organization_memberships')
-          .select(DATA_SELECT.organization_memberships)
-          .eq('org_id', orgSnapshot)
-          .eq('status', 'active')
-          .order('display_name', { ascending: true }),
+        fetchOrganizationMemberships(orgSnapshot),
         supabase.from('collaborations').select(DATA_SELECT.collaborations).eq('org_id', orgSnapshot).order('name'),
         supabase.from('channels').select(DATA_SELECT.channels).eq('org_id', orgSnapshot).order('name'),
         supabase.from('audit_events').select(DATA_SELECT.audit_events).eq('org_id', orgSnapshot).order('created_at', { ascending: false }).limit(100),
@@ -317,6 +339,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
             role: dbRoleToAppRole(m.role),
             status: m.status,
             display_name: m.display_name ?? null,
+            account_email: m.account_email ?? null,
             created_at: m.created_at,
             updated_at: m.updated_at,
           })),
@@ -743,6 +766,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           target_note: data.target_notes || 'Transfer in',
         });
         await refreshRecordsAndBalances(orgId);
+        return undefined;
       });
     }
 
@@ -759,16 +783,20 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         notes: data.notes,
       };
       if (data.channel_label) recordData.channel_label = data.channel_label;
-      const { error } = await supabase!.from('records').insert([recordData]);
+      if (data.source_record_id != null && data.source_record_id !== '') {
+        recordData.source_record_id = data.source_record_id;
+      }
+      const { data: inserted, error } = await supabase!.from('records').insert([recordData]).select('id').single();
       if (error) throw error;
       await refreshRecordsAndBalances(orgId);
+      return (inserted?.id as string | undefined) ?? undefined;
     });
   };
 
   const updateRecord = async (record: any) => {
     const orgId = requireOrgScope();
     return withInflight(`updateRecord:${record.id}`, async () => {
-      const { error } = await supabase!.from('records').update({
+      const payload: Record<string, unknown> = {
         activity_id: record.activity_id,
         entity_id: record.entity_id,
         direction: record.direction,
@@ -776,7 +804,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         unit_amount: record.unit_amount,
         transfer_group_id: record.transfer_group_id,
         notes: record.notes,
-      }).eq('id', record.id);
+      };
+      if (record.channel_label !== undefined) payload.channel_label = record.channel_label;
+      if (record.source_record_id !== undefined) payload.source_record_id = record.source_record_id;
+      const { error } = await supabase!.from('records').update(payload).eq('id', record.id);
       if (error) throw error;
       await refreshRecordsAndBalances(orgId);
     });
@@ -894,6 +925,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         activity_id: data.activity_id ?? null,
       };
       if (data.channel_label) recordData.channel_label = data.channel_label;
+      if (data.source_record_id != null && data.source_record_id !== '') {
+        recordData.source_record_id = data.source_record_id;
+      }
       const { error } = await supabase!.from('records').insert([recordData]);
       if (error) throw error;
       await refreshRecordsAndBalances(orgId);

@@ -1,5 +1,6 @@
 import React from 'react';
-import { ShieldCheck, LogOut, CheckCircle2, AlertTriangle, Key, Globe, Settings as SettingsIcon, ChevronDown, Pencil, UserPlus, Download } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { LogOut, ChevronDown } from 'lucide-react';
 import { useData } from '../context/DataContext';
 import { useAppRole } from '../context/AppRoleContext';
 import { useAuth } from '../context/AuthContext';
@@ -9,10 +10,9 @@ import { getSupabaseAccessToken, isSupabaseConfigured, SUPABASE_ANON_KEY, supaba
 import { useNotification } from '../context/NotificationContext';
 import { useConfirm } from '../context/ConfirmContext';
 import LoadingLine from '../components/LoadingLine';
-import CollapsibleActivitySection from '../components/CollapsibleActivitySection';
 import LiveOperatorsTracker from '../components/LiveOperatorsTracker';
-import IdentityBadge from '../components/IdentityBadge';
 import { LABELS, getRoleLabel, sanitizeLabel } from '../lib/labels';
+import { SETTINGS_PASSWORD_HASH } from '../lib/settingsDeepLinks';
 
 type AccessRequestRow = {
   id: string;
@@ -241,7 +241,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [clusterAdminsNotice, setClusterAdminsNotice] = React.useState<string | null>(null);
   const [pendingClusterRoles, setPendingClusterRoles] = React.useState<Record<string, 'cluster_admin' | 'cluster_operator'>>({});
   const [busyClusterUserId, setBusyClusterUserId] = React.useState<string | null>(null);
-  const [clusterSearch, setClusterSearch] = React.useState('');
   const [scopeClusterId, setScopeClusterId] = React.useState<string | null>(null);
   // Bulk Export state
   const [exportScope, setExportScope] = React.useState<'cluster' | 'org'>('org');
@@ -257,7 +256,21 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [editOrgSlug, setEditOrgSlug] = React.useState('');
   const [isUpdatingOrgIdentity, setIsUpdatingOrgIdentity] = React.useState(false);
   const [showAdvanced, setShowAdvanced] = React.useState(false);
-  
+  const location = useLocation();
+
+  React.useEffect(() => {
+    if (embedded) return;
+    if (location.hash === SETTINGS_PASSWORD_HASH) setShowAdvanced(true);
+  }, [embedded, location.hash, location.pathname]);
+
+  React.useEffect(() => {
+    if (embedded || location.hash !== SETTINGS_PASSWORD_HASH || !showAdvanced) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById('settings-password')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [embedded, location.hash, location.pathname, showAdvanced]);
+
   // Platform Directory State
   const [platformAccounts, setPlatformAccounts] = React.useState<PlatformAccount[]>([]);
   const [platformDirectoryLoading, setPlatformDirectoryLoading] = React.useState(false);
@@ -596,7 +609,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       return;
     }
 
-    await fetchClusterAdmins();
+    await Promise.all([fetchClusterAdmins(), fetchPlatformDirectory()]);
     notify({ type: 'success', message: `Updated role for ${account.email}.` });
     setBusyClusterUserId(null);
   };
@@ -840,10 +853,28 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     }
   };
 
-  const filteredClusterAdmins = clusterAdmins.filter(admin =>
-    (admin.email ?? '').toLowerCase().includes(clusterSearch.toLowerCase()) ||
-    (admin.user_id ?? '').toLowerCase().includes(clusterSearch.toLowerCase())
-  );
+  const clusterManagedByUserId = React.useMemo(() => {
+    const m = new Map<string, ManagedClusterAccount>();
+    for (const a of clusterAdmins) {
+      if (a.type === 'cluster' && !m.has(a.user_id)) m.set(a.user_id, a);
+    }
+    return m;
+  }, [clusterAdmins]);
+
+  const refreshPeopleDirectory = React.useCallback(async () => {
+    await fetchPlatformDirectory();
+    await fetchClusterAdmins();
+  }, [fetchPlatformDirectory, fetchClusterAdmins]);
+
+  const filteredPlatformAccounts = React.useMemo(() => {
+    const q = platformDirectorySearch.trim().toLowerCase();
+    if (!q) return platformAccounts;
+    return platformAccounts.filter(
+      acc =>
+        (acc.email ?? '').toLowerCase().includes(q) ||
+        (acc.user_id ?? '').toLowerCase().includes(q)
+    );
+  }, [platformAccounts, platformDirectorySearch]);
 
   const filteredInvites = accessInvites.filter(invite =>
     !invite.revoked_at &&
@@ -853,482 +884,449 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     )
   );
 
+  const switcherOrgs = React.useMemo(() => {
+    if (isClusterAdmin) {
+      const effectiveClusterId = scopeClusterId || contextClusterId;
+      const fromCluster =
+        effectiveClusterId && manageableOrgsByCluster[effectiveClusterId]
+          ? manageableOrgsByCluster[effectiveClusterId]
+          : null;
+      if (fromCluster && fromCluster.length > 0) return fromCluster;
+    }
+    return Object.values(availableOrgs);
+  }, [
+    availableOrgs,
+    contextClusterId,
+    isClusterAdmin,
+    manageableOrgsByCluster,
+    scopeClusterId,
+  ]);
+
+  const showGroupSwitcher = isClusterAdmin && manageableClusters.length > 1;
+  const showWorkspaceSwitcher = switcherOrgs.length > 1;
+  const showWorkspaceQuickCard = Boolean(activeOrgId && activeOrg);
+
+  const slot =
+    'rounded-xl border border-stone-200/90 bg-stone-50/50 p-4 dark:border-stone-800 dark:bg-stone-900/40';
+
   return (
     <div className={cn(embedded ? 'space-y-6' : 'page-shell', 'w-full min-w-0 overflow-x-hidden')}>
       {!embedded && (
-        <div className="section-card p-5 lg:p-6 flex items-center justify-between gap-4 mb-8">
-          <div className="flex items-center gap-4">
-            <div className="w-10 h-10 rounded-xl bg-stone-100 dark:bg-stone-800 flex items-center justify-center shrink-0 border border-stone-200 dark:border-stone-700">
-              <SettingsIcon size={20} className="text-stone-900 dark:text-stone-100" />
-            </div>
-            <div>
-              <h2 className="text-xl font-bold tracking-tight text-stone-900 dark:text-stone-100">
-                {activeOrg?.name || 'Settings'}
-              </h2>
-              <p className="text-xs text-stone-500 mt-0.5 font-medium uppercase tracking-wider">{roleLabel}</p>
-            </div>
-          </div>
-        </div>
+        <header className="mb-5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <h1 className="text-lg font-semibold text-stone-900 dark:text-stone-100">Settings</h1>
+          {activeOrg?.name ? (
+            <span className="max-w-full truncate text-sm text-stone-500 dark:text-stone-400">{activeOrg.name}</span>
+          ) : null}
+          <span className="text-xs text-stone-400 dark:text-stone-500">{roleLabel}</span>
+        </header>
       )}
 
-      <div className="space-y-6">
+      <div className="space-y-4">
 
-        {/* ── 4 ACTION CARDS ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-          {/* 1. Identity */}
-          {canEditIdentity && (
-            <div className="section-card p-5 space-y-4">
-              <div className="flex items-center gap-2">
-                <Pencil size={15} className="text-stone-400" />
-                <span className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Edit workspace</span>
-              </div>
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Name</label>
-                  <input
-                    type="text"
-                    className="control-input"
-                    value={editOrgName}
-                    onChange={e => setEditOrgName(e.target.value)}
-                    placeholder="e.g. Beirut Ops"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Short tag</label>
-                  <input
-                    type="text"
-                    className="control-input font-mono text-xs"
-                    value={editOrgTag}
-                    onChange={e => setEditOrgTag(e.target.value.toUpperCase())}
-                    placeholder="e.g. OPS"
-                  />
-                </div>
-              </div>
-              <button
-                onClick={handleUpdateOrgIdentity}
-                disabled={isUpdatingOrgIdentity}
-                className="action-btn-primary w-full h-9 text-xs justify-center font-bold"
-              >
-                {isUpdatingOrgIdentity ? 'Saving...' : 'Save'}
-              </button>
-            </div>
-          )}
-
-          {/* 2. Access */}
-          {canViewOperatorLogs && (
-            <div id="settings-grant-access" className="section-card p-5 space-y-4 scroll-mt-24">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <UserPlus size={15} className="text-stone-400" />
-                  <span className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Access</span>
-                </div>
-                {accessRequests.length > 0 && (
-                  <span className="px-2 py-0.5 bg-amber-100 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 text-[9px] font-black uppercase tracking-tighter rounded-full border border-amber-200 dark:border-amber-800">
-                    {accessRequests.length} pending
-                  </span>
-                )}
-              </div>
-              <button
-                onClick={() => void createAccessInvite()}
-                className="action-btn-primary w-full h-9 text-xs justify-center font-bold"
-              >
-                + Invite user
-              </button>
-              <p className="text-[10px] text-stone-500 leading-relaxed">
-                Tokens do not create accounts by themselves. After someone uses <span className="font-medium text-stone-700 dark:text-stone-300">Request access</span> on the sign-in page, they appear in <span className="font-medium text-stone-700 dark:text-stone-300">Pending access requests</span> below. When you <span className="font-medium text-stone-700 dark:text-stone-300">Approve</span>, you set their <span className="font-medium text-stone-700 dark:text-stone-300">initial password</span> (min 8); that calls provisioning and grants workspace access.
+        {showWorkspaceQuickCard && (
+          <div id="settings-workspace-switch" className={cn(slot, 'scroll-mt-24')}>
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between lg:gap-6">
+              <p className="truncate text-base font-medium text-stone-900 dark:text-stone-100">
+                {activeOrg?.name || activeOrg?.tag || '—'}
               </p>
-              {inviteTokenValue && (
-                <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-100 dark:border-emerald-900/20 space-y-2">
-                  <p className="text-[10px] font-bold text-emerald-700 dark:text-emerald-400">Token ready — copy now</p>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-[10px] bg-white dark:bg-stone-800 px-2 py-1 rounded border border-stone-100 dark:border-stone-700 select-all flex-1 truncate">{inviteTokenValue}</span>
-                    <button
-                      onClick={() => { navigator.clipboard.writeText(inviteTokenValue); setInviteTokenCopied(true); setTimeout(() => setInviteTokenCopied(false), 2000); }}
-                      className="text-[10px] font-bold text-stone-500 uppercase shrink-0"
-                    >
-                      {inviteTokenCopied ? '✓' : 'Copy'}
-                    </button>
-                  </div>
-                  <button
-                    onClick={() => { navigator.clipboard.writeText(buildInviteShareMessage(inviteTokenValue)); setInviteMessageCopied(true); setTimeout(() => setInviteMessageCopied(false), 2000); }}
-                    className="w-full py-1 text-[10px] font-bold uppercase text-stone-500 bg-stone-100 dark:bg-stone-800 rounded"
-                  >
-                    {inviteMessageCopied ? 'Copied' : 'Copy full invite message'}
-                  </button>
-                </div>
-              )}
-              {inviteNotice && !inviteTokenValue && (
-                <p className="text-[10px] text-red-500">{inviteNotice}</p>
-              )}
-
-              <div className="pt-4 border-t border-stone-100 dark:border-stone-800 space-y-3">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-stone-400">Add existing account</p>
-                <p className="text-[11px] text-stone-500 leading-relaxed">
-                  The person must already exist in Supabase Auth (for example they signed in once). This adds them to a workspace and sets their default workspace so they can use the app.
-                </p>
-                {grantWorkspaceOrgOptions.length > 1 && (
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Workspace</label>
+              {(showGroupSwitcher || showWorkspaceSwitcher) && (
+                <div className="flex w-full flex-col gap-2 sm:flex-row sm:flex-wrap lg:max-w-xl lg:shrink-0">
+                  {showGroupSwitcher && (
                     <select
-                      className="w-full text-xs bg-stone-50 dark:bg-stone-800 border-none rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500"
-                      value={grantAccessOrgId || activeOrgId || ''}
-                      onChange={e => setGrantAccessOrgId(e.target.value)}
-                      disabled={grantAccessBusy}
+                      className="control-input min-w-[10rem] flex-1 py-2 text-sm"
+                      value={scopeClusterId || contextClusterId || ''}
+                      onChange={e => setScopeClusterId(e.target.value)}
+                      aria-label="Group"
                     >
-                      {grantWorkspaceOrgOptions.map(org => (
-                        <option key={org.id} value={org.id}>{org.name || org.tag || org.id.slice(0, 8)}</option>
+                      <option value="" disabled>
+                        Group…
+                      </option>
+                      {manageableClusters.map(cluster => (
+                        <option key={cluster.id} value={cluster.id}>
+                          {cluster.name || cluster.tag || cluster.id.slice(0, 8)}
+                        </option>
                       ))}
                     </select>
-                  </div>
-                )}
-                <div className="flex flex-col gap-2">
-                  <input
-                    type="email"
-                    autoComplete="off"
-                    placeholder="Their login email"
-                    className="control-input py-2 text-xs"
-                    value={grantAccessEmail}
-                    onChange={e => setGrantAccessEmail(e.target.value)}
-                    disabled={grantAccessBusy}
-                  />
-                  <div className="flex gap-2">
+                  )}
+                  {showWorkspaceSwitcher && (
                     <select
-                      className="flex-1 text-xs bg-stone-50 dark:bg-stone-800 rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500 font-medium"
-                      value={grantAccessRole}
-                      onChange={e => setGrantAccessRole(e.target.value as 'admin' | 'operator' | 'viewer')}
-                      disabled={grantAccessBusy}
+                      className="control-input min-w-[10rem] flex-1 py-2 text-sm"
+                      value={activeOrgId || ''}
+                      onChange={e => typeof switchOrg === 'function' && switchOrg(e.target.value)}
+                      aria-label="Workspace"
                     >
-                      <option value="admin">Workspace admin</option>
-                      <option value="operator">Workspace manager</option>
-                      <option value="viewer">Viewer</option>
+                      {switcherOrgs.map(org => (
+                        <option key={org.id} value={org.id}>
+                          {org.name || org.tag || org.id.slice(0, 8)}
+                        </option>
+                      ))}
                     </select>
-                    <button
-                      type="button"
-                      onClick={() => void grantWorkspaceToExistingUser()}
-                      disabled={grantAccessBusy}
-                      className="action-btn-primary px-4 text-xs font-bold shrink-0"
-                    >
-                      {grantAccessBusy ? '…' : 'Add'}
-                    </button>
-                  </div>
+                  )}
                 </div>
-              </div>
-            </div>
-          )}
-
-          {/* 3. Export */}
-          <div className="section-card p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Download size={15} className="text-stone-400" />
-                <span className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Export</span>
-              </div>
-              {lastExportMeta && (
-                <span className="text-[10px] text-stone-400 font-medium">{lastExportMeta.rows} rows</span>
               )}
             </div>
-            <p className="text-[11px] text-stone-500 leading-relaxed">Full workspace snapshot as JSON.</p>
-            <button
-              disabled={isExporting}
-              onClick={() => {
-                const runExport = async () => {
-                  const okEx = await confirm({
-                    title: 'Export workspace data?',
-                    message: 'This action is audit-logged.',
-                    confirmLabel: 'Export',
-                  });
-                  if (!okEx) return;
-                  setIsExporting(true);
-                  try {
-                    const { data, error } = await invokeSafe('export-data', {
-                      scope: exportScope,
-                      dataset: exportDataset,
-                      org_id: exportOrgId || activeOrgId || '',
-                      cluster_id: contextClusterId || ''
-                    });
-                    if (error) throw error;
-                    const result = data as any;
-                    const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `flow-ops-export-${new Date().toISOString().slice(0, 10)}.json`;
-                    a.click();
-                    URL.revokeObjectURL(url);
-                    setLastExportMeta({ rows: result.total_rows ?? 0, ts: result.exported_at ?? new Date().toISOString() });
-                    notify({ type: 'success', message: `Export complete. Audit ID: ${String(result.audit_event_id ?? '').slice(0, 8)}` });
-                  } catch (err) {
-                    notify({ type: 'error', message: `Export failed: ${String(err)}` });
-                  } finally { setIsExporting(false); }
-                };
-                void runExport();
-              }}
-              className="w-full py-2.5 bg-stone-900 dark:bg-white text-white dark:text-stone-900 rounded-xl text-xs font-bold uppercase tracking-widest hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-30"
-            >
-              {isExporting ? 'Exporting...' : 'Export data'}
-            </button>
-          </div>
-
-          {/* 4. Reset */}
-          {canManageGlobalData && (
-            <div className="section-card p-5 space-y-4 border-red-100 dark:border-red-900/20">
-              <div className="flex items-center gap-2">
-                <AlertTriangle size={15} className="text-red-400" />
-                <span className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Reset workspace</span>
-              </div>
-              <p className="text-[11px] text-stone-500 leading-relaxed">Permanently purge all workspace data. Cannot be undone.</p>
-              <button
-                disabled={isClearingGlobalData}
-                onClick={() => void clearGlobalData()}
-                className="w-full h-9 rounded-xl border-2 border-red-200 dark:border-red-900 text-red-600 dark:text-red-400 text-[10px] font-black uppercase tracking-widest hover:bg-red-600 hover:text-white dark:hover:bg-red-900 transition-all disabled:opacity-20"
-              >
-                {isClearingGlobalData ? 'Resetting...' : 'Reset workspace'}
-              </button>
-            </div>
-          )}
-        </div>
-
-        {canViewOperatorLogs && (
-          <div className="section-card p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 size={15} className="text-stone-400" />
-                <span className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">
-                  Pending access requests{accessRequests.length > 0 ? ` (${accessRequests.length})` : ''}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => { void fetchAccessInvites(); void fetchAccessRequests(); }}
-                className="text-[10px] font-bold uppercase text-stone-400 hover:text-stone-600 transition-colors"
-              >
-                Refresh
-              </button>
-            </div>
-            {accessRequests.length === 0 ? (
-              <p className="text-[11px] text-stone-500 leading-relaxed">
-                No one is waiting. New submissions from the sign-in page (with a valid invite token) will show up here for approval and initial password.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {accessRequests.map(req => (
-                  <div key={req.id} className="p-4 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-[9px] font-bold uppercase tracking-wider text-stone-400 mb-0.5">Sign-in email</p>
-                        <p className="text-xs font-bold text-stone-900 dark:text-stone-100">{req.login_id}</p>
-                        <p className="text-[10px] text-stone-400">{getRoleLabel(req.requested_role)}</p>
-                      </div>
-                      <span className="text-[9px] font-black uppercase text-amber-600 bg-amber-50 dark:bg-amber-900/10 px-2 py-0.5 rounded-full border border-amber-100 dark:border-amber-800">Pending</span>
-                    </div>
-                    <div className="space-y-2">
-                      <input
-                        type="password"
-                        placeholder="Set initial password (min 8)"
-                        className="control-input py-1.5 text-xs w-full"
-                        value={pendingPasswords[req.id] || ''}
-                        onChange={e => setPendingPasswords(prev => ({ ...prev, [req.id]: e.target.value }))}
-                      />
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold uppercase text-stone-400">Display name (optional)</label>
-                        <input
-                          type="text"
-                          placeholder="e.g. Sam Chen — shown in Members and activity pickers"
-                          className="control-input py-1.5 text-xs w-full"
-                          value={pendingProvisionDisplayNames[req.id] || ''}
-                          onChange={e =>
-                            setPendingProvisionDisplayNames(prev => ({
-                              ...prev,
-                              [req.id]: e.target.value,
-                            }))
-                          }
-                        />
-                      </div>
-                      <div className="flex gap-2">
-                        <button onClick={() => void reviewAccessRequest(req, 'approved')} disabled={busyRequestId === req.id} className="action-btn-primary flex-1 h-8 text-xs justify-center">Approve</button>
-                        <button onClick={() => void reviewAccessRequest(req, 'rejected')} disabled={busyRequestId === req.id} className="flex-1 h-8 rounded-xl border border-stone-200 dark:border-stone-700 text-xs font-bold text-stone-500 hover:bg-stone-50 dark:hover:bg-stone-800 transition-colors">Reject</button>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {requestsNotice && <p className="text-[10px] text-stone-500 italic">{requestsNotice}</p>}
+            {isClusterAdmin && clusterId && (
+              <div className="mt-3 flex flex-col gap-2 border-t border-stone-200/80 pt-3 dark:border-stone-700/80 sm:flex-row sm:items-center">
+                <input
+                  type="email"
+                  placeholder="New workspace — admin email (optional)"
+                  className="control-input flex-1 py-2 text-xs"
+                  value={newOrgAdminEmail}
+                  onChange={e => setNewOrgAdminEmail(e.target.value)}
+                  disabled={isProvisioning}
+                />
+                <button
+                  type="button"
+                  onClick={() => void provisionOrganization()}
+                  disabled={isProvisioning}
+                  className="action-btn-primary h-9 shrink-0 px-3 text-xs"
+                >
+                  {isProvisioning ? '…' : 'Create'}
+                </button>
               </div>
             )}
           </div>
         )}
 
-        {/* ── ADVANCED COLLAPSE ── */}
-        <div className="border-t border-stone-200 dark:border-stone-800 pt-6">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          {canEditIdentity && (
+            <div className={slot}>
+              <p className="mb-3 text-sm font-medium text-stone-800 dark:text-stone-200">Workspace name and tag</p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <input
+                  type="text"
+                  className="control-input text-sm"
+                  value={editOrgName}
+                  onChange={e => setEditOrgName(e.target.value)}
+                  placeholder="Name"
+                />
+                <input
+                  type="text"
+                  className="control-input font-mono text-sm"
+                  value={editOrgTag}
+                  onChange={e => setEditOrgTag(e.target.value.toUpperCase())}
+                  placeholder="TAG"
+                />
+              </div>
+              <button
+                onClick={handleUpdateOrgIdentity}
+                disabled={isUpdatingOrgIdentity}
+                className="action-btn-primary mt-3 h-9 w-full justify-center text-xs sm:w-auto sm:px-4"
+              >
+                {isUpdatingOrgIdentity ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          )}
+
+          {canViewOperatorLogs && (
+            <div id="settings-grant-access" className={cn(slot, 'scroll-mt-24')}>
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <p className="text-sm font-medium text-stone-800 dark:text-stone-200">People</p>
+                {accessRequests.length > 0 ? (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                    {accessRequests.length} pending
+                  </span>
+                ) : null}
+              </div>
+              <button
+                onClick={() => void createAccessInvite()}
+                className="action-btn-primary mb-3 h-9 w-full justify-center text-xs"
+              >
+                New invite link
+              </button>
+              {inviteTokenValue && (
+                <div className="mb-3 space-y-2 rounded-lg border border-stone-200/90 bg-white/80 p-2 dark:border-stone-700 dark:bg-stone-950/50">
+                  <div className="flex items-center gap-2">
+                    <span className="flex-1 truncate font-mono text-[10px] text-stone-700 dark:text-stone-300 select-all">{inviteTokenValue}</span>
+                    <button
+                      type="button"
+                      onClick={() => { navigator.clipboard.writeText(inviteTokenValue); setInviteTokenCopied(true); setTimeout(() => setInviteTokenCopied(false), 2000); }}
+                      className="shrink-0 text-[11px] font-medium text-stone-500 hover:text-stone-800 dark:hover:text-stone-300"
+                    >
+                      {inviteTokenCopied ? 'Copied' : 'Copy'}
+                    </button>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => { navigator.clipboard.writeText(buildInviteShareMessage(inviteTokenValue)); setInviteMessageCopied(true); setTimeout(() => setInviteMessageCopied(false), 2000); }}
+                    className="w-full rounded-md bg-stone-100 py-1.5 text-[11px] text-stone-600 dark:bg-stone-800 dark:text-stone-400"
+                  >
+                    {inviteMessageCopied ? 'Copied' : 'Copy message'}
+                  </button>
+                </div>
+              )}
+              {inviteNotice && !inviteTokenValue && <p className="mb-2 text-[11px] text-red-600 dark:text-red-400">{inviteNotice}</p>}
+
+              <div className="space-y-2 border-t border-stone-200/80 pt-3 dark:border-stone-700/80">
+                {grantWorkspaceOrgOptions.length > 1 && (
+                  <select
+                    className="control-input w-full py-2 text-xs"
+                    value={grantAccessOrgId || activeOrgId || ''}
+                    onChange={e => setGrantAccessOrgId(e.target.value)}
+                    disabled={grantAccessBusy}
+                    aria-label="Workspace for access grant"
+                  >
+                    {grantWorkspaceOrgOptions.map(org => (
+                      <option key={org.id} value={org.id}>{org.name || org.tag || org.id.slice(0, 8)}</option>
+                    ))}
+                  </select>
+                )}
+                <input
+                  type="email"
+                  autoComplete="off"
+                  placeholder="Email (existing account)"
+                  className="control-input py-2 text-xs"
+                  value={grantAccessEmail}
+                  onChange={e => setGrantAccessEmail(e.target.value)}
+                  disabled={grantAccessBusy}
+                />
+                <div className="flex gap-2">
+                  <select
+                    className="control-input flex-1 py-2 text-xs"
+                    value={grantAccessRole}
+                    onChange={e => setGrantAccessRole(e.target.value as 'admin' | 'operator' | 'viewer')}
+                    disabled={grantAccessBusy}
+                    aria-label="Role"
+                  >
+                    <option value="admin">{LABELS.roles.workspaceAdmin}</option>
+                    <option value="operator">{LABELS.roles.workspaceManager}</option>
+                    <option value="viewer">{LABELS.roles.viewer}</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => void grantWorkspaceToExistingUser()}
+                    disabled={grantAccessBusy}
+                    className="action-btn-primary shrink-0 px-3 text-xs"
+                  >
+                    {grantAccessBusy ? '…' : 'Add'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-stone-200/70 pt-3 dark:border-stone-800/70">
           <button
+            type="button"
+            disabled={isExporting}
+            onClick={() => {
+              const runExport = async () => {
+                const okEx = await confirm({
+                  title: 'Export workspace data?',
+                  message: 'This action is audit-logged.',
+                  confirmLabel: 'Export',
+                });
+                if (!okEx) return;
+                setIsExporting(true);
+                try {
+                  const { data, error } = await invokeSafe('export-data', {
+                    scope: exportScope,
+                    dataset: exportDataset,
+                    org_id: exportOrgId || activeOrgId || '',
+                    cluster_id: contextClusterId || ''
+                  });
+                  if (error) throw error;
+                  const result = data as any;
+                  const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `flow-ops-export-${new Date().toISOString().slice(0, 10)}.json`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                  setLastExportMeta({ rows: result.total_rows ?? 0, ts: result.exported_at ?? new Date().toISOString() });
+                  notify({ type: 'success', message: `Export complete. Audit ID: ${String(result.audit_event_id ?? '').slice(0, 8)}` });
+                } catch (err) {
+                  notify({ type: 'error', message: `Export failed: ${String(err)}` });
+                } finally { setIsExporting(false); }
+              };
+              void runExport();
+            }}
+            className="rounded-lg border border-stone-200 bg-stone-50/80 px-2.5 py-1 text-[11px] font-medium text-stone-600 transition-colors hover:bg-stone-100 disabled:pointer-events-none disabled:opacity-40 dark:border-stone-700 dark:bg-stone-900/40 dark:text-stone-300 dark:hover:bg-stone-800/80"
+          >
+            {isExporting ? 'Exporting…' : 'Export data'}
+          </button>
+          {lastExportMeta ? (
+            <span className="text-[10px] tabular-nums text-stone-400 dark:text-stone-500">
+              {lastExportMeta.rows} rows
+            </span>
+          ) : null}
+          {canManageGlobalData ? (
+            <>
+              <span className="hidden text-stone-300 sm:inline dark:text-stone-600" aria-hidden>
+                ·
+              </span>
+              <button
+                type="button"
+                disabled={isClearingGlobalData}
+                onClick={() => void clearGlobalData()}
+                className="rounded-lg border border-red-200/70 bg-transparent px-2.5 py-1 text-[11px] font-medium text-red-700 transition-colors hover:bg-red-50 disabled:pointer-events-none disabled:opacity-40 dark:border-red-900/60 dark:text-red-400 dark:hover:bg-red-950/40"
+              >
+                {isClearingGlobalData ? 'Resetting…' : 'Reset workspace'}
+              </button>
+            </>
+          ) : null}
+        </div>
+
+        {canViewOperatorLogs && accessRequests.length > 0 && (
+          <div className={slot}>
+            <div className="mb-3 flex items-center justify-between">
+              <p className="text-sm font-medium text-stone-800 dark:text-stone-200">Access requests</p>
+              <button
+                type="button"
+                onClick={() => { void fetchAccessInvites(); void fetchAccessRequests(); }}
+                className="text-xs text-stone-500 hover:text-stone-800 dark:hover:text-stone-300"
+              >
+                Refresh
+              </button>
+            </div>
+            <div className="space-y-3">
+              {accessRequests.map(req => (
+                <div
+                  key={req.id}
+                  className="space-y-2 rounded-lg border border-stone-200/90 bg-white/60 p-3 dark:border-stone-700 dark:bg-stone-950/40"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-medium text-stone-900 dark:text-stone-100">{req.login_id}</p>
+                      <p className="text-[11px] text-stone-500">{getRoleLabel(req.requested_role)}</p>
+                    </div>
+                  </div>
+                  <input
+                    type="password"
+                    placeholder="Initial password (8+)"
+                    className="control-input w-full py-1.5 text-xs"
+                    value={pendingPasswords[req.id] || ''}
+                    onChange={e => setPendingPasswords(prev => ({ ...prev, [req.id]: e.target.value }))}
+                  />
+                  <input
+                    type="text"
+                    placeholder="Display name (optional)"
+                    className="control-input w-full py-1.5 text-xs"
+                    value={pendingProvisionDisplayNames[req.id] || ''}
+                    onChange={e =>
+                      setPendingProvisionDisplayNames(prev => ({
+                        ...prev,
+                        [req.id]: e.target.value,
+                      }))
+                    }
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void reviewAccessRequest(req, 'approved')}
+                      disabled={busyRequestId === req.id}
+                      className="action-btn-primary h-8 flex-1 justify-center text-xs"
+                    >
+                      Approve
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void reviewAccessRequest(req, 'rejected')}
+                      disabled={busyRequestId === req.id}
+                      className="h-8 flex-1 rounded-lg border border-stone-200 text-xs text-stone-600 hover:bg-stone-50 dark:border-stone-600 dark:text-stone-400 dark:hover:bg-stone-800"
+                    >
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              ))}
+              {requestsNotice && <p className="text-[11px] text-stone-500">{requestsNotice}</p>}
+            </div>
+          </div>
+        )}
+
+        <div className="border-t border-stone-200/80 pt-4 dark:border-stone-800/80">
+          <button
+            type="button"
             onClick={() => setShowAdvanced(v => !v)}
-            className="flex items-center gap-2 text-xs font-bold text-stone-400 hover:text-stone-600 dark:hover:text-stone-300 transition-colors uppercase tracking-widest mb-0"
+            className="flex items-center gap-1.5 text-sm text-stone-500 hover:text-stone-800 dark:text-stone-400 dark:hover:text-stone-200"
           >
             <ChevronDown size={14} className={cn('transition-transform duration-200', showAdvanced && 'rotate-180')} />
-            Advanced
+            More
           </button>
 
           {showAdvanced && (
-            <div className="mt-6 space-y-6">
-
-              {/* Password */}
-              <div className="section-card p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <Key size={16} className="text-stone-400" />
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Password</h3>
-                </div>
-                <p className="text-[11px] text-stone-500 mb-4">Update security for <span className="font-medium text-stone-900 dark:text-stone-100">{user?.email}</span></p>
-                <div className="space-y-3 max-w-sm">
-                  <input type="password" className="control-input py-2 text-xs" placeholder="New password (min 8 chars)" value={newPassword} onChange={e => setNewPassword(e.target.value)} />
-                  <input type="password" className="control-input py-2 text-xs" placeholder="Confirm password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} />
-                  <button onClick={() => void handleUpdatePassword()} disabled={isUpdatingPassword} className="action-btn-primary w-full h-9 text-xs justify-center">
-                    {isUpdatingPassword ? 'Updating...' : 'Update password'}
-                  </button>
-                </div>
-              </div>
-
-              {/* Account status */}
-              <div className="section-card p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <ShieldCheck size={16} className="text-stone-400" />
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Account</h3>
-                </div>
-                <div className="space-y-2 max-w-sm text-sm">
-                  {[
-                    { label: 'Identity', value: user ? 'Authenticated' : 'None', color: 'text-emerald-600 dark:text-emerald-400' },
-                    { label: 'Role', value: roleLabel, bold: true },
-                    { label: 'Status', value: backendStatus, italic: true, color: 'text-stone-400' },
-                  ].map((item, idx) => (
-                    <div key={idx} className="flex justify-between items-center bg-stone-50/50 dark:bg-stone-800/40 px-3 py-2.5 rounded-lg border border-stone-100/50 dark:border-stone-800">
-                      <span className="text-xs font-medium text-stone-500">{item.label}</span>
-                      <span className={cn('text-xs', item.bold && 'font-bold uppercase tracking-tight text-stone-700 dark:text-stone-200', item.italic && 'italic', item.color || 'text-stone-700 dark:text-stone-300')}>{item.value}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Workspace slug */}
-              {canEditIdentity && (
-                <div className="section-card p-6">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Globe size={16} className="text-stone-400" />
-                    <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Slug</h3>
-                  </div>
-                  <div className="space-y-1 max-w-sm">
-                    <label className="text-[10px] font-bold uppercase text-stone-400">ID Slug</label>
+            <div className="mt-4 space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div id="settings-password" className={cn(slot, 'scroll-mt-24')}>
+                  <p className="mb-2 text-sm font-medium text-stone-800 dark:text-stone-200">Password</p>
+                  <div className="space-y-2">
                     <input
-                      type="text"
-                      className="control-input font-mono text-xs"
-                      value={editOrgSlug}
-                      onChange={e => setEditOrgSlug(e.target.value.toLowerCase().replace(/\s+/g, '-'))}
-                      placeholder="e.g. beirut-ops"
+                      type="password"
+                      className="control-input w-full py-2 text-xs"
+                      placeholder="New password"
+                      value={newPassword}
+                      onChange={e => setNewPassword(e.target.value)}
                     />
-                    <p className="text-[9px] text-stone-400 italic">Used for URL paths and deterministic routing.</p>
+                    <input
+                      type="password"
+                      className="control-input w-full py-2 text-xs"
+                      placeholder="Confirm"
+                      value={confirmPassword}
+                      onChange={e => setConfirmPassword(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => void handleUpdatePassword()}
+                      disabled={isUpdatingPassword}
+                      className="action-btn-primary h-9 w-full justify-center text-xs sm:w-auto sm:px-4"
+                    >
+                      {isUpdatingPassword ? 'Updating…' : 'Update'}
+                    </button>
                   </div>
-                  <button onClick={handleUpdateOrgIdentity} disabled={isUpdatingOrgIdentity} className="mt-3 action-btn-primary h-8 px-4 text-xs">
-                    {isUpdatingOrgIdentity ? 'Saving...' : 'Save slug'}
-                  </button>
                 </div>
-              )}
 
-              {/* Workspace switcher (admin) */}
-              {isClusterAdmin && (
-                <div className="section-card p-6">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Globe size={16} className="text-stone-400" />
-                    <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Switch workspace</h3>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {manageableClusters.length > 1 && (
-                      <div className="space-y-1">
-                        <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 block">Group</label>
-                        <select
-                          className="w-full bg-stone-50 dark:bg-stone-800 border-stone-200 dark:border-stone-700 rounded-xl px-4 py-3 text-sm font-medium outline-none focus:ring-2 focus:ring-emerald-500"
-                          value={scopeClusterId || contextClusterId || ''}
-                          onChange={e => setScopeClusterId(e.target.value)}
-                        >
-                          <option value="" disabled>Choose group...</option>
-                          {manageableClusters.map(cluster => (
-                            <option key={cluster.id} value={cluster.id}>{cluster.name || cluster.tag || cluster.id.slice(0, 8)}</option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-                    {(() => {
-                      const effectiveClusterId = scopeClusterId || contextClusterId;
-                      const orgsInCluster = (effectiveClusterId && manageableOrgsByCluster[effectiveClusterId])
-                        ? manageableOrgsByCluster[effectiveClusterId]
-                        : Object.values(availableOrgs);
-                      if (orgsInCluster.length <= 1) return null;
-                      return (
-                        <div className="space-y-1">
-                          <label className="text-[10px] font-bold uppercase tracking-widest text-stone-400 block">Workspace</label>
-                          <select
-                            className="w-full bg-white dark:bg-stone-900 border-stone-200 dark:border-stone-800 rounded-xl px-4 py-3 text-sm font-bold outline-none focus:ring-2 focus:ring-emerald-500"
-                            value={activeOrgId || ''}
-                            onChange={e => typeof switchOrg === 'function' && switchOrg(e.target.value)}
-                          >
-                            <option value="" disabled>Change workspace...</option>
-                            {orgsInCluster.map(org => (
-                              <option key={org.id} value={org.id}>{org.name || org.tag || org.id.slice(0, 8)}</option>
-                            ))}
-                          </select>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                  {clusterId && (
-                    <div className="mt-4 pt-4 border-t border-stone-100 dark:border-stone-800">
-                      <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider block mb-2">Add workspace</label>
-                      <div className="flex gap-2 max-w-sm">
-                        <input
-                          type="email"
-                          placeholder="Admin email (optional)"
-                          className="flex-1 text-xs font-bold bg-stone-50 dark:bg-stone-800 border-none rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500"
-                          value={newOrgAdminEmail}
-                          onChange={e => setNewOrgAdminEmail(e.target.value)}
-                          disabled={isProvisioning}
-                        />
-                        <button onClick={() => void provisionOrganization()} disabled={isProvisioning} className="action-btn-primary px-4 text-xs font-bold shrink-0">
-                          {isProvisioning ? '...' : 'Add'}
-                        </button>
-                      </div>
+                <div className={slot}>
+                  <p className="mb-2 text-sm font-medium text-stone-800 dark:text-stone-200">Account</p>
+                  <p className="truncate text-xs text-stone-600 dark:text-stone-300">{user?.email ?? '—'}</p>
+                  <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                    {roleLabel}
+                    <span className="text-stone-400 dark:text-stone-500"> · </span>
+                    {backendStatus}
+                  </p>
+                  {canEditIdentity && (
+                    <div className="mt-3 flex flex-col gap-2 border-t border-stone-200/80 pt-3 dark:border-stone-700/80 sm:flex-row sm:items-center">
+                      <input
+                        type="text"
+                        className="control-input flex-1 font-mono text-xs"
+                        value={editOrgSlug}
+                        onChange={e => setEditOrgSlug(e.target.value.toLowerCase().replace(/\s+/g, '-'))}
+                        placeholder="URL slug"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleUpdateOrgIdentity}
+                        disabled={isUpdatingOrgIdentity}
+                        className="action-btn-primary h-8 shrink-0 px-3 text-xs"
+                      >
+                        {isUpdatingOrgIdentity ? '…' : 'Save slug'}
+                      </button>
                     </div>
                   )}
                 </div>
-              )}
+              </div>
 
-              {/* Invite settings */}
               {canViewOperatorLogs && (
-                <div className="section-card p-6">
-                  <div className="flex items-center gap-2 mb-4">
-                    <Key size={16} className="text-stone-400" />
-                    <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Invite settings</h3>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3 max-w-sm mb-4">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-stone-400">Label</label>
-                      <input type="text" placeholder="Q2 Ops" className="control-input py-1.5 text-xs" value={inviteLabel} onChange={e => setInviteLabel(e.target.value)} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-stone-400">Expiry (days)</label>
-                      <input type="number" className="control-input py-1.5 text-xs" value={inviteExpiryDays} onChange={e => setInviteExpiryDays(e.target.value)} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-stone-400">Max uses</label>
-                      <input type="number" className="control-input py-1.5 text-xs" value={inviteMaxUses} onChange={e => setInviteMaxUses(e.target.value)} />
-                    </div>
+                <div className={slot}>
+                  <p className="mb-3 text-sm font-medium text-stone-800 dark:text-stone-200">Default invites</p>
+                  <div className="grid max-w-lg grid-cols-3 gap-2">
+                    <input type="text" placeholder="Label" className="control-input py-1.5 text-xs" value={inviteLabel} onChange={e => setInviteLabel(e.target.value)} />
+                    <input type="number" placeholder="Days" className="control-input py-1.5 text-xs" value={inviteExpiryDays} onChange={e => setInviteExpiryDays(e.target.value)} />
+                    <input type="number" placeholder="Uses" className="control-input py-1.5 text-xs" value={inviteMaxUses} onChange={e => setInviteMaxUses(e.target.value)} />
                   </div>
                   {filteredInvites.length > 0 && (
-                    <div className="space-y-2 max-h-48 overflow-y-auto app-scroll">
-                      <p className="text-[10px] font-bold uppercase text-stone-400 tracking-widest">{filteredInvites.length} active tokens</p>
+                    <div className="mt-3 max-h-40 space-y-1.5 overflow-y-auto app-scroll">
                       {filteredInvites.map(inv => (
-                        <div key={inv.id} className="flex items-center justify-between p-2.5 rounded-lg bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700">
-                          <div>
-                            <p className="text-[10px] font-bold text-stone-700 dark:text-stone-300">{inv.label || 'Unlabeled'}</p>
-                            <p className="text-[9px] text-stone-400">{inv.use_count}/{inv.max_uses} uses</p>
+                        <div key={inv.id} className="flex items-center justify-between gap-2 rounded-md border border-stone-200/80 px-2 py-1.5 dark:border-stone-700">
+                          <div className="min-w-0">
+                            <p className="truncate text-[11px] font-medium text-stone-700 dark:text-stone-300">{inv.label || '—'}</p>
+                            <p className="text-[10px] text-stone-400">{inv.use_count}/{inv.max_uses}</p>
                           </div>
-                          <button onClick={() => void revokeAccessInvite(inv.id)} disabled={busyInviteId === inv.id} className="text-[9px] font-bold text-red-400 uppercase hover:text-red-600 transition-colors">Revoke</button>
+                          <button type="button" onClick={() => void revokeAccessInvite(inv.id)} disabled={busyInviteId === inv.id} className="shrink-0 text-[11px] text-red-600 hover:underline dark:text-red-400">
+                            Revoke
+                          </button>
                         </div>
                       ))}
                     </div>
@@ -1336,199 +1334,198 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                 </div>
               )}
 
-              {/* Export config */}
-              <div className="section-card p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <Download size={16} className="text-stone-400" />
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Export config</h3>
-                </div>
-                <div className="grid grid-cols-2 gap-4 max-w-sm">
+              <div className={slot}>
+                <p className="mb-2 text-sm font-medium text-stone-800 dark:text-stone-200">Export</p>
+                <div className="flex flex-wrap items-end gap-2">
                   {isClusterAdmin && (
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Level</label>
-                      <div className="flex gap-1 bg-stone-100 dark:bg-stone-800 p-1 rounded-xl">
-                        {(['org', 'cluster'] as const).map(s => (
-                          <button key={s} onClick={() => setExportScope(s)} className={cn('flex-1 py-1.5 text-[10px] font-black uppercase rounded-lg transition-all', exportScope === s ? 'bg-stone-900 dark:bg-white text-white dark:text-stone-900' : 'text-stone-400 hover:text-stone-600')}>
-                            {s === 'org' ? 'Workspace' : 'Group'}
-                          </button>
-                        ))}
-                      </div>
+                    <div className="flex gap-0.5 rounded-lg bg-stone-100 p-0.5 dark:bg-stone-800">
+                      {(['org', 'cluster'] as const).map(s => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => setExportScope(s)}
+                          className={cn(
+                            'rounded-md px-2 py-1 text-[11px] font-medium',
+                            exportScope === s ? 'bg-white text-stone-900 shadow-sm dark:bg-stone-700 dark:text-stone-100' : 'text-stone-500',
+                          )}
+                        >
+                          {s === 'org' ? 'Workspace' : 'Group'}
+                        </button>
+                      ))}
                     </div>
                   )}
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold uppercase text-stone-400 tracking-wider">Dataset</label>
-                    <select value={exportDataset} onChange={e => setExportDataset(e.target.value)} className="w-full text-xs bg-stone-50 dark:bg-stone-800 border-none rounded-lg px-3 py-2 outline-none focus:ring-1 focus:ring-emerald-500">
-                      <option value="all">Full</option>
-                      <option value="entities">Entities</option>
-                      <option value="activities">Activities</option>
-                      <option value="audit_events">Audit trail</option>
-                    </select>
-                  </div>
+                  <select
+                    value={exportDataset}
+                    onChange={e => setExportDataset(e.target.value)}
+                    className="control-input min-w-[8rem] py-1.5 text-xs"
+                    aria-label="Export dataset"
+                  >
+                    <option value="all">Full</option>
+                    <option value="entities">Entities</option>
+                    <option value="activities">Activities</option>
+                    <option value="audit_events">Audit</option>
+                  </select>
                 </div>
               </div>
 
-              {/* Sessions */}
-              <div className="section-card p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <LogOut size={16} className="text-stone-400" />
-                  <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Sessions</h3>
-                </div>
-                <p className="text-[11px] text-stone-500 mb-4">Sign out of all active sessions across all devices.</p>
+              <div className={slot}>
                 <button
+                  type="button"
                   onClick={() => void handleSignOutAll()}
-                  className="h-10 px-6 rounded-xl bg-stone-900 dark:bg-stone-100 text-white dark:text-stone-900 text-[11px] font-bold uppercase tracking-widest hover:opacity-90 transition-opacity flex items-center gap-2"
+                  className="inline-flex items-center gap-2 rounded-lg border border-stone-200 bg-stone-100 px-3 py-2 text-xs font-medium text-stone-700 hover:bg-stone-200 dark:border-stone-600 dark:bg-stone-800 dark:text-stone-200 dark:hover:bg-stone-700"
                 >
                   <LogOut size={14} />
-                  Sign out all devices
+                  Sign out everywhere
                 </button>
               </div>
 
-              {/* Directory — users in your groups / workspaces */}
               {isClusterAdmin && (
-                <div className="section-card p-6">
-                  <div className="flex items-center justify-between mb-4">
+                <div className={slot}>
+                  <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <p className="text-sm font-medium text-stone-800 dark:text-stone-200">Directory</p>
                     <div className="flex items-center gap-2">
-                      <Globe size={16} className="text-emerald-500" />
-                      <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Directory</h3>
-                    </div>
-                    <div className="flex items-center gap-3">
                       <input
                         type="text"
-                        placeholder="Search users..."
-                        className="text-[11px] bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500 w-48"
+                        placeholder="Search…"
+                        className="control-input w-44 min-w-0 py-1.5 text-xs"
                         value={platformDirectorySearch}
                         onChange={e => setPlatformDirectorySearch(e.target.value)}
                       />
-                      <button onClick={() => void fetchPlatformDirectory()} className="text-[10px] font-bold text-stone-400 uppercase hover:text-stone-600 transition-colors">Refresh</button>
+                      <button
+                        type="button"
+                        onClick={() => void refreshPeopleDirectory()}
+                        disabled={platformDirectoryLoading || clusterAdminsLoading}
+                        className="text-xs text-stone-500 hover:text-stone-800 disabled:opacity-40 dark:hover:text-stone-300"
+                      >
+                        Refresh
+                      </button>
                     </div>
                   </div>
-                  <div className="bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-800 rounded-xl overflow-hidden">
+                  {clusterAdminsNotice && <p className="mb-2 text-[11px] text-amber-600 dark:text-amber-400">{clusterAdminsNotice}</p>}
+                  <div className="overflow-hidden rounded-lg border border-stone-200/90 dark:border-stone-700">
                     <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse">
+                      <table className="w-full border-collapse text-left">
                         <thead>
-                          <tr className="bg-stone-50/50 dark:bg-stone-800/30 border-b border-stone-100 dark:border-stone-800">
-                            <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400">Email</th>
-                            <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400">Roles</th>
-                            <th className="px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-stone-400 text-right">Actions</th>
+                          <tr className="border-b border-stone-200/80 bg-stone-100/80 dark:border-stone-700 dark:bg-stone-800/50">
+                            <th className="px-3 py-2 text-[10px] font-medium text-stone-500">Email</th>
+                            <th className="px-3 py-2 text-[10px] font-medium text-stone-500">Roles</th>
+                            <th className="px-3 py-2 text-[10px] font-medium text-stone-500 whitespace-nowrap">Group</th>
+                            <th className="px-3 py-2 text-right text-[10px] font-medium text-stone-500"> </th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-stone-100 dark:divide-stone-800">
                           {platformDirectoryLoading ? (
                             <tr>
-                              <td colSpan={3} className="px-5 py-8">
-                                <LoadingLine label="Loading..." compact />
+                              <td colSpan={4} className="px-3 py-6">
+                                <LoadingLine label="Loading…" compact />
                               </td>
                             </tr>
-                          ) : platformAccounts
-                              .filter(acc => !platformDirectorySearch || acc.email?.toLowerCase().includes(platformDirectorySearch.toLowerCase()))
-                              .map(acc => (
-                            <tr key={acc.user_id} className="group hover:bg-stone-50/50 dark:hover:bg-stone-800/20 transition-colors">
-                              <td className="px-5 py-3">
-                                <p className="text-xs font-bold text-stone-900 dark:text-stone-100">{acc.email || 'unset'}</p>
-                              </td>
-                              <td className="px-5 py-3">
-                                <div className="flex flex-wrap gap-1">
-                                  {acc.cluster_roles.map((cr, i) => (
-                                    <span key={i} className="text-[9px] font-black uppercase bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-100 dark:border-emerald-900/20">{cr.role.replace('_', ' ')}</span>
-                                  ))}
-                                  {acc.org_roles.map((om, i) => (
-                                    <span key={i} className="text-[9px] font-black uppercase bg-violet-50 dark:bg-violet-900/10 text-violet-600 dark:text-violet-400 px-1.5 py-0.5 rounded border border-violet-100 dark:border-violet-900/20">{om.role}</span>
-                                  ))}
-                                </div>
-                              </td>
-                              <td className="px-5 py-3 text-right">
-                                <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (!acc.email) return;
-                                      setGrantAccessEmail(acc.email);
-                                      window.requestAnimationFrame(() => {
-                                        document.getElementById('settings-grant-access')?.scrollIntoView({
-                                          behavior: 'smooth',
-                                          block: 'start',
-                                        });
-                                      });
-                                    }}
-                                    className="text-[10px] font-bold text-emerald-600 uppercase hover:underline"
-                                  >
-                                    Assign
-                                  </button>
-                                  <button
-                                    onClick={() => {
-                                      void (async () => {
-                                        if (acc.user_id === user?.id) { notify({ type: 'error', message: 'You cannot reset your own password from here.' }); return; }
-                                        const okReset = await confirm({
-                                          title: 'Reset password?',
-                                          message: `Send reset email to ${acc.email}?`,
-                                          confirmLabel: 'Send',
-                                        });
-                                        if (okReset) void resetUserPassword(acc.user_id);
-                                      })();
-                                    }}
-                                    className="text-[10px] font-bold text-stone-400 uppercase hover:text-stone-600 transition-colors"
-                                  >
-                                    Reset
-                                  </button>
-                                </div>
+                          ) : filteredPlatformAccounts.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="px-3 py-6 text-center text-[11px] text-stone-400">
+                                No matches.
                               </td>
                             </tr>
-                          ))}
+                          ) : (
+                            filteredPlatformAccounts.map(acc => {
+                              const clusterManaged = clusterManagedByUserId.get(acc.user_id);
+                              const isSelf = acc.user_id === user?.id;
+                              const effectiveClusterRole: 'cluster_admin' | 'cluster_operator' =
+                                clusterManaged?.role === 'cluster_admin' || clusterManaged?.role === 'cluster_operator'
+                                  ? clusterManaged.role
+                                  : 'cluster_operator';
+                              return (
+                                <tr key={acc.user_id} className="group hover:bg-stone-50/50 dark:hover:bg-stone-800/20 transition-colors">
+                                  <td className="px-3 py-2">
+                                    <p className="text-xs font-medium text-stone-900 dark:text-stone-100">{acc.email || '—'}</p>
+                                  </td>
+                                  <td className="px-3 py-2">
+                                    <div className="flex flex-wrap gap-1">
+                                      {acc.cluster_roles.map((cr, i) => (
+                                        <span key={i} className="text-[9px] font-black uppercase bg-emerald-50 dark:bg-emerald-900/10 text-emerald-600 dark:text-emerald-400 px-1.5 py-0.5 rounded border border-emerald-100 dark:border-emerald-900/20">{cr.role.replace('_', ' ')}</span>
+                                      ))}
+                                      {acc.org_roles.map((om, i) => (
+                                        <span key={i} className="text-[9px] font-black uppercase bg-violet-50 dark:bg-violet-900/10 text-violet-600 dark:text-violet-400 px-1.5 py-0.5 rounded border border-violet-100 dark:border-violet-900/20">{om.role}</span>
+                                      ))}
+                                    </div>
+                                  </td>
+                                  <td className="px-3 py-2 align-top">
+                                    {clusterManaged ? (
+                                      isSelf ? (
+                                        <span className="text-[10px] text-stone-400">—</span>
+                                      ) : (
+                                        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:flex-wrap">
+                                          <select
+                                            className="text-[10px] bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 rounded px-1.5 py-1 outline-none font-bold text-stone-600 dark:text-stone-300 max-w-[9rem]"
+                                            value={pendingClusterRoles[acc.user_id] ?? effectiveClusterRole}
+                                            onChange={e =>
+                                              setPendingClusterRoles(prev => ({
+                                                ...prev,
+                                                [acc.user_id]: e.target.value as 'cluster_admin' | 'cluster_operator',
+                                              }))
+                                            }
+                                          >
+                                            <option value="cluster_admin">Admin</option>
+                                            <option value="cluster_operator">Operator</option>
+                                          </select>
+                                          <button
+                                            type="button"
+                                            onClick={() => void updateClusterAccountRole(clusterManaged)}
+                                            disabled={busyClusterUserId === acc.user_id}
+                                            className="text-[10px] font-bold text-emerald-600 uppercase hover:underline disabled:opacity-40"
+                                          >
+                                            Save
+                                          </button>
+                                        </div>
+                                      )
+                                    ) : (
+                                      <span className="text-[10px] text-stone-400">—</span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-2 text-right align-top">
+                                    <div className="flex items-center justify-end gap-2 opacity-0 transition-opacity group-hover:opacity-100">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (!acc.email) return;
+                                          setGrantAccessEmail(acc.email);
+                                          window.requestAnimationFrame(() => {
+                                            document.getElementById('settings-grant-access')?.scrollIntoView({
+                                              behavior: 'smooth',
+                                              block: 'start',
+                                            });
+                                          });
+                                        }}
+                                        className="text-[11px] font-medium text-emerald-600 hover:underline dark:text-emerald-400"
+                                      >
+                                        Add
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          void (async () => {
+                                            if (acc.user_id === user?.id) { notify({ type: 'error', message: 'You cannot reset your own password from here.' }); return; }
+                                            const okReset = await confirm({
+                                              title: 'Reset password?',
+                                              message: `Send reset email to ${acc.email}?`,
+                                              confirmLabel: 'Send',
+                                            });
+                                            if (okReset) void resetUserPassword(acc.user_id);
+                                          })();
+                                        }}
+                                        className="text-[11px] text-stone-500 hover:text-stone-800 dark:hover:text-stone-300"
+                                      >
+                                        Reset
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
                         </tbody>
                       </table>
                     </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Group Administration (cluster admin only) */}
-              {isClusterAdmin && (
-                <div className="section-card p-6">
-                  <div className="flex items-center gap-2 mb-4">
-                    <ShieldCheck size={16} className="text-stone-400" />
-                    <h3 className="text-xs font-bold uppercase tracking-widest text-stone-900 dark:text-stone-100">Group managers</h3>
-                  </div>
-                  <div className="mb-3">
-                    <input
-                      type="text"
-                      placeholder="Filter managers..."
-                      className="w-full text-[11px] bg-stone-50 dark:bg-stone-800 border-none rounded-lg px-3 py-1.5 outline-none focus:ring-1 focus:ring-emerald-500"
-                      value={clusterSearch}
-                      onChange={e => setClusterSearch(e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2 max-h-72 overflow-y-auto app-scroll">
-                    {clusterAdminsLoading ? (
-                      <LoadingLine label="Loading managers..." compact />
-                    ) : filteredClusterAdmins.length === 0 ? (
-                      <p className="text-[11px] text-stone-400 italic text-center py-6">No results.</p>
-                    ) : filteredClusterAdmins.map(admin => {
-                      const isSelf = admin.user_id === user?.id;
-                      return (
-                        <div key={admin.user_id} className="p-3 rounded-xl bg-stone-50 dark:bg-stone-800/50 border border-stone-100 dark:border-stone-700 flex items-center justify-between group gap-3">
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs font-bold text-stone-900 dark:text-stone-100 truncate">{admin.email} {isSelf && '(You)'}</p>
-                            <p className="text-[9px] font-bold uppercase tracking-tighter text-stone-400 mt-0.5">
-                              {admin.type === 'cluster' ? `Group ${admin.role.replace('_', ' ')}` : `Workspace ${admin.role}`}
-                            </p>
-                          </div>
-                          {!isSelf && admin.type === 'cluster' && (
-                            <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                              <select
-                                className="text-[10px] bg-white dark:bg-stone-900 border-stone-200 rounded px-1 py-0.5 outline-none font-bold text-stone-600"
-                                value={pendingClusterRoles[admin.user_id] || admin.role}
-                                onChange={e => setPendingClusterRoles(prev => ({ ...prev, [admin.user_id]: e.target.value as any }))}
-                              >
-                                <option value="cluster_admin">Admin</option>
-                                <option value="cluster_operator">Operator</option>
-                              </select>
-                              <button onClick={() => updateClusterAccountRole(admin)} className="text-[10px] font-bold text-emerald-600 uppercase">Save</button>
-                            </div>
-                          )}
-                          {isSelf && <span className="text-[9px] font-bold text-stone-400 uppercase tracking-widest">Fixed</span>}
-                        </div>
-                      );
-                    })}
                   </div>
                 </div>
               )}

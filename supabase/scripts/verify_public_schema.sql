@@ -19,7 +19,6 @@ FROM (VALUES
   ('organization_memberships'),
   ('channels'),
   ('collaborations'),
-  ('organization_memberships'),
   ('audit_events'),
   ('operator_activities')
 ) AS t(nm)
@@ -54,6 +53,23 @@ WHERE c.table_schema = 'public'
     'id', 'org_id', 'label', 'date', 'start_time', 'status',
     'channel_label', 'assigned_user_id', 'activity_mode'
   )
+ORDER BY 1;
+
+-- Roster + deferred traceability (squashed baseline)
+SELECT 'column:organization_memberships:' || c.column_name AS check_id,
+       TRUE AS ok
+FROM information_schema.columns c
+WHERE c.table_schema = 'public'
+  AND c.table_name = 'organization_memberships'
+  AND c.column_name IN ('display_name', 'account_email')
+ORDER BY 1;
+
+SELECT 'column:records:' || c.column_name AS check_id,
+       TRUE AS ok
+FROM information_schema.columns c
+WHERE c.table_schema = 'public'
+  AND c.table_name = 'records'
+  AND c.column_name = 'source_record_id'
 ORDER BY 1;
 
 -- Cluster / org metadata (list UI, routing)
