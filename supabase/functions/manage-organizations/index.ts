@@ -36,19 +36,19 @@ async function findAuthUserIdByEmail(
   maxPages = 100,
 ): Promise<string | null> {
   const target = email.toLowerCase().trim();
+  const perPage = 200;
   let page = 1;
   for (let n = 0; n < maxPages; n++) {
-    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage: 200 });
-    if (error || !data?.users?.length) return null;
+    const { data, error } = await adminClient.auth.admin.listUsers({ page, perPage });
+    if (error || !data?.users) return null;
     const hit = data.users.find((u: { email?: string | null; id?: string }) =>
       u.email?.toLowerCase() === target,
     );
     if (hit?.id) return hit.id;
-    if (data.nextPage != null && data.nextPage > page) {
-      page = data.nextPage;
-      continue;
-    }
-    break;
+    if (data.users.length < perPage) break;
+    const lastPage = typeof data.lastPage === 'number' && data.lastPage > 0 ? data.lastPage : null;
+    if (lastPage !== null && page >= lastPage) break;
+    page += 1;
   }
   return null;
 }
@@ -383,7 +383,21 @@ Deno.serve(async (request: Request) => {
       }
     });
 
-    return json(200, { ok: true, admins: Array.from(combined.values()), cluster_id: clusterId }, origin);
+    let managedOrgIdsInCluster: string[] = [];
+    const { data: orgRows } = await adminClient
+      .from('organizations')
+      .select('id')
+      .eq('cluster_id', clusterId);
+    if (orgRows?.length) {
+      managedOrgIdsInCluster = (orgRows as Array<{ id: string }>).map((r) => r.id);
+    }
+
+    return json(200, {
+      ok: true,
+      admins: Array.from(combined.values()),
+      cluster_id: clusterId,
+      managed_org_ids: managedOrgIdsInCluster,
+    }, origin);
   }
 
     // Action: set-cluster-role

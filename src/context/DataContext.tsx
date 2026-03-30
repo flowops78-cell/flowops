@@ -487,13 +487,24 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveOrgId(target);
     localStorage.setItem('flow_ops_last_org_id', target);
 
-    // Persist to server so the next session resolves instantly too.
+    // Persist to server so the next session resolves instantly too (include cluster for RLS + edge authority).
     if (supabase && user?.id) {
-      supabase.from('profiles').update({ active_org_id: target }).eq('id', user.id).then(({ error }) => {
+      void (async () => {
+        const fromMap = availableOrgs[target]?.cluster_id;
+        const clusterToPersist =
+          fromMap ??
+          (await supabase.from('organizations').select('cluster_id').eq('id', target).maybeSingle()).data
+            ?.cluster_id ??
+          null;
+        const updates: { active_org_id: string; active_cluster_id?: string | null } = {
+          active_org_id: target,
+        };
+        if (clusterToPersist) updates.active_cluster_id = clusterToPersist;
+        const { error } = await supabase.from('profiles').update(updates).eq('id', user.id);
         if (error) console.error('Error persisting org context:', error);
-      });
+      })();
     }
-  }, [roleLoading, authLoading, serverActiveOrgId, managedOrgIds.join(','), activeOrgId, user?.id]);
+  }, [roleLoading, authLoading, serverActiveOrgId, managedOrgIds.join(','), activeOrgId, user?.id, availableOrgs]);
 
   // Dedicated effect: refresh available orgs whenever the admin's managed org list changes
   // This ensures the Scoped Context Switcher updates immediately after provisioning

@@ -144,9 +144,27 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
     const activeOrgId = profile?.active_org_id ?? typedOrgTeamMemberships.find(m => m.is_default_org)?.org_id ?? typedOrgTeamMemberships[0]?.org_id ?? null;
     let clusterId = profile?.active_cluster_id || typedClusterTeamMemberships[0]?.cluster_id || null;
 
+    const memberClusterIds = dedupeStrings(typedClusterTeamMemberships.map(m => m.cluster_id));
+
     let allClusterOrgIds: string[] = [];
     let manageableClusters: ClusterMeta[] = [];
     let manageableOrgsByCluster: Record<string, OrgMeta[]> = {};
+
+    if (memberClusterIds.length > 0) {
+      const { data: clusterOrgs } = await supabase
+        .from('organizations')
+        .select('*')
+        .in('cluster_id', memberClusterIds);
+      if (clusterOrgs) {
+        allClusterOrgIds = (clusterOrgs as OrgMeta[]).map(o => o.id);
+        for (const org of clusterOrgs as OrgMeta[]) {
+          const key = org.cluster_id ?? 'unknown';
+          if (!manageableOrgsByCluster[key]) manageableOrgsByCluster[key] = [];
+          manageableOrgsByCluster[key].push(org);
+        }
+      }
+    }
+
     if (isClusterAdmin) {
       const adminClusterIds = typedClusterTeamMemberships
         .filter(m => m.role === 'cluster_admin')
@@ -159,19 +177,22 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
         if (clusterRows) {
           manageableClusters = clusterRows as ClusterMeta[];
         }
-        const { data: clusterOrgs } = await supabase
-          .from('organizations')
-          .select('*')
-          .in('cluster_id', adminClusterIds);
-        if (clusterOrgs) {
-          allClusterOrgIds = (clusterOrgs as OrgMeta[]).map(o => o.id);
-          for (const org of clusterOrgs as OrgMeta[]) {
-            const key = org.cluster_id ?? 'unknown';
-            if (!manageableOrgsByCluster[key]) manageableOrgsByCluster[key] = [];
-            manageableOrgsByCluster[key].push(org);
-          }
-        }
       }
+    }
+
+    if (!clusterId && activeOrgId) {
+      const { data: orgRow } = await supabase
+        .from('organizations')
+        .select('cluster_id')
+        .eq('id', activeOrgId)
+        .maybeSingle();
+      if (orgRow?.cluster_id) {
+        clusterId = orgRow.cluster_id;
+      }
+    }
+
+    if (!clusterId && typedClusterTeamMemberships.length > 0) {
+      clusterId = typedClusterTeamMemberships[0]!.cluster_id;
     }
 
     const directTeamMembership = typedOrgTeamMemberships.find(m => m.org_id === activeOrgId);

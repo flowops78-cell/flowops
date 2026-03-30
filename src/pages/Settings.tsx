@@ -6,6 +6,7 @@ import { useAppRole } from '../context/AppRoleContext';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
 import { DbRole, dbRoleToAppRole } from '../lib/roles';
+import { FunctionsHttpError } from '@supabase/supabase-js';
 import { getSupabaseAccessToken, isSupabaseConfigured, SUPABASE_ANON_KEY, supabase } from '../lib/supabase';
 import { useNotification } from '../context/NotificationContext';
 import { useConfirm } from '../context/ConfirmContext';
@@ -181,13 +182,30 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     if (import.meta.env.DEV) {
       console.log(`[invokeSafe] Calling ${functionName} with explicit JWT...`);
     }
-    return await supabase!.functions.invoke<T>(functionName, {
+    const result = await supabase!.functions.invoke<T>(functionName, {
       body,
       headers: {
-        'Authorization': `Bearer ${session.access_token}`,
-        'X-Client-Info': 'flow-ops-admin'
-      }
+        Authorization: `Bearer ${session.access_token}`,
+        'X-Client-Info': 'flow-ops-admin',
+      },
     });
+    if (result.error) {
+      let message = result.error.message;
+      const res = result.response;
+      if (result.error instanceof FunctionsHttpError && res) {
+        try {
+          const ct = res.headers.get('content-type') ?? '';
+          if (ct.includes('application/json')) {
+            const body = (await res.clone().json()) as { error?: string; message?: string; details?: string };
+            message = body.error || body.message || body.details || message;
+          }
+        } catch {
+          /* keep generic message */
+        }
+      }
+      return { data: null, error: new Error(message) };
+    }
+    return result;
   }, []);
 
   
@@ -222,7 +240,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [pendingApprovedRoles, setPendingApprovedRoles] = React.useState<Record<string, DbRole>>({});
   const [clusterAdmins, setClusterAdmins] = React.useState<ManagedClusterAccount[]>([]);
   const [managedClusterId, setManagedClusterId] = React.useState<string | null>(null);
-  const [clusterManagedOrgIds, setClusterManagedOrgIds] = React.useState<string[]>([]);
   const [newOrgAdminEmail, setNewOrgAdminEmail] = React.useState('');
   const [grantAccessEmail, setGrantAccessEmail] = React.useState('');
   const [grantAccessRole, setGrantAccessRole] = React.useState<'admin' | 'operator' | 'viewer'>('operator');
@@ -236,7 +253,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
   // Wire real state to the variables used in JSX
   const clusterId = managedClusterId || contextClusterId;
-  const managedOrgIds = clusterManagedOrgIds;
   const [clusterAdminsLoading, setClusterAdminsLoading] = React.useState(false);
   const [clusterAdminsNotice, setClusterAdminsNotice] = React.useState<string | null>(null);
   const [pendingClusterRoles, setPendingClusterRoles] = React.useState<Record<string, 'cluster_admin' | 'cluster_operator'>>({});
@@ -462,7 +478,6 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
       setClusterAdmins(data?.admins ?? []);
       setManagedClusterId(data?.cluster_id ?? null);
-      setClusterManagedOrgIds(data?.managed_org_ids ?? []);
     } catch (error) {
       setClusterAdminsNotice(`Transport error: ${toDisplayError(error)}`);
     } finally {

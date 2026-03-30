@@ -114,16 +114,20 @@ export const getCallerAuthorityContext = async (
     .filter((row) => row.role === 'cluster_admin')
     .map((row) => row.cluster_id));
 
-  // Determine if user has any administrative or operational role
-  if (administeredClusterIds.length > 0 || typedMembershipRows.length > 0) {
+  // Any cluster membership (admin / operator / viewer) implies access to all workspaces in that cluster
+  // (matches `user_has_org_access` and client `getUserAuthorityContext`).
+  if (typedMembershipRows.length > 0 || typedClusterMembershipRows.length > 0) {
     let managedOrgIds = dedupeStrings(typedMembershipRows.map((row) => row.org_id));
-    
-    // Resolve all organizations in clusters where the user is an admin
-    if (administeredClusterIds.length > 0) {
+
+    const allMemberClusterIds = dedupeStrings(
+      typedClusterMembershipRows.map((row) => row.cluster_id),
+    );
+
+    if (allMemberClusterIds.length > 0) {
       const { data: clusterOrgRows, error: clusterOrgError } = await adminClient
         .from('organizations')
         .select('id')
-        .in('cluster_id', administeredClusterIds);
+        .in('cluster_id', allMemberClusterIds);
 
       if (clusterOrgError) {
         throw new Error(`Unable to resolve cluster organizations: ${clusterOrgError.message}`);
@@ -142,6 +146,23 @@ export const getCallerAuthorityContext = async (
     if (!currentClusterId && currentOrgId) {
       const orgInfo = typedMembershipRows.find(m => m.org_id === currentOrgId);
       currentClusterId = (Array.isArray(orgInfo?.organizations) ? (orgInfo.organizations as any)[0]?.cluster_id : (orgInfo?.organizations as any)?.cluster_id) ?? null;
+    }
+
+    // Profile may point at a workspace reachable via cluster scope without a membership row
+    // (e.g. cluster operator + switch-org client update). Resolve cluster from organizations.
+    if (!currentClusterId && currentOrgId) {
+      const { data: orgMeta } = await adminClient
+        .from('organizations')
+        .select('cluster_id')
+        .eq('id', currentOrgId)
+        .maybeSingle();
+      if (orgMeta?.cluster_id) {
+        currentClusterId = orgMeta.cluster_id as string;
+      }
+    }
+
+    if (!currentClusterId && typedClusterMembershipRows.length > 0) {
+      currentClusterId = typedClusterMembershipRows[0]!.cluster_id;
     }
 
     const directMembership = typedMembershipRows.find(m => m.org_id === currentOrgId);

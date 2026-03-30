@@ -229,5 +229,9 @@ Deno.serve(async (request: Request) => {
     reviewed_at: new Date().toISOString(),
   }).eq('id', requestRow.id);
 
-  return json(200, { ok: true, provisioned_user_id: provisionedUserId }, origin);
+  return json(200, {
+    ok: true,
+    provisioned_user_id: provisionedUserId,
+    login_id: resolvedLoginId,
+  }, origin);
 });

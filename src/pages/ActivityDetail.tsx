@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useId } from 'react';
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { ArrowLeft, AlertCircle, User, Users, Activity, Play, Square, SlidersHorizontal, X, UserCheck, Timer } from 'lucide-react';
@@ -19,6 +19,142 @@ import EmptyState from '../components/EmptyState';
 import { useLabels, LABELS } from '../lib/labels';
 import { useAuth } from '../context/AuthContext';
 import { EntriesRow } from './ActivityDetailEntriesRow';
+
+function ActivityEntityCombobox({
+  availableEntities,
+  selectedUnitId,
+  quickUnitName,
+  onInputChange,
+  onPick,
+  disabled,
+  inputRef,
+  placeholder = 'Entity',
+}: {
+  availableEntities: Entity[];
+  selectedUnitId: string;
+  quickUnitName: string;
+  onInputChange: (value: string) => void;
+  onPick: (entity: Entity) => void;
+  disabled?: boolean;
+  inputRef?: React.RefObject<HTMLInputElement | null>;
+  placeholder?: string;
+}) {
+  const baseId = useId();
+  const listId = `${baseId}-entity-suggest`;
+  const [open, setOpen] = useState(false);
+  const [highlight, setHighlight] = useState(0);
+  /** DOM timers are numeric IDs in the browser. */
+  const blurTimer = useRef<number | null>(null);
+
+  const displayValue = selectedUnitId
+    ? (availableEntities.find(e => e.id === selectedUnitId)?.name ?? '')
+    : quickUnitName;
+
+  const q = displayValue.trim().toLowerCase();
+  const suggestions = useMemo(() => {
+    if (!q) return availableEntities.slice(0, 45);
+    return [...availableEntities]
+      .filter(e => (e.name || '').toLowerCase().includes(q))
+      .sort((a, b) => {
+        const an = (a.name || '').toLowerCase();
+        const bn = (b.name || '').toLowerCase();
+        const ap = an.startsWith(q) ? 0 : 1;
+        const bp = bn.startsWith(q) ? 0 : 1;
+        if (ap !== bp) return ap - bp;
+        return an.localeCompare(bn);
+      })
+      .slice(0, 45);
+  }, [availableEntities, q]);
+
+  const cancelClose = () => {
+    if (blurTimer.current) {
+      window.clearTimeout(blurTimer.current);
+      blurTimer.current = null;
+    }
+  };
+
+  const scheduleClose = () => {
+    cancelClose();
+    blurTimer.current = window.setTimeout(() => setOpen(false), 200) as unknown as number;
+  };
+
+  useEffect(() => () => cancelClose(), []);
+
+  const showList = open && !disabled && suggestions.length > 0;
+
+  return (
+    <div className="relative">
+      <input
+        ref={inputRef}
+        type="text"
+        autoComplete="off"
+        aria-expanded={showList}
+        aria-controls={listId}
+        aria-autocomplete="list"
+        role="combobox"
+        className="w-full rounded-2xl bg-transparent px-4 py-3 text-stone-900 outline-none placeholder:text-stone-400 dark:text-stone-100"
+        placeholder={placeholder}
+        value={displayValue}
+        disabled={disabled}
+        onChange={e => {
+          cancelClose();
+          onInputChange(e.target.value);
+          setOpen(true);
+          setHighlight(0);
+        }}
+        onFocus={() => {
+          cancelClose();
+          setOpen(true);
+          setHighlight(0);
+        }}
+        onBlur={scheduleClose}
+        onKeyDown={e => {
+          if (!showList) return;
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setHighlight(i => Math.min(i + 1, suggestions.length - 1));
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setHighlight(i => Math.max(i - 1, 0));
+          } else if (e.key === 'Enter' && suggestions[highlight]) {
+            e.preventDefault();
+            onPick(suggestions[highlight]!);
+            setOpen(false);
+          } else if (e.key === 'Escape') {
+            setOpen(false);
+          }
+        }}
+      />
+      {showList ? (
+        <ul
+          id={listId}
+          role="listbox"
+          className="absolute top-full left-0 right-0 z-50 mt-1 max-h-52 overflow-auto rounded-xl border border-stone-200 bg-white py-1 shadow-lg dark:border-stone-700 dark:bg-stone-900"
+        >
+          {suggestions.map((ent, i) => (
+            <li key={ent.id} role="option" aria-selected={i === highlight}>
+              <button
+                type="button"
+                className={cn(
+                  'flex w-full px-3 py-2 text-left text-sm text-stone-900 dark:text-stone-100',
+                  i === highlight ? 'bg-stone-100 dark:bg-stone-800' : 'hover:bg-stone-50 dark:hover:bg-stone-800/80',
+                )}
+                onMouseDown={e => {
+                  e.preventDefault();
+                  onPick(ent);
+                  cancelClose();
+                  setOpen(false);
+                }}
+              >
+                {ent.name || 'Unnamed Entity'}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
 
 export default function ActivityDetail() {
   const { id } = useParams<{ id: string }>();
@@ -75,6 +211,7 @@ export default function ActivityDetail() {
   const [recentTransitionStatus, setRecentTransitionStatus] = useState<'active' | 'completed' | 'archived' | null>(null);
   const addRecordSectionRef = useRef<HTMLDivElement | null>(null);
   const addUnitSelectRef = useRef<HTMLInputElement | null>(null);
+  const addOptionsEntityInputRef = useRef<HTMLInputElement | null>(null);
   const recordRecordInputRef = useRef<HTMLInputElement | null>(null);
   const addUnitSuccessTimerRef = useRef<number | null>(null);
   const activityTransitionSuccessTimerRef = useRef<number | null>(null);
@@ -1143,20 +1280,18 @@ export default function ActivityDetail() {
           <form onSubmit={handleAddUnit} className="mt-4 space-y-3">
             <div className="grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.5fr)_minmax(0,0.85fr)_auto] lg:items-center">
               <div className="rounded-2xl border border-stone-200 bg-white/90 dark:border-stone-700 dark:bg-stone-900/70">
-                <input
-                  ref={addUnitSelectRef}
-                  list="activity-entity-options"
-                  className="w-full rounded-2xl bg-transparent px-4 py-3 text-stone-900 outline-none placeholder:text-stone-400 dark:text-stone-100"
-                  placeholder="Entity"
-                  value={selectedUnitId ? (availableEntities.find(entity => entity.id === selectedUnitId)?.name || '') : quickUnitName}
-                  onChange={event => syncEntityEntryValue(event.target.value)}
+                <ActivityEntityCombobox
+                  availableEntities={availableEntities}
+                  selectedUnitId={selectedUnitId}
+                  quickUnitName={quickUnitName}
+                  onInputChange={syncEntityEntryValue}
+                  onPick={ent => {
+                    setSelectedUnitId(ent.id);
+                    setQuickUnitName('');
+                  }}
                   disabled={!canAddUnits}
+                  inputRef={addUnitSelectRef}
                 />
-                <datalist id="activity-entity-options">
-                  {availableEntities.map(entity => (
-                    <option key={entity.id} value={entity.name || 'Unnamed Entity'} />
-                  ))}
-                </datalist>
               </div>
 
               <div className="rounded-2xl border border-stone-200 bg-white/90 dark:border-stone-700 dark:bg-stone-900/70 focus-within:ring-2 focus-within:ring-stone-500">
@@ -1185,7 +1320,7 @@ export default function ActivityDetail() {
             </div>
 
             <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500 dark:text-stone-400">
-              <span>Type an existing entity name or enter a new one.</span>
+              <span>Use the entity field suggestions or type a new name.</span>
               <span>
                 Mode: {recordValueingType === 'deferred' ? 'Deferred' : 'Immediate'}
                 {recordTransferMethod ? ` • ${recordTransferMethod.split('::')[1] || recordTransferMethod}` : ''}
@@ -1271,7 +1406,9 @@ export default function ActivityDetail() {
             <div className="flex items-start justify-between gap-4 border-b border-stone-200 pb-4 dark:border-stone-800">
               <div>
                 <h3 className="text-base font-semibold text-stone-900 dark:text-stone-100">Add options</h3>
-                <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">Keep direct add simple, but preserve deferred entry and channel source when needed.</p>
+                <p className="mt-1 text-sm text-stone-500 dark:text-stone-400">
+                  Set entity, valuation mode, and channel source together—including when immediate valueing requires a channel.
+                </p>
               </div>
               <button
                 type="button"
@@ -1284,6 +1421,28 @@ export default function ActivityDetail() {
             </div>
 
             <div className="mt-4 space-y-4">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-stone-500 dark:text-stone-400">Entity</label>
+                <div className="rounded-xl border border-stone-200 bg-white dark:border-stone-700 dark:bg-stone-900/80">
+                  <ActivityEntityCombobox
+                    availableEntities={availableEntities}
+                    selectedUnitId={selectedUnitId}
+                    quickUnitName={quickUnitName}
+                    onInputChange={syncEntityEntryValue}
+                    onPick={ent => {
+                      setSelectedUnitId(ent.id);
+                      setQuickUnitName('');
+                    }}
+                    disabled={!canAddUnits}
+                    inputRef={addOptionsEntityInputRef}
+                    placeholder="Search entities or type a new name"
+                  />
+                </div>
+                <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
+                  Same suggestions as the main add row (all entities not already on this activity).
+                </p>
+              </div>
+
               <div>
                 <label className="mb-1 block text-xs font-medium text-stone-500 dark:text-stone-400">Valueing mode</label>
                 <select
@@ -1309,8 +1468,8 @@ export default function ActivityDetail() {
                   required={recordValueingType === 'value'}
                 >
                   <option value="">{recordValueingType === 'value' ? 'Select transfer source...' : 'No channel source needed'}</option>
-                  {channels.filter(c => c.is_active).map(channel => (
-                    <option key={channel.id} value={`${channel.category}::${channel.name}`}>
+                  {channels.filter(c => c.is_active ?? c.status === 'active').map(channel => (
+                    <option key={channel.id} value={`${channel.category ?? 'default'}::${channel.name}`}>
                       {channel.name}
                     </option>
                   ))}
@@ -1618,8 +1777,8 @@ export default function ActivityDetail() {
                     onChange={e => setAlignmentSource(e.target.value)}
                   >
                     <option value="">— Value (default) —</option>
-                    {channels.filter(c => c.is_active).map(c => (
-                      <option key={c.id} value={`${c.category}::${c.name}`}>{c.name}</option>
+                    {channels.filter(c => c.is_active ?? c.status === 'active').map(c => (
+                      <option key={c.id} value={`${c.category ?? 'default'}::${c.name}`}>{c.name}</option>
                     ))}
                   </select>
                 </div>
