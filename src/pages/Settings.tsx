@@ -171,10 +171,11 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     functionName: string,
     body: any
   ): Promise<{ data: T | null; error: any }> => {
-    // 1. Safe Session Guard
-    const { data: { session } } = await supabase!.auth.getSession();
-    if (!session) {
-      console.warn(`[invokeSafe] No active session found for ${functionName}. Skipping to prevent 401 spam.`);
+    // 1. Safe Session Guard — refresh first to avoid stale JWTs
+    const { data: { session: freshSession }, error: refreshErr } = await supabase!.auth.refreshSession();
+    const session = freshSession;
+    if (refreshErr || !session) {
+      console.warn(`[invokeSafe] No active session for ${functionName}:`, refreshErr?.message ?? 'null session');
       return { data: null, error: new Error("Authentication required") };
     }
 

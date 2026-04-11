@@ -23,7 +23,7 @@ export async function invokeRevokeOtherSessions(client: SupabaseClient): Promise
   try {
     const {
       data: { session },
-    } = await client.auth.getSession();
+    } = await client.auth.refreshSession();
     if (!session?.access_token) return;
 
     const { data, error } = await client.functions.invoke('revoke-other-sessions', {
