@@ -63,7 +63,7 @@ function DockItem({ item, isActive }: { item: NavItem; isActive: boolean }) {
         "relative z-10 transition-colors duration-150",
         isActive ? "text-white dark:text-stone-900" : "text-stone-500 dark:text-stone-400"
       )}>
-        {React.cloneElement(item.icon as React.ReactElement<any>, { size: 20, strokeWidth: isActive ? 2.5 : 2 })}
+        {React.cloneElement(item.icon as React.ReactElement<Record<string, unknown>>, { size: 20, strokeWidth: isActive ? 2.5 : 2 })}
       </div>
     </NavLink>
   );

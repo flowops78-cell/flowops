@@ -192,8 +192,8 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
         resetAddForm();
         setSelectedProfileId(newId);
       }, 700);
-    } catch (error: any) {
-      const msg = error?.message || 'Unable to add profile.';
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Unable to add profile.';
       notify({ type: 'error', message: msg });
       setAddProfileError(msg);
       setAddProfileState('error');
@@ -212,8 +212,8 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
         overhead_weight_pct: parseNonNegativeNumber(editOverheadWeight),
       });
       notify({ type: 'success', message: 'Profile updated.' });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to update profile.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to update profile.' });
     }
   };
 
@@ -227,8 +227,8 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
       await updateCollaboration({ ...profile, status: 'active' });
       setSelectedProfileId(profileId);
       notify({ type: 'success', message: 'Profile restored.' });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to restore profile.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to restore profile.' });
     }
   };
 
@@ -250,8 +250,8 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
         setSelectedProfileId(null);
       }
       notify({ type: 'success', message: 'Profile removed.' });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to remove profile.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to remove profile.' });
     } finally {
       setDeletingProfileId(current => (current === profileId ? null : current));
     }
@@ -594,8 +594,8 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
                                   collaboration_type: event.target.value,
                                 }).then(() => {
                                   notify({ type: 'success', message: 'Profile updated.' });
-                                }).catch((error: any) => {
-                                  notify({ type: 'error', message: error?.message || 'Unable to update profile.' });
+                                }).catch((error: unknown) => {
+                                  notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to update profile.' });
                                 });
                               }}
                               disabled={!canManageImpact}

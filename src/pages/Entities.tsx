@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { useData, EntityBalance } from '../context/DataContext';
-import { Search, Plus, Tag, X, TrendingUp, TrendingDown, Calendar, Award, Edit2, Save, Eye, Clock, Download, LayoutGrid, List, ArrowRightLeft, Trash2, Zap } from 'lucide-react';
+import { useData } from '../context/DataContext';
+import { Search, Plus, Tag, X, TrendingUp, Calendar, Edit2, Save, Eye, Clock, Download, LayoutGrid, List, ArrowRightLeft, Trash2 } from 'lucide-react';
 import { Collaboration, Entity } from '../types';
 
 import { formatValue, formatDate } from '../lib/utils';
@@ -15,6 +15,9 @@ import EntitiesIcon from '../components/icons/EntitiesIcon';
 import OverlaySavingState from '../components/OverlaySavingState';
 import { ENTITY_STAT_BADGES, useLabels } from '../lib/labels';
 import { useConfirm } from '../context/ConfirmContext';
+import { useEntityStats } from '../hooks/useEntityStats';
+import EntityGridCard from '../components/EntityGridCard';
+import EntityQuickOverlay from '../components/EntityQuickOverlay';
 
 const getEntityDisplayName = (name?: string | null) => {
   const trimmed = name?.trim();
@@ -138,21 +141,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
 
   // entityStats is sourced from the entity_balances DB view via DataContext.
   // The view computes net, total_inflow, record_count, surplus_count, last_active, avg_duration_hours.
-  // We alias to entityStats for backward compatibility with all call sites.
-  const entityStats = useMemo(() => {
-    const stats = new Map<string, { net: number; activitys: number; lastActive: string | null; surpluses: number; totalInflow: number; avgActivity: number }>();
-    entityBalances.forEach((balance: EntityBalance, id: string) => {
-      stats.set(id, {
-        net: Number(balance.net) || 0,
-        activitys: Number(balance.record_count) || 0,
-        lastActive: balance.last_active ?? null,
-        surpluses: Number(balance.surplus_count) || 0,
-        totalInflow: Number(balance.total_inflow) || 0,
-        avgActivity: Number(balance.avg_duration_hours) || 0,
-      });
-    });
-    return stats;
-  }, [entityBalances]);
+  const { entityStats, activeEntitysCount, positiveDeltaEntitys } = useEntityStats(entities, entityBalances);
 
   const activityById = useMemo(() => {
     return new Map(activities.map(activity => [activity.id, activity]));
@@ -321,8 +310,8 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
         setAddEntityState('idle');
         resetForm();
       }, 700);
-    } catch (error: any) {
-      const message = error?.message || 'Unable to add entity.';
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unable to add entity.';
       setImportStatus({ type: 'error', message });
       setAddEntityError(message);
       setAddEntityState('error');
@@ -382,8 +371,8 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
       setTransferFromEntityId('');
       setTransferToEntityId('');
       settransferAmount('');
-    } catch (error: any) {
-      setImportStatus({ type: 'error', message: error?.message || 'Unable to transfer total.' });
+    } catch (error: unknown) {
+      setImportStatus({ type: 'error', message: error instanceof Error ? error.message : 'Unable to transfer total.' });
     }
   };
 
@@ -412,8 +401,8 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
       setIsActivityRecordingOutputRequest(false);
       setOutputRequestEntityId('');
       setOutputRequestAmount('');
-    } catch (error: any) {
-      setImportStatus({ type: 'error', message: error?.message || 'Unable to record alignment request.' });
+    } catch (error: unknown) {
+      setImportStatus({ type: 'error', message: error instanceof Error ? error.message : 'Unable to record alignment request.' });
     }
   };
 
@@ -449,8 +438,8 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
       setDeferredAmount('');
       setDeferredDirection('outbound');
       setDeferredChannelLabel('');
-    } catch (error: any) {
-      setImportStatus({ type: 'error', message: error?.message || 'Unable to add pending record.' });
+    } catch (error: unknown) {
+      setImportStatus({ type: 'error', message: error instanceof Error ? error.message : 'Unable to add pending record.' });
     }
   };
 
@@ -474,8 +463,8 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
       await deleteEntity(entity.id);
       setImportStatus({ type: 'success', message: 'Entity profile deleted.' });
       setQuickViewEntity(current => (current?.id === entity.id ? null : current));
-    } catch (error: any) {
-      setImportStatus({ type: 'error', message: error?.message || 'Unable to delete entity profile.' });
+    } catch (error: unknown) {
+      setImportStatus({ type: 'error', message: error instanceof Error ? error.message : 'Unable to delete entity profile.' });
     } finally {
       setDeletingEntityId(current => (current === entity.id ? null : current));
     }
@@ -488,13 +477,11 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
     try {
       await updateEntity({ ...entity, tags: nextTags });
       setImportStatus({ type: 'success', message: 'Entity tags updated.' });
-    } catch (error: any) {
-      setImportStatus({ type: 'error', message: error?.message || 'Unable to update entity tags.' });
+    } catch (error: unknown) {
+      setImportStatus({ type: 'error', message: error instanceof Error ? error.message : 'Unable to update entity tags.' });
     }
   };
 
-  const activeEntitysCount = entities.filter(p => (entityStats.get(p.id)?.net || 0) !== 0).length;
-  const positiveDeltaEntitys = entities.filter(p => (entityStats.get(p.id)?.net || 0) > 0).length;
   const selectedEntityStats = selectedEntity
     ? entityStats.get(selectedEntity.id) || { net: 0, activitys: 0, lastActive: null, surpluses: 0, totalInflow: 0, avgActivity: 0 }
     : null;
@@ -1015,7 +1002,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                             setActiveCardAction(null);
                             setTransferToEntityId('');
                             settransferAmount('');
-                          } catch (err: any) { setImportStatus({ type: 'error', message: err?.message || 'Transfer failed.' }); }
+                          } catch (err: unknown) { setImportStatus({ type: 'error', message: err instanceof Error ? err.message : 'Transfer failed.' }); }
                         }}
                         className="flex flex-wrap items-center gap-2"
                       >
@@ -1048,7 +1035,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                             setImportStatus({ type: 'success', message: 'Adjustment submitted.' });
                             setActiveCardAction(null);
                             setOutputRequestAmount('');
-                          } catch (err: any) { setImportStatus({ type: 'error', message: err?.message || 'Adjustment failed.' }); }
+                          } catch (err: unknown) { setImportStatus({ type: 'error', message: err instanceof Error ? err.message : 'Adjustment failed.' }); }
                         }}
                         className="flex flex-wrap items-center gap-2"
                       >
@@ -1077,7 +1064,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                             setDeferredAmount('');
                             setDeferredDirection('outbound');
                             setDeferredChannelLabel('');
-                          } catch (err: any) { setImportStatus({ type: 'error', message: err?.message || 'Failed to add pending record.' }); }
+                          } catch (err: unknown) { setImportStatus({ type: 'error', message: err instanceof Error ? err.message : 'Failed to add pending record.' }); }
                         }}
                         className="flex flex-wrap items-center gap-2"
                       >
@@ -1268,7 +1255,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
                     key={entity.id} 
                     entity={entity} 
                     stats={stats} 
-                    updateEntity={updateEntity}
+                    updateEntity={(p: Entity) => updateEntity({ ...p })}
                     onOpenOverlay={() => openQuickOverlay(entity)}
                     onOpenProfile={() => openEntityProfile(entity.id)}
                     onOpenSnapshot={() => setQuickViewEntity(entity)}
@@ -1436,171 +1423,7 @@ export default function Entities({ embedded = false }: { embedded?: boolean }) {
   );
 }
 
-function EntityGridCard({
-  entity,
-  stats,
-  onOpenOverlay,
-  onOpenProfile,
-  onOpenSnapshot,
-  canManageImpact,
-  canActivityRecordDeferred,
-  activeAction,
-  onAction,
-  onDelete,
-}: {
-  entity: Entity;
-  stats: { net: number; activitys: number; lastActive: string | null; surpluses: number; totalInflow: number; avgActivity: number };
-  onOpenOverlay: () => void;
-  onOpenProfile: () => void;
-  onOpenSnapshot: () => void;
-  canManageImpact: boolean;
-  canActivityRecordDeferred: boolean;
-  activeAction: 'send' | 'adjust' | 'pending' | null;
-  onAction: (action: 'send' | 'adjust' | 'pending') => void;
-  onDelete: () => void;
-}) {
-  const entityMoreMenuItems = useMemo(
-    () => {
-      const items: {
-        key: string;
-        label: string;
-        onClick: () => void;
-        icon?: React.ReactNode;
-        destructive?: boolean;
-      }[] = [
-        { key: 'quick', label: 'Quick', onClick: onOpenOverlay, icon: <Zap size={14} /> },
-        { key: 'snapshot', label: 'Snapshot', onClick: onOpenSnapshot, icon: <Eye size={14} /> },
-        { key: 'open', label: 'Open', onClick: onOpenProfile, icon: <Tag size={14} /> },
-      ];
-      if (canManageImpact) {
-        items.push({
-          key: 'delete',
-          label: 'Delete',
-          onClick: onDelete,
-          icon: <Trash2 size={14} />,
-          destructive: true,
-        });
-      }
-      return items;
-    },
-    [canManageImpact, onDelete, onOpenOverlay, onOpenProfile, onOpenSnapshot],
-  );
-
-  return (
-    <div className={cn(
-      'section-card-hover flex min-w-0 flex-col overflow-hidden',
-      activeAction ? 'rounded-b-none border-b-0' : '',
-    )}>
-      {/* Header: name + net */}
-      <div className="cursor-pointer p-5" onClick={onOpenOverlay}>
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="font-medium text-stone-900 dark:text-stone-100 truncate" title={getEntityDisplayName(entity.name)}>{getEntityDisplayName(entity.name)}</p>
-            <p className="text-xs text-stone-500 dark:text-stone-400 mt-0.5">
-              {stats.activitys > 0 ? `${stats.activitys} · ` : ''}{stats.lastActive ? formatDate(stats.lastActive) : 'No activity'}
-            </p>
-          </div>
-          <span
-            className={cn(
-              'shrink-0 font-mono text-lg font-semibold tabular-nums',
-              stats.net > 0 ? 'text-emerald-600 dark:text-emerald-400' : stats.net < 0 ? 'text-red-600 dark:text-red-400' : 'text-stone-400 dark:text-stone-500',
-            )}
-            title="Net balance"
-          >
-            {formatValue(stats.net)}
-          </span>
-        </div>
-
-        {/* Icon stat row */}
-        <div className="mt-3 flex items-center gap-3 text-xs text-stone-400 dark:text-stone-500">
-          {stats.totalInflow > 0 && (
-            <span className="flex items-center gap-1">
-              <TrendingUp size={11} className="text-emerald-500" />
-              {formatValue(stats.totalInflow)}
-            </span>
-          )}
-          {stats.activitys > 0 && (
-            <span className="flex items-center gap-1">
-              <Calendar size={11} />
-              {stats.activitys}
-            </span>
-          )}
-          {stats.surpluses > 0 && (
-            <span className="flex items-center gap-1">
-              <Award size={11} className="text-amber-500" />
-              {stats.surpluses}
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Action bar: primary full-width, secondary row + overflow menu (same handlers as before) */}
-      <div className="flex min-w-0 flex-col gap-2 px-4 pb-3 pt-0" onClick={e => e.stopPropagation()}>
-        {canManageImpact && (
-          <button
-            type="button"
-            onClick={e => {
-              e.stopPropagation();
-              onAction('send');
-            }}
-            className={cn(
-              'flex w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border px-3 py-2 text-xs font-semibold transition-colors',
-              activeAction === 'send'
-                ? 'border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-600 dark:bg-amber-900/25 dark:text-amber-300'
-                : 'border-stone-200 bg-stone-50 text-stone-700 hover:border-amber-300 hover:bg-amber-50/80 hover:text-amber-800 dark:border-stone-600 dark:bg-stone-800/80 dark:text-stone-200 dark:hover:border-amber-700 dark:hover:bg-amber-950/30',
-            )}
-          >
-            <ArrowRightLeft size={14} className="shrink-0" />
-            Send
-          </button>
-        )}
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            {canManageImpact && (
-              <button
-                type="button"
-                onClick={e => {
-                  e.stopPropagation();
-                  onAction('adjust');
-                }}
-                className={cn(
-                  'flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors',
-                  activeAction === 'adjust'
-                    ? 'border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-700 dark:bg-sky-900/20 dark:text-sky-300'
-                    : 'border-stone-200 text-stone-600 hover:border-sky-300 hover:text-sky-700 dark:border-stone-600 dark:text-stone-300 dark:hover:text-sky-400',
-                )}
-              >
-                <Edit2 size={12} className="shrink-0" />
-                Adjust
-              </button>
-            )}
-            {canActivityRecordDeferred && (
-              <button
-                type="button"
-                onClick={e => {
-                  e.stopPropagation();
-                  onAction('pending');
-                }}
-                className={cn(
-                  'flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors',
-                  activeAction === 'pending'
-                    ? 'border-purple-200 bg-purple-50 text-purple-800 dark:border-purple-700 dark:bg-purple-900/20 dark:text-purple-300'
-                    : 'border-stone-200 text-stone-600 hover:border-purple-300 hover:text-purple-700 dark:border-stone-600 dark:text-stone-300 dark:hover:text-purple-400',
-                )}
-              >
-                <Clock size={12} className="shrink-0" />
-                Pending
-              </button>
-            )}
-          </div>
-          <DataActionMenu variant="icon" label="More entity actions" items={entityMoreMenuItems} className="shrink-0" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function EntityRow({ entity, stats, updateEntity, onOpenOverlay, onOpenProfile, onOpenSnapshot, collaborations, canManageImpact, canActivityRecordDeferred, onTransferFromEntity, onActivityRecordDeferred, onDelete }: { entity: Entity, stats: any, updateEntity: (p: Entity) => Promise<void>, onOpenOverlay: () => void, onOpenProfile: () => void, onOpenSnapshot: () => void, collaborations: Collaboration[], canManageImpact: boolean, canActivityRecordDeferred: boolean, onTransferFromEntity: () => void, onActivityRecordDeferred: () => void, onDelete: () => void }) {
+function EntityRow({ entity, stats, updateEntity, onOpenOverlay, onOpenProfile, onOpenSnapshot, collaborations, canManageImpact, canActivityRecordDeferred, onTransferFromEntity, onActivityRecordDeferred, onDelete }: { entity: Entity, stats: { net: number; activitys: number; lastActive: string | null; surpluses: number; totalInflow: number; avgActivity: number }, updateEntity: (p: Entity) => Promise<void>, onOpenOverlay: () => void, onOpenProfile: () => void, onOpenSnapshot: () => void, collaborations: Collaboration[], canManageImpact: boolean, canActivityRecordDeferred: boolean, onTransferFromEntity: () => void, onActivityRecordDeferred: () => void, onDelete: () => void }) {
   const [isEditing, setIsEditing] = useState(false);
   const [data, setData] = useState(entity);
 
@@ -1804,91 +1627,3 @@ function EntityRow({ entity, stats, updateEntity, onOpenOverlay, onOpenProfile, 
   );
 }
 
-function EntityQuickOverlay({
-  entity,
-  stats,
-  canManageImpact,
-  canActivityRecordDeferred,
-  onClose,
-  onSend,
-  onReceive,
-  onAdjust,
-  onAdd,
-}: {
-  entity: Entity;
-  stats: { net: number; activitys: number; lastActive: string | null; surpluses: number; totalInflow: number; avgActivity: number };
-  canManageImpact: boolean;
-  canActivityRecordDeferred: boolean;
-  onClose: () => void;
-  onSend: () => void;
-  onReceive: () => void;
-  onAdjust: () => void;
-  onAdd: () => void;
-}) {
-  return (
-    <div className="fixed inset-0 z-40 bg-stone-950/45 backdrop-blur-sm p-4 animate-in fade-in" onClick={onClose}>
-      <div className="flex min-h-full items-center justify-center">
-        <div
-          className="w-full max-w-sm rounded-2xl border border-stone-200 bg-white p-5 shadow-2xl dark:border-stone-700 dark:bg-stone-900 animate-in zoom-in-95"
-          onClick={event => event.stopPropagation()}
-        >
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <p className="truncate text-lg font-semibold text-stone-900 dark:text-stone-100">
-                {getEntityDisplayName(entity.name)}
-              </p>
-              <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">
-                {stats.activitys} {stats.activitys === 1 ? 'activity' : 'activities'}
-                {stats.lastActive ? ` · ${formatDate(stats.lastActive)}` : ''}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg p-1.5 text-stone-400 transition-colors hover:bg-stone-100 hover:text-stone-700 dark:hover:bg-stone-800 dark:hover:text-stone-200"
-              aria-label="Close entity quick actions"
-            >
-              <X size={16} />
-            </button>
-          </div>
-
-          <div className="mt-5 rounded-2xl bg-stone-50 px-4 py-5 text-center dark:bg-stone-800/70">
-            <p className={cn(
-              'font-mono text-3xl font-semibold tabular-nums',
-              stats.net > 0
-                ? 'text-emerald-600 dark:text-emerald-400'
-                : stats.net < 0
-                  ? 'text-red-600 dark:text-red-400'
-                  : 'text-stone-500 dark:text-stone-300'
-            )}>
-              {formatValue(stats.net)}
-            </p>
-          </div>
-
-          <div className="mt-4 grid grid-cols-2 gap-2">
-            {canManageImpact && (
-              <button type="button" onClick={onSend} className="action-btn-secondary justify-center py-2 text-sm">
-                Send
-              </button>
-            )}
-            {canActivityRecordDeferred && (
-              <button type="button" onClick={onReceive} className="action-btn-secondary justify-center py-2 text-sm">
-                Receive
-              </button>
-            )}
-            {canManageImpact && (
-              <button type="button" onClick={onAdjust} className="action-btn-secondary justify-center py-2 text-sm">
-                Adjust
-              </button>
-            )}
-            {canActivityRecordDeferred && (
-              <button type="button" onClick={onAdd} className="action-btn-primary justify-center py-2 text-sm">
-                Add
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}

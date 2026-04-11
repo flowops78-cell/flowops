@@ -103,9 +103,9 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
         setIsCreating(false);
         notify({ type: 'success', message: 'Activity created successfully.' });
       }, 1000);
-    } catch (error: any) {
+    } catch (error: unknown) {
       setActivityState('error');
-      notify({ type: 'error', message: error?.message || 'Unable to create activity.' });
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to create activity.' });
     }
   };
 
@@ -127,8 +127,8 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
       setDeletingActivityId(activityId);
       await deleteActivity(activityId);
       notify({ type: 'success', message: 'Activity deleted successfully.' });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to delete activity.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to delete activity.' });
     } finally {
       setDeletingActivityId(null);
     }
@@ -159,13 +159,14 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
         removed += 1;
       }
       notify({ type: 'success', message: removed === 1 ? 'Deleted 1 activity.' : `Deleted ${removed} activities.` });
-    } catch (error: any) {
+    } catch (error: unknown) {
+      const msg = error instanceof Error ? error.message : 'Delete failed';
       notify({
         type: 'error',
         message:
           removed > 0
-            ? `${error?.message || 'Delete failed'} (${removed} removed before the error.)`
-            : error?.message || 'Unable to delete activities.',
+            ? `${msg} (${removed} removed before the error.)`
+            : msg || 'Unable to delete activities.',
       });
     } finally {
       setIsDeletingAll(false);
@@ -218,9 +219,9 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               </div>
               <div>
                 <h3 className="font-medium text-stone-900 dark:text-stone-100 text-lg">
-                  {activity.name || formatDate(activity.date)}
+                  {activity.label || formatDate(activity.date)}
                 </h3>
-                {activity.name && (
+                {activity.label && (
                   <p className="text-xs text-stone-500 dark:text-stone-400 -mt-0.5">
                     {formatDate(activity.date)} @ {formatTime(activity.start_time || activity.date)}
                   </p>

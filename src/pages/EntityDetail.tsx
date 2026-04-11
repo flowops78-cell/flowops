@@ -168,8 +168,8 @@ export default function EntityDetail() {
     try {
       await updateEntity({ ...unit, tags });
       notify({ type: 'success', message: 'Entity tags updated.' });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to update entity tags.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to update entity tags.' });
     }
   };
 
@@ -185,8 +185,8 @@ export default function EntityDetail() {
         notes: `Transfer to ${entities.find(e => e.id === targetId)?.name || targetId}`,
       });
       notify({ type: 'success', message: 'Transfer completed.' });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Transfer failed.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Transfer failed.' });
     }
   };
 

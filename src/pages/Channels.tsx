@@ -1,14 +1,12 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useData } from '../context/DataContext';
-import { Plus, ArrowUpRight, ArrowDownLeft, Circle, SquareStack, AlertCircle, Trash2, Pencil, X, Radio, Clock, Archive, ChevronDown, ChevronUp, MoreVertical, Minus, ArrowRight, ExternalLink } from 'lucide-react';
-import { formatCompactValue, formatValue, formatDate } from '../lib/utils';
+import { Plus, ArrowDownLeft, Circle, AlertCircle, Trash2, Pencil, X, Radio, Clock, Archive, Minus } from 'lucide-react';
+import { formatValue, formatDate } from '../lib/utils';
 import ChannelCharts from '../components/charts/ChannelCharts';
 import { useTheme } from '../context/ThemeContext';
 import { cn } from '../lib/utils';
-import Papa from 'papaparse';
 import MobileActivityRecordCard from '../components/MobileActivityRecordCard';
 import { useAppRole } from '../context/AppRoleContext';
-import { ActivityRecord } from '../types';
 import LoadingLine from '../components/LoadingLine';
 import { useNotification } from '../context/NotificationContext';
 import { useConfirm } from '../context/ConfirmContext';
@@ -18,89 +16,39 @@ import { useLabels } from '../lib/labels';
 import { useLocation, useNavigate } from 'react-router-dom';
 import EmptyState from '../components/EmptyState';
 import OverlaySavingState from '../components/OverlaySavingState';
+import {
+  ChannelGlyph,
+  TotalCard,
+  getChannelVisual,
+  baseMethodLabel,
+  formatMethodLabel,
+  parseMethod,
+  composeMethod,
+  normalizeChannelKey,
+} from '../components/ChannelVisualization';
+import { useChannelData } from '../hooks/useChannelData';
 
 type LoadingState = 'idle' | 'saving' | 'success' | 'error';
 
 export default function Channels({ embedded = false }: { embedded?: boolean }) {
-  // Pull only canonical DataContext properties
+  // Pull mutation functions and loading state from DataContext
   const {
-    entities: rawEntities,
-    records: rawRecords,
-    channels: rawChannels,
-    activities: rawActivities,
     addChannelRecord,
     addTransferAccount,
     updateTransferAccount,
     deleteTransferAccount,
-    deleteRecord, // Added deleteRecord
-    updateRecord, // Added updateRecord
-    addRecord, // Added addRecord
-    refreshData, // Added refreshData
+    deleteRecord,
+    updateRecord,
+    addRecord,
+    refreshData,
     loading,
     loadingProgress,
   } = useData();
 
-  // Defensive guards — no collection can be undefined
-  const entities = rawEntities ?? [];
-  const records = rawRecords ?? [];
-  const channels = rawChannels ?? [];
-  const activities = rawActivities ?? [];
-
-  // Derive channelEntries from canonical records (applied records that have a direction)
-  // This replaces the removed channelEntries API
-  const activityMap = useMemo(() => {
-    const map = new Map<string, any>();
-    activities.forEach(a => map.set(a.id, a));
-    return map;
-  }, [activities]);
-
-  const channelEntries = useMemo(() =>
-    records.filter(r => r.status === 'applied').map(r => {
-      const activity = r.activity_id ? activityMap.get(r.activity_id) : undefined;
-      return {
-        ...r,
-        date: r.created_at || '',
-        amount: r.unit_amount || 0,
-        method: r.channel_label || r.notes || activity?.channel_label || 'Activity',
-      };
-    }),
-    [records, activityMap]
-  );
-
-  // Removed APIs — stubbed as safe no-ops until the Channels page is fully migrated
-  const adjustments = useMemo(() => 
-    records.filter(r => r.status === 'deferred' || r.status === 'pending').map(r => ({
-      ...r,
-      type: r.direction === 'increase' ? 'input' : 'output',
-      amount: r.unit_amount || 0,
-      date: r.created_at || ''
-    })),
-    [records]
-  );
-  
-  const adjustmentRequests = useMemo(() => 
-    records.filter(r => r.status === 'pending').map(r => ({
-      ...r,
-      requested_at: r.created_at || '',
-      amount: r.unit_amount || 0,
-      type: r.direction === 'increase' ? 'input' : 'output'
-    })),
-    [records]
-  );
-
-  const transferAccounts = useMemo(() => 
-    channels.map(c => ({
-      ...c,
-      category: c.notes || 'other',
-      is_active: c.status === 'active'
-    })),
-    [channels]
-  );
-
   const deleteChannelActivityRecord = async (id: string) => {
     await deleteRecord(id);
   };
-  const addAdjustment = async (data: any) => {
+  const addAdjustment = async (data: { type: string; amount: number; entity_id?: string; date?: string; [key: string]: unknown }) => {
     await addRecord({
       ...data,
       direction: data.type === 'input' ? 'increase' : 'decrease',
@@ -119,7 +67,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
        status: status === 'approved' ? 'deferred' : 'voided'
     });
   };
-  const transferChannelValues = async (data: any) => {
+  const transferChannelValues = async (data: { from_method: string; to_method: string; amount: number; date?: string }) => {
     const transferGroupId = crypto.randomUUID();
     await addChannelRecord({
       type: 'decrement',
@@ -137,7 +85,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     });
     await refreshData();
   };
-  const recordSystemEvent = async (_data: any) => {};
+  const recordSystemEvent = async (_data: Record<string, unknown>) => {};
   const location = useLocation();
   const navigate = useNavigate();
   const { canAccessAdminUi, canManageImpact } = useAppRole();
@@ -148,7 +96,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
   // Account Management State
   const [isAddingAccount, setIsAddingAccount] = useState(false);
-  const [editingAccount, setEditingAccount] = useState<any | null>(null);
+  const [editingAccount, setEditingAccount] = useState<{ id: string; name: string; category: string; [key: string]: unknown } | null>(null);
   const [acctName, setAcctName] = useState('');
   const [acctCategory, setAcctCategory] = useState('');
   const [deletingAccountId, setDeletingAccountId] = useState<string | null>(null);
@@ -178,110 +126,6 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   const [transferToChannelLabel, setTransferToChannelLabel] = useState('');
   const [transferAmount, settransferAmount] = useState('');
   const [transferState, setTransferState] = useState<LoadingState>('idle');
-
-  const parseMethod = (method: string) => {
-    const [base, ...rest] = method.split('::');
-    return {
-      base: base || 'other',
-      account: rest.join('::').trim(),
-    };
-  };
-
-  const composeMethod = (base: string, account: string) => {
-    const trimmed = account.trim();
-    return trimmed ? `${base}::${trimmed}` : base;
-  };
-
-  const formatChannelLabel = (value: string) => {
-    const trimmed = value.trim();
-    if (!trimmed) return 'Other';
-    if (trimmed === 'channel_account') return 'Channel';
-    if (trimmed === 'value') return 'Value';
-    return trimmed
-      .replace(/[_-]+/g, ' ')
-      .replace(/\s+/g, ' ')
-      .replace(/\b\w/g, char => char.toUpperCase());
-  };
-
-  const normalizeChannelKey = (value: string) => value.trim().toLowerCase().replace(/\s+/g, ' ');
-
-  const baseMethodLabel = (base: string) => {
-    return formatChannelLabel(base);
-  };
-
-  const CHANNEL_PALETTES = [
-    { badgeClass: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300', chartColor: '#10b981' },
-    { badgeClass: 'bg-sky-50 text-sky-600 dark:bg-sky-950/40 dark:text-sky-300', chartColor: '#0ea5e9' },
-    { badgeClass: 'bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-300', chartColor: '#f59e0b' },
-    { badgeClass: 'bg-fuchsia-50 text-fuchsia-600 dark:bg-fuchsia-950/40 dark:text-fuchsia-300', chartColor: '#d946ef' },
-    { badgeClass: 'bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-300', chartColor: '#f43f5e' },
-    { badgeClass: 'bg-violet-50 text-violet-600 dark:bg-violet-950/40 dark:text-violet-300', chartColor: '#8b5cf6' },
-    { badgeClass: 'bg-cyan-50 text-cyan-600 dark:bg-cyan-950/40 dark:text-cyan-300', chartColor: '#06b6d4' },
-    { badgeClass: 'bg-lime-50 text-lime-600 dark:bg-lime-950/40 dark:text-lime-300', chartColor: '#84cc16' },
-  ] as const;
-
-  const hashChannel = (value: string) => {
-    let hash = 0;
-    for (const char of value) {
-      hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-    }
-    return hash;
-  };
-
-  const ChannelGlyph = ({ base, className = 'h-4 w-4' }: { base: string; className?: string }) => {
-    const variant = hashChannel(normalizeChannelKey(base) || 'other') % 6;
-
-    return (
-      <svg viewBox="0 0 24 24" className={className} aria-hidden="true" fill="none">
-        {variant === 0 && (
-          <>
-            <circle cx="12" cy="12" r="6" fill="currentColor" opacity="0.18" />
-            <circle cx="12" cy="12" r="3.25" fill="currentColor" />
-          </>
-        )}
-        {variant === 1 && (
-          <>
-            <path d="M12 4 20 12 12 20 4 12 12 4Z" fill="currentColor" opacity="0.18" />
-            <path d="M12 7.2 16.8 12 12 16.8 7.2 12 12 7.2Z" fill="currentColor" />
-          </>
-        )}
-        {variant === 2 && (
-          <>
-            <path d="M12 4 19 18H5L12 4Z" fill="currentColor" opacity="0.18" />
-            <path d="M12 8.2 15.7 15H8.3L12 8.2Z" fill="currentColor" />
-          </>
-        )}
-        {variant === 3 && (
-          <>
-            <rect x="4" y="5" width="6" height="14" rx="2" fill="currentColor" opacity="0.18" />
-            <rect x="9" y="8" width="6" height="11" rx="2" fill="currentColor" opacity="0.4" />
-            <rect x="14" y="4" width="6" height="15" rx="2" fill="currentColor" />
-          </>
-        )}
-        {variant === 4 && (
-          <>
-            <path d="M4 15c2.4 0 2.4-6 4.8-6s2.4 6 4.8 6 2.4-6 4.8-6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.45" />
-            <path d="M4 11c2.4 0 2.4 6 4.8 6s2.4-6 4.8-6 2.4 6 4.8 6" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-          </>
-        )}
-        {variant === 5 && (
-          <>
-            <rect x="5" y="5" width="14" height="14" rx="4" fill="currentColor" opacity="0.18" />
-            <path d="M8 8h8v8H8z" fill="currentColor" />
-          </>
-        )}
-      </svg>
-    );
-  };
-
-  const getChannelVisual = (base: string) => {
-    const palette = CHANNEL_PALETTES[hashChannel(normalizeChannelKey(base) || 'other') % CHANNEL_PALETTES.length];
-    return {
-      badgeClass: palette.badgeClass,
-      chartColor: palette.chartColor,
-      icon: <ChannelGlyph base={base} />,
-    };
-  };
 
   // Adjustment State
   const [isAddingAdjustment, setIsAddingAdjustment] = useState(false);
@@ -322,6 +166,11 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem('channel.autoArchiveEnabled') === 'true';
   });
+  const retentionDaysNumber = (() => {
+    const parsed = Number(retentionDays);
+    if (!Number.isFinite(parsed)) return 90;
+    return Math.max(1, Math.floor(parsed));
+  })();
   const recordHistoryRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => () => {
@@ -374,243 +223,55 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     window.localStorage.setItem('channel.autoArchiveEnabled', autoArchiveEnabled ? 'true' : 'false');
   }, [autoArchiveEnabled]);
 
-  // Calculate Totals
+  // Derived channel data from the custom hook
   const {
+    entities,
+    records,
+    channelEntries,
+    adjustments,
+    adjustmentRequests,
+    transferAccounts,
     channelTotals,
     totalChannel,
     unresolvedOutflowMethods,
     unresolvedOutflowAmount,
+    hasUnresolvedOutflowAlert,
     channelCardData,
     p2pChannelOptions,
     channelLabelSuggestions,
-  } = useMemo(() => {
-    const nextChannelTotals: Record<string, number> = {};
-
-    channelEntries.forEach(record => {
-      // canonical: direction=increase → inflow, decrease/transfer → outflow
-      const multiplier = record.direction === 'increase' ? 1 : -1;
-      const amount = (record.unit_amount ?? 0) * multiplier;
-      const label = record.method || 'other';
-      nextChannelTotals[label] = (nextChannelTotals[label] || 0) + amount;
-    });
-
-    const nextTotalChannel = Object.values(nextChannelTotals).reduce((sum, value) => sum + value, 0);
-    const nextUnresolvedOutflowMethods = Object.entries(nextChannelTotals)
-      .filter(([, value]) => value < 0)
-      .map(([method, value]) => ({ method, amount: Math.abs(value) }));
-    const nextUnresolvedOutflowAmount = nextUnresolvedOutflowMethods.reduce((sum, item) => sum + item.amount, 0);
-
-    const nextChannelCardData = Object.entries(nextChannelTotals)
-      .map(([method, amount]) => ({
-        method,
-        amount,
-        label: (() => {
-          const { base, account } = parseMethod(method);
-          const label = baseMethodLabel(base);
-          return account ? `${label} • ${account}` : label;
-        })(),
-        base: parseMethod(method).base,
-      }))
-      .sort((a, b) => b.amount - a.amount);
-
-    const nextP2pChannelOptions = nextChannelCardData.filter(item => item.base !== 'channel_account' && item.base !== 'value' && item.amount > 0);
-    const nextChannelLabelSuggestions = Array.from(new Set(
-      nextChannelCardData
-        .filter(item => item.base === 'channel_account')
-        .map(item => parseMethod(item.method).account)
-        .filter((account): account is string => Boolean(account && account.trim()))
-    ));
-
-    return {
-      channelTotals: nextChannelTotals,
-      totalChannel: nextTotalChannel,
-      unresolvedOutflowMethods: nextUnresolvedOutflowMethods,
-      unresolvedOutflowAmount: nextUnresolvedOutflowAmount,
-      channelCardData: nextChannelCardData,
-      p2pChannelOptions: nextP2pChannelOptions,
-      channelLabelSuggestions: nextChannelLabelSuggestions,
-    };
-  }, [channelEntries]);
-
-  const hasUnresolvedOutflowAlert = unresolvedOutflowAmount > 0.009;
-
-  const topChannelInsight = useMemo(() => {
-    const primaryChannel = channelCardData.find(item => item.amount > 0) ?? channelCardData[0] ?? null;
-    if (!primaryChannel || Math.abs(totalChannel) < 0.01) {
-      return { label: tx('No active channel'), share: tx('0%') };
-    }
-
-    const share = Math.max(0, Math.min(100, (primaryChannel.amount / totalChannel) * 100));
-    return {
-      label: primaryChannel.label,
-      share: `${Math.round(share)}%`,
-    };
-  }, [channelCardData, totalChannel, tx]);
-
-  const archivedChannelActivityRecordIdSet = useMemo(() => new Set(archivedChannelActivityRecordIds), [archivedChannelActivityRecordIds]);
-  const activeChannelEntries = useMemo(
-    () => channelEntries.filter(record => !archivedChannelActivityRecordIdSet.has(record.id)),
-    [channelEntries, archivedChannelActivityRecordIdSet]
-  );
-  const archivedChannelEntries = useMemo(
-    () => channelEntries.filter(record => archivedChannelActivityRecordIdSet.has(record.id)),
-    [channelEntries, archivedChannelActivityRecordIdSet]
-  );
-  const retentionDaysNumber = useMemo(() => {
-    const parsed = Number(retentionDays);
-    if (!Number.isFinite(parsed)) return 90;
-    return Math.max(1, Math.floor(parsed));
-  }, [retentionDays]);
-
-  const normalizedOrgSearch = orgSearchQuery.trim().toLowerCase();
-  const filteredActiveChannelEntries = useMemo(() => activeChannelEntries.filter(record => {
-    const normalizedDirection = orgTypeFilter === 'increment' ? 'increase' : orgTypeFilter === 'decrement' ? 'decrease' : 'all';
-    if (orgTypeFilter !== 'all' && record.direction !== normalizedDirection) return false;
-    const recDate = (record.created_at ?? '').slice(0, 10);
-    if (orgDateStart && recDate < orgDateStart) return false;
-    if (orgDateEnd && recDate > orgDateEnd) return false;
-    if (!normalizedOrgSearch) return true;
-    return (
-      (record.notes ?? '').toLowerCase().includes(normalizedOrgSearch)
-      || recDate.toLowerCase().includes(normalizedOrgSearch)
-    );
-  }), [activeChannelEntries, orgTypeFilter, orgDateStart, orgDateEnd, normalizedOrgSearch]);
-
-  const filteredArchivedChannelEntries = useMemo(() => archivedChannelEntries.filter(record => {
-    const normalizedDirection = orgTypeFilter === 'increment' ? 'increase' : orgTypeFilter === 'decrement' ? 'decrease' : 'all';
-    if (orgTypeFilter !== 'all' && record.direction !== normalizedDirection) return false;
-    const recDate = (record.created_at ?? '').slice(0, 10);
-    if (orgDateStart && recDate < orgDateStart) return false;
-    if (orgDateEnd && recDate > orgDateEnd) return false;
-    if (!normalizedOrgSearch) return true;
-    return (
-      (record.notes ?? '').toLowerCase().includes(normalizedOrgSearch)
-      || recDate.toLowerCase().includes(normalizedOrgSearch)
-    );
-  }), [archivedChannelEntries, orgTypeFilter, orgDateStart, orgDateEnd, normalizedOrgSearch]);
-
-  const oldChannelActivityRecordIds = useMemo(() => {
-    const threshold = new Date();
-    threshold.setHours(0, 0, 0, 0);
-    threshold.setDate(threshold.getDate() - retentionDaysNumber);
-    const thresholdTime = threshold.getTime();
-    return activeChannelEntries
-      .filter(record => {
-        const date = new Date(record.created_at ?? '');
-        return Number.isFinite(date.getTime()) && date.getTime() < thresholdTime;
-      })
-      .map(record => record.id);
-  }, [activeChannelEntries, retentionDaysNumber]);
-
-  // Calculate Outstanding Adjustments
-  const totalOutstanding = useMemo(() => {
-    const unitAdjustmentTotals: Record<string, number> = {};
-    adjustments.forEach(adjustment => {
-      if (!adjustment.entity_id) return;
-      if (!unitAdjustmentTotals[adjustment.entity_id]) unitAdjustmentTotals[adjustment.entity_id] = 0;
-      const multiplier = adjustment.type === 'input' ? 1 : -1;
-      unitAdjustmentTotals[adjustment.entity_id] += adjustment.amount * multiplier;
-    });
-    return Object.values(unitAdjustmentTotals).reduce((sum, value) => sum + value, 0);
-  }, [adjustments]);
-
-  const archivedAdjustmentIdSet = useMemo(() => new Set(archivedAdjustmentIds), [archivedAdjustmentIds]);
-  const activeAdjustments = useMemo(() => adjustments.filter(adjustment => !archivedAdjustmentIdSet.has(adjustment.id)), [adjustments, archivedAdjustmentIdSet]);
-  const archivedAdjustments = useMemo(() => adjustments.filter(adjustment => archivedAdjustmentIdSet.has(adjustment.id)), [adjustments, archivedAdjustmentIdSet]);
-  const normalizedAdjustmentSearch = adjustmentSearchQuery.trim().toLowerCase();
-  const filteredActiveAdjustments = useMemo(() => activeAdjustments.filter(adjustment => {
-    if (adjustmentTypeFilter !== 'all' && adjustment.type !== adjustmentTypeFilter) return false;
-    if (!normalizedAdjustmentSearch) return true;
-    const unitName = (entities.find(unit => unit.id === adjustment.entity_id)?.name || '').toLowerCase();
-    return (
-      unitName.includes(normalizedAdjustmentSearch)
-      || adjustment.date.toLowerCase().includes(normalizedAdjustmentSearch)
-    );
-  }), [activeAdjustments, adjustmentTypeFilter, normalizedAdjustmentSearch, entities]);
-
-  const filteredArchivedAdjustments = useMemo(() => archivedAdjustments.filter(adjustment => {
-    if (adjustmentTypeFilter !== 'all' && adjustment.type !== adjustmentTypeFilter) return false;
-    if (!normalizedAdjustmentSearch) return true;
-    const unitName = (entities.find(unit => unit.id === adjustment.entity_id)?.name || '').toLowerCase();
-    return (
-      unitName.includes(normalizedAdjustmentSearch)
-      || adjustment.date.toLowerCase().includes(normalizedAdjustmentSearch)
-    );
-  }), [archivedAdjustments, adjustmentTypeFilter, normalizedAdjustmentSearch, entities]);
-
-  const oldAdjustmentIds = useMemo(() => {
-    const threshold = new Date();
-    threshold.setHours(0, 0, 0, 0);
-    threshold.setDate(threshold.getDate() - retentionDaysNumber);
-    const thresholdTime = threshold.getTime();
-    return activeAdjustments
-      .filter(adjustment => {
-        const date = new Date(adjustment.date);
-        return Number.isFinite(date.getTime()) && date.getTime() < thresholdTime;
-      })
-      .map(adjustment => adjustment.id);
-  }, [activeAdjustments, retentionDaysNumber]);
-
-  const settledAdjustmentActivityRecordIds = useMemo(() => {
-    const unitTotals = new Map<string, number>();
-    activeAdjustments.forEach(adjustment => {
-      if (!adjustment.entity_id) return;
-      const current = unitTotals.get(adjustment.entity_id) || 0;
-      const multiplier = adjustment.type === 'input' ? 1 : -1;
-      const next = current + (adjustment.amount * multiplier);
-      unitTotals.set(adjustment.entity_id, next);
-    });
-    const settledUnits = new Set(
-      Array.from(unitTotals.entries())
-        .filter(([, total]) => Math.abs(total) < 0.01)
-        .map(([unitId]) => unitId)
-    );
-    return activeAdjustments.filter(adjustment => adjustment.entity_id && settledUnits.has(adjustment.entity_id)).map(adjustment => adjustment.id);
-  }, [activeAdjustments]);
-
-  const pendingAdjustmentRequests = useMemo(
-    () => adjustmentRequests
-      .filter(request => request.status === 'pending')
-      .sort((a, b) => b.requested_at.localeCompare(a.requested_at)),
-    [adjustmentRequests],
-  );
-
-  const proposalSummary = useMemo(() => {
-    const pending = activeAdjustments.filter(a => a.status === 'pending');
-    const deferred = activeAdjustments.filter(a => a.status === 'deferred');
-    return {
-      pendingCount: pending.length,
-      deferredCount: deferred.length,
-      pendingSum: pending.reduce((s, a) => s + (a.amount || 0), 0),
-      deferredSum: deferred.reduce((s, a) => s + (a.amount || 0), 0),
-    };
-  }, [activeAdjustments]);
-
-  const unifiedActiveLedgerRows = useMemo(() => {
-    type PostedRow = (typeof filteredActiveChannelEntries)[number];
-    type WfRow = (typeof filteredActiveAdjustments)[number];
-    const postedPart = filteredActiveChannelEntries.map((posted: PostedRow) => ({
-      rowKind: 'posted' as const,
-      sortKey: posted.created_at || '',
-      posted,
-    }));
-    const wfPart = filteredActiveAdjustments.map((workflow: WfRow) => ({
-      rowKind: (workflow.status === 'pending' ? 'pending' : 'deferred') as 'pending' | 'deferred',
-      sortKey: workflow.date || '',
-      workflow,
-    }));
-    let merged = [...postedPart, ...wfPart].sort((a, b) => b.sortKey.localeCompare(a.sortKey));
-    if (ledgerViewFilter === 'posted') merged = merged.filter(r => r.rowKind === 'posted');
-    if (ledgerViewFilter === 'action') merged = merged.filter(r => r.rowKind !== 'posted');
-    return merged;
-  }, [filteredActiveChannelEntries, filteredActiveAdjustments, ledgerViewFilter]);
-
-  const linkedActivityIdForSourceRecord = useCallback((sourceRecordId: string | null | undefined) => {
-    if (!sourceRecordId) return null;
-    const source = records.find(r => r.id === sourceRecordId);
-    const aid = source?.activity_id;
-    return aid && String(aid).trim() ? String(aid) : null;
-  }, [records]);
+    topChannelInsight,
+    totalOutstanding,
+    activeChannelEntries,
+    archivedChannelEntries,
+    filteredActiveChannelEntries,
+    filteredArchivedChannelEntries,
+    activeAdjustments,
+    archivedAdjustments,
+    filteredActiveAdjustments,
+    filteredArchivedAdjustments,
+    oldChannelActivityRecordIds,
+    oldAdjustmentIds,
+    settledAdjustmentActivityRecordIds,
+    pendingAdjustmentRequests,
+    proposalSummary,
+    unifiedActiveLedgerRows,
+    historyData,
+    distributionData,
+    availableChannelCategories,
+    defaultChannelCategory,
+    linkedActivityIdForSourceRecord,
+  } = useChannelData({
+    archivedChannelActivityRecordIds,
+    archivedAdjustmentIds,
+    orgSearchQuery,
+    orgTypeFilter,
+    orgDateStart,
+    orgDateEnd,
+    adjustmentSearchQuery,
+    adjustmentTypeFilter,
+    retentionDays,
+    ledgerViewFilter,
+  }, tx);
 
   useEffect(() => {
     if (!autoArchiveEnabled) return;
@@ -648,13 +309,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     }
   }, [autoArchiveEnabled, oldChannelActivityRecordIds, oldAdjustmentIds, recordSystemEvent, retentionDaysNumber, settledAdjustmentActivityRecordIds]);
 
-  const formatMethodLabel = (method: any) => {
-    const { base, account } = parseMethod(method);
-    const label = baseMethodLabel(base);
-    return account ? `${label} • ${account}` : label;
-  };
-
-  const isTransferActivityRecord = (record: any) => record.direction === 'transfer' || Boolean(record.transfer_group_id);
+  const isTransferActivityRecord = (record: { direction: string; transfer_group_id?: string | null }) => record.direction === 'transfer' || Boolean(record.transfer_group_id);
 
   const handleTotalCardClick = (base: string) => {
     recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -672,59 +327,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     setTransMethodBase(base);
   };
 
-  // --- Chart Data Preparation ---
-  const historyData = useMemo(() => {
-    const last30Days = Array.from({ length: 30 }, (_, i) => {
-      const date = new Date();
-      date.setDate(date.getDate() - i);
-      return date.toISOString().split('T')[0];
-    }).reverse();
-
-    return last30Days.map(dateStr => {
-      const dailyTotal = (channelEntries || [])
-        .filter(r => (r.created_at ?? '').startsWith(dateStr))
-        .reduce((sum, r) => sum + (r.direction === 'increase' ? r.unit_amount : -r.unit_amount), 0);
-      return { date: dateStr.slice(5), total: dailyTotal, fullDate: dateStr };
-    });
-  }, [channelEntries]);
-
-  const distributionData = useMemo(() => {
-    return channelCardData
-      .filter(item => Math.abs(item.amount) > 0.01)
-      .map(item => ({
-        name: item.label,
-        value: Math.abs(item.amount),
-        color: getChannelVisual(item.base).chartColor,
-      }));
-  }, [channelCardData]);
-
   const { theme } = useTheme();
 
   const p2pOptionDisplay = (method: string, amount: number) => `${formatMethodLabel(method)} (${formatValue(amount)})`;
-
-  const availableChannelCategories = useMemo(() => {
-    const options = new Map<string, { value: string; label: string }>();
-
-    const blockedBases = new Set(['channel_account', 'value', 'asset', 'other']);
-
-    for (const account of transferAccounts) {
-      const key = normalizeChannelKey(account.category);
-      if (!key) continue;
-      if (blockedBases.has(key)) continue;
-      options.set(key, { value: account.category, label: baseMethodLabel(account.category) });
-    }
-
-    for (const item of channelCardData) {
-      const key = normalizeChannelKey(item.base);
-      if (!key) continue;
-      if (blockedBases.has(key)) continue;
-      options.set(key, { value: item.base, label: baseMethodLabel(item.base) });
-    }
-
-    return Array.from(options.values()).sort((a, b) => a.label.localeCompare(b.label));
-  }, [baseMethodLabel, channelCardData, transferAccounts]);
-
-  const defaultChannelCategory = availableChannelCategories[0]?.value || '';
 
   const resetAccountForm = () => {
     setEditingAccount(null);
@@ -748,7 +353,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     setIsAddingAccount(true);
   };
 
-  const openEditAccount = (account: any) => {
+  const openEditAccount = (account: { id: string; name: string; category: string; [key: string]: unknown }) => {
     setAccountState('idle');
     setEditingAccount(account);
     setAcctCategory(account.category);
@@ -850,9 +455,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
         setAccountState('idle');
         finishAccountOverlay();
       }, 1500);
-    } catch (err: any) {
+    } catch (err: unknown) {
       setAccountState('error');
-      notify({ type: 'error', message: err?.message || 'Unable to save account.' });
+      notify({ type: 'error', message: err instanceof Error ? err.message : 'Unable to save account.' });
     }
   };
 
@@ -869,8 +474,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
     try {
       await deleteTransferAccount(id);
       notify({ type: 'success', message: 'Account removed.' });
-    } catch (err: any) {
-      notify({ type: 'error', message: err?.message || 'Unable to delete account.' });
+    } catch (err: unknown) {
+      notify({ type: 'error', message: err instanceof Error ? err.message : 'Unable to delete account.' });
     } finally {
       setDeletingAccountId(null);
     }
@@ -903,9 +508,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
         setTransAccountLabel('');
       }, 1500);
       notify({ type: 'success', message: 'Record saved.' });
-    } catch (error: any) {
+    } catch (error: unknown) {
       setActivityRecordState('error');
-      notify({ type: 'error', message: error?.message || 'Unable to save record.' });
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to save record.' });
     }
   };
 
@@ -930,9 +535,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
         setAdjustmentAmount('');
       }, 1500);
       notify({ type: 'success', message: 'Live deferred record recorded.' });
-    } catch (error: any) {
+    } catch (error: unknown) {
       setAdjustmentState('error');
-      notify({ type: 'error', message: error?.message || 'Unable to add live deferred record.' });
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to add live deferred record.' });
     }
   };
 
@@ -944,8 +549,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
         type: 'success',
         message: status === 'approved' ? 'Deferred record approved and posted.' : 'Deferred record rejected.',
       });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to resolve deferred record request.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to resolve deferred record request.' });
     }
   };
 
@@ -996,9 +601,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
         settransferAmount('');
       }, 1500);
       notify({ type: 'success', message: 'TransferAmount completed successfully.' });
-    } catch (error: any) {
+    } catch (error: unknown) {
       setTransferState('error');
-      notify({ type: 'error', message: error?.message || 'Unable to complete transfer.' });
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to complete transfer.' });
     }
   };
 
@@ -1016,8 +621,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       setDeletingChannelActivityRecordId(id);
       await deleteChannelActivityRecord(id);
       notify({ type: 'success', message: 'Channel record deleted.' });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to delete channel record.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to delete channel record.' });
     } finally {
       setDeletingChannelActivityRecordId(current => (current === id ? null : current));
     }
@@ -1118,8 +723,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       setDeletingAdjustmentId(id);
       await deleteAdjustment(id);
       notify({ type: 'success', message: 'Deferred record removed.' });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to remove deferred record.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to remove deferred record.' });
     } finally {
       setDeletingAdjustmentId(current => (current === id ? null : current));
     }
@@ -1151,8 +756,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       setSettleAccountBase(defaultChannelCategory);
       setSettleAccountLabel('');
       notify({ type: 'success', message: 'Entry settled.' });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Failed to settle record.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Failed to settle record.' });
     } finally {
       setIsSettlingActivityRecord(false);
     }
@@ -1746,7 +1351,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                             <select 
                               className="control-input"
                               value={transType}
-                              onChange={e => setTransType(e.target.value as any)}
+                              onChange={e => setTransType(e.target.value as 'increment' | 'decrement')}
                               disabled={!canOperateValue}
                             >
                               <option value="increment">{tx('Inflow')} (+)</option>
@@ -2070,7 +1675,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                               Transfer
                             </span>
                           )}
-                          <span>{t.direction === 'increase' ? 'Inflow' : 'Outflow'} • {formatMethodLabel(t.notes)}</span>
+                          <span>{t.direction === 'increase' ? 'Inflow' : 'Outflow'} • {formatMethodLabel(t.notes ?? '')}</span>
                         </span>
                       )}
                     >
@@ -2102,8 +1707,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                 }
                 const l = row.workflow;
                 const unit = entities.find(p => p.id === l.entity_id);
-                const src = l as ActivityRecord;
-                const linkAid = linkedActivityIdForSourceRecord(src.source_record_id);
+                const linkAid = linkedActivityIdForSourceRecord(l.source_record_id);
                 if (row.rowKind === 'pending') {
                   return (
                     <MobileActivityRecordCard
@@ -2350,8 +1954,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     }
                     const l = row.workflow;
                     const unit = entities.find(p => p.id === l.entity_id);
-                    const src = l as ActivityRecord;
-                    const linkAid = linkedActivityIdForSourceRecord(src.source_record_id);
+                    const linkAid = linkedActivityIdForSourceRecord(l.source_record_id);
                     if (row.rowKind === 'pending') {
                       return (
                         <div
@@ -2544,7 +2147,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                                   {t.direction === 'increase' ? '+' : '-'}{formatValue(t.unit_amount)}
                                 </p>
                               )}
-                              meta={<span className="capitalize">{t.direction} • {formatMethodLabel(t.notes)}</span>}
+                              meta={<span className="capitalize">{t.direction} • {formatMethodLabel(t.notes ?? '')}</span>}
                             >
                               <div className="mt-2 flex justify-end gap-2">
                                 {canOperateValue && (
@@ -2722,44 +2325,3 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   );
 }
 
-function TotalCard({ icon, label, amount, badgeClass, onClick }: { icon: React.ReactNode, label: string, amount: number, badgeClass: string, onClick?: () => void }) {
-  const fullValue = formatValue(amount);
-  const compactValue = formatCompactValue(amount);
-
-  return (
-    <div
-      role={onClick ? 'button' : undefined}
-      tabIndex={onClick ? 0 : undefined}
-      onClick={onClick}
-      onKeyDown={onClick ? (e) => { if (e.key === 'Enter' || e.key === ' ') onClick(); } : undefined}
-      className={cn(
-        'group relative px-2.5 py-2 min-w-0 text-left w-full bg-white dark:bg-stone-900',
-        onClick ? 'cursor-pointer hover:bg-stone-50/70 dark:hover:bg-stone-900/60' : ''
-      )}
-      aria-label={`${label} ${fullValue}`}
-      title={fullValue}
-    >
-      <div className="flex items-center justify-between gap-1.5">
-        <div className="flex items-center gap-1.5 min-w-0">
-          <div className={cn('p-1.5 rounded-md shrink-0', badgeClass)}>
-            {icon}
-          </div>
-          <p className="kpi-label text-[10px] font-medium text-stone-500 dark:text-stone-400 uppercase tracking-[0.06em] truncate" title={label}>{label}</p>
-        </div>
-        <p
-          className={cn(
-            'kpi-metric text-[15px] font-medium font-mono tabular-nums text-right min-w-[88px] shrink-0',
-            amount > 0
-              ? 'amount-positive'
-              : amount < 0
-                ? 'amount-negative'
-                : 'amount-zero',
-          )}
-          title={fullValue}
-        >
-          {compactValue}
-        </p>
-      </div>
-    </div>
-  );
-}

@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import type { Session, User } from '@supabase/supabase-js';
+import type { Session, User, RealtimeChannel } from '@supabase/supabase-js';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { invokeRevokeOtherSessions } from '../lib/revokeOtherSessions';
 
@@ -199,7 +199,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
 
     // Realtime enforcement for Single Session
-    let channel: any;
+    let channel: RealtimeChannel | null = null;
     const client = sb;
     if (activity?.user && client) {
       channel = client
@@ -212,8 +212,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             table: 'profiles',
             filter: `id=eq.${activity.user.id}`,
           },
-          (payload: any) => {
-            const remoteSessionId = payload.new.current_session_id;
+          (payload) => {
+            const remoteSessionId = (payload.new as Record<string, unknown>).current_session_id;
             if (remoteSessionId && remoteSessionId !== sessionId) {
               console.warn('Concurrent session detected. Signing out...');
               void performSignOut('local');

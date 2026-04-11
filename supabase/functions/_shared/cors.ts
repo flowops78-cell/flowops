@@ -1,9 +1,6 @@
+// Local development origins only. Production origins are loaded from
+// the FLOW_OPS_ALLOWED_ORIGINS environment variable (comma-separated).
 const STATIC_ORIGINS = [
-  'https://flow-ops78.netlify.app',
-  'https://flowops.flowops78.workers.dev',
-  'https://cloudflare-workers-autoconfig-flowops.flowops78.workers.dev',
-  'https://flowops.pages.dev',
-  'https://flow-ops.pages.dev',
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'http://localhost:5173',

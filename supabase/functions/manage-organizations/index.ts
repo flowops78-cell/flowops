@@ -87,6 +87,74 @@ const json = (status: number, body: Record<string, unknown>, origin: string | nu
     headers: { ...getCorsHeaders(origin), 'Content-Type': 'application/json' },
   });
 
+/* ------------------------------------------------------------------ */
+/*  Audit-trail helpers                                               */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Resolve the best org_id for an audit event.
+ *
+ * Priority:
+ *  1. Explicit org_id passed by the caller (e.g. from the payload).
+ *  2. The authority context's currentOrgId.
+ *  3. The first organization belonging to the given cluster.
+ *
+ * Returns `null` only when no org can be determined (the caller should
+ * skip the audit insert in that case since org_id is NOT NULL).
+ */
+async function resolveAuditOrgId(
+  adminClient: SupabaseAdmin,
+  opts: {
+    explicitOrgId?: string | null;
+    authority?: { currentOrgId: string | null; clusterId: string | null };
+    clusterId?: string | null;
+  },
+): Promise<string | null> {
+  if (opts.explicitOrgId) return opts.explicitOrgId;
+  if (opts.authority?.currentOrgId) return opts.authority.currentOrgId;
+
+  const cid = opts.clusterId ?? opts.authority?.clusterId ?? null;
+  if (!cid) return null;
+
+  const { data } = await adminClient
+    .from('organizations')
+    .select('id')
+    .eq('cluster_id', cid)
+    .limit(1)
+    .maybeSingle();
+  return (data as { id: string } | null)?.id ?? null;
+}
+
+/**
+ * Best-effort insert into `audit_events`.  Failures are logged but
+ * never block the original operation.
+ */
+async function insertManageOrgAudit(
+  adminClient: SupabaseAdmin,
+  params: {
+    orgId: string;
+    actorUserId: string;
+    actorRole?: DbRole | null;
+    action: string;
+    entity?: string | null;
+    details?: string | null;
+  },
+): Promise<void> {
+  try {
+    const { error } = await adminClient.from('audit_events').insert({
+      org_id: params.orgId,
+      actor_user_id: params.actorUserId,
+      actor_role: params.actorRole ?? null,
+      action: params.action,
+      entity: params.entity ?? null,
+      details: params.details ? params.details.slice(0, 120) : null,
+    });
+    if (error) console.error('[audit] insert failed:', error.message);
+  } catch (err) {
+    console.error('[audit] unexpected error:', err);
+  }
+}
+
 const parseBearerToken = (headerValue: string | null): string | null => {
   if (!headerValue) return null;
   const lower = headerValue.toLowerCase();
@@ -436,6 +504,19 @@ Deno.serve(async (request: Request) => {
 
       if (upsertError) return json(400, { error: upsertError.message }, origin);
 
+      // Audit: cluster_role_set
+      const auditOrgId = await resolveAuditOrgId(adminClient, { authority, clusterId });
+      if (auditOrgId) {
+        await insertManageOrgAudit(adminClient, {
+          orgId: auditOrgId,
+          actorUserId: callerUserId,
+          actorRole: authority.role as DbRole | null,
+          action: 'cluster_role_set',
+          entity: 'cluster_membership',
+          details: `target=${targetUserId} role=${role}`,
+        });
+      }
+
       return json(200, { ok: true }, origin);
     }
 
@@ -465,6 +546,19 @@ Deno.serve(async (request: Request) => {
       // Basic scope check for now - improve if needed
       const { error: deleteError } = await adminClient.auth.admin.deleteUser(targetUserId);
       if (deleteError) return json(400, { error: deleteError.message }, origin);
+
+      // Audit: admin_delete_user
+      const deleteAuditOrgId = await resolveAuditOrgId(adminClient, { authority, clusterId });
+      if (deleteAuditOrgId) {
+        await insertManageOrgAudit(adminClient, {
+          orgId: deleteAuditOrgId,
+          actorUserId: callerUserId,
+          actorRole: authority.role as DbRole | null,
+          action: 'admin_delete_user',
+          entity: 'auth_user',
+          details: `target=${targetUserId}`,
+        });
+      }
 
       return json(200, { ok: true }, origin);
     }
@@ -506,12 +600,28 @@ Deno.serve(async (request: Request) => {
         return json(403, { error: 'Target user is outside of your administrative scope.' }, origin);
       }
 
+      // Helper: emit audit after a successful password operation
+      const emitPasswordAudit = async (method: 'set' | 'email') => {
+        const pwAuditOrgId = await resolveAuditOrgId(adminClient, { authority });
+        if (pwAuditOrgId) {
+          await insertManageOrgAudit(adminClient, {
+            orgId: pwAuditOrgId,
+            actorUserId: callerUserId,
+            actorRole: authority.role as DbRole | null,
+            action: 'admin_reset_password',
+            entity: 'auth_user',
+            details: `target=${targetUserId} method=${method}`,
+          });
+        }
+      };
+
       if (newPassword) {
         const { error: resetError } = await adminClient.auth.admin.updateUserById(
           targetUserId,
           { password: newPassword }
         );
         if (resetError) return json(400, { error: resetError.message }, origin);
+        await emitPasswordAudit('set');
         return json(200, { ok: true, message: 'Password updated.' }, origin);
       }
 
@@ -521,6 +631,7 @@ Deno.serve(async (request: Request) => {
 
       const { error: sendError } = await adminClient.auth.resetPasswordForEmail(targetUser.user.email);
       if (sendError) return json(400, { error: sendError.message }, origin);
+      await emitPasswordAudit('email');
 
       return json(200, { ok: true, message: 'Reset email sent.' }, origin);
     }
@@ -570,6 +681,16 @@ Deno.serve(async (request: Request) => {
         .eq('id', orgId);
 
       if (updateError) return json(400, { error: updateError.message }, origin);
+
+      // Audit: update_organization_identity
+      await insertManageOrgAudit(adminClient, {
+        orgId: orgId,
+        actorUserId: callerUserId,
+        actorRole: authority.role as DbRole | null,
+        action: 'update_org_identity',
+        entity: 'organization',
+        details: `fields=${Object.keys(updates).join(',')}`,
+      });
 
       return json(200, { ok: true, message: 'Organization identity updated.' }, origin);
     }
@@ -630,6 +751,16 @@ Deno.serve(async (request: Request) => {
         });
         if (profileErr) return json(400, { error: profileErr.message }, origin);
       }
+
+      // Audit: assign_org_admin
+      await insertManageOrgAudit(adminClient, {
+        orgId: orgId,
+        actorUserId: callerUserId,
+        actorRole: authority.role as DbRole | null,
+        action: 'assign_org_member',
+        entity: 'organization_membership',
+        details: `target=${targetUserId} role=${role}`,
+      });
 
       return json(200, { ok: true, message: `User assigned as ${role} to organization.` }, origin);
     }

@@ -38,13 +38,13 @@ async function fetchOrganizationMemberships(orgId: string) {
     .eq('status', 'active')
     .order('display_name', { ascending: true });
   if (res.error && isMissingAccountEmailPostgrestError(res.error)) {
-    // Fallback query omits account_email; widen to `any` to satisfy both shapes.
-    const fallback: { data: any[] | null; error: null } = await supabase
+    // Fallback query omits account_email; widen via unknown to satisfy both shapes.
+    const fallback = await supabase
       .from('organization_memberships')
       .select(DATA_SELECT.organization_memberships_no_account_email)
       .eq('org_id', orgId)
       .eq('status', 'active')
-      .order('display_name', { ascending: true }) as any;
+      .order('display_name', { ascending: true }) as unknown as { data: WorkspaceMember[] | null; error: null };
     return fallback;
   }
   return res;
@@ -60,6 +60,144 @@ export interface EntityBalance {
   surplus_count: number;
   last_active: string | null;
   avg_duration_hours: number;
+}
+
+// ─── Input types for CRUD mutations ─────────────────────────────────────────
+
+export interface AddEntityInput {
+  name: string;
+  collaboration_id?: string;
+  referred_by_entity_id?: string;
+  referring_collaboration_id?: string;
+  total?: number;
+  [key: string]: unknown;
+}
+
+export interface UpdateEntityInput {
+  id: string;
+  name: string;
+  collaboration_id?: string | null;
+  referred_by_entity_id?: string | null;
+  referring_collaboration_id?: string | null;
+  [key: string]: unknown;
+}
+
+export interface AddActivityInput {
+  label?: string;
+  name?: string;
+  date: string;
+  start_time?: string;
+  startTime?: string;
+  status?: string;
+  channel_label?: string;
+  channel?: string;
+  assigned_user_id?: string;
+  activity_mode?: string;
+  [key: string]: unknown;
+}
+
+export interface AddRecordInput {
+  activity_id?: string;
+  entity_id?: string;
+  direction: 'increase' | 'decrease' | 'transfer';
+  target_entity_id?: string;
+  unit_amount: number;
+  transfer_group_id?: string;
+  status?: string;
+  channel_label?: string;
+  notes?: string;
+  source_record_id?: string;
+  target_notes?: string;
+  [key: string]: unknown;
+}
+
+export interface UpdateRecordInput {
+  id: string;
+  activity_id?: string | null;
+  entity_id?: string | null;
+  direction: 'increase' | 'decrease' | 'transfer';
+  status: string;
+  unit_amount: number;
+  transfer_group_id?: string | null;
+  notes?: string | null;
+  channel_label?: string | null;
+  source_record_id?: string | null;
+  [key: string]: unknown;
+}
+
+export interface AddActivityLogInput {
+  actor_user_id?: string;
+  actor_role?: string;
+  actor_label?: string;
+  activity_id?: string | null;
+  [key: string]: unknown;
+}
+
+export interface RequestAdjustmentInput {
+  entity_id: string;
+  type: 'input' | 'output';
+  amount: number;
+  notes?: string;
+  activity_id?: string | null;
+  channel_label?: string;
+  source_record_id?: string;
+  [key: string]: unknown;
+}
+
+export interface AddChannelRecordInput {
+  amount: number | string;
+  method: string;
+  type: 'increment' | 'decrement';
+  status?: string;
+  transfer_group_id?: string;
+  notes?: string;
+  [key: string]: unknown;
+}
+
+export interface TransferUnitsInput {
+  activity_id?: string;
+  transfer_group_id?: string;
+  from_entity_id: string;
+  to_entity_id: string;
+  amount: number;
+  status?: string;
+  channel_label?: string;
+  from_note?: string;
+  to_note?: string;
+  from_entity_name?: string;
+  to_entity_name?: string;
+}
+
+export interface AddCollaborationInput {
+  name: string;
+  collaboration_type?: string;
+  participation_factor?: number;
+  overhead_weight_pct?: number;
+  rules?: Record<string, unknown>;
+}
+
+export interface UpdateCollaborationInput {
+  id: string;
+  name: string;
+  collaboration_type: string;
+  status?: string;
+  participation_factor: number;
+  overhead_weight_pct: number;
+  rules: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+export interface AddTransferAccountInput {
+  name: string;
+  category?: string;
+  [key: string]: unknown;
+}
+
+export interface UpdateTransferAccountInput {
+  id: string;
+  name: string;
+  category?: string;
+  [key: string]: unknown;
 }
 
 interface DataContextType {
@@ -88,35 +226,35 @@ interface DataContextType {
   loadingProgress: number;
   availableOrgs: Record<string, Organization>;
   switchOrg: (orgId: string) => Promise<void>;
-  addEntity: (entity: any) => Promise<string>;
-  updateEntity: (entity: Entity) => Promise<void>;
+  addEntity: (entity: AddEntityInput) => Promise<string>;
+  updateEntity: (entity: UpdateEntityInput) => Promise<void>;
   deleteEntity: (id: string) => Promise<void>;
 
   // Activity Actions
-  addActivity: (activity: any) => Promise<string>;
+  addActivity: (activity: AddActivityInput) => Promise<string>;
   updateActivity: (activity: Activity) => Promise<void>;
   deleteActivity: (id: string) => Promise<void>;
 
   // Records Actions
-  addRecord: (record: any) => Promise<string | undefined>;
-  updateRecord: (record: ActivityRecord) => Promise<void>;
+  addRecord: (record: AddRecordInput) => Promise<string | undefined>;
+  updateRecord: (record: UpdateRecordInput) => Promise<void>;
   deleteRecord: (id: string) => Promise<void>;
 
   // Operator Activity / Logs
-  addActivityLog: (log: any) => Promise<void>;
+  addActivityLog: (log: AddActivityLogInput) => Promise<void>;
   endActivityLog: (id: string, endedAt: string, duration: number, pay?: number) => Promise<void>;
-  
-  // Extra Actions
-  requestAdjustment: (data: any) => Promise<void>;
-  addChannelRecord: (data: any) => Promise<void>;
-  transferUnits: (data: any) => Promise<void>;
 
-  addCollaboration: (data: any) => Promise<string>;
-  updateCollaboration: (collab: any) => Promise<void>;
+  // Extra Actions
+  requestAdjustment: (data: RequestAdjustmentInput) => Promise<void>;
+  addChannelRecord: (data: AddChannelRecordInput) => Promise<void>;
+  transferUnits: (data: TransferUnitsInput) => Promise<void>;
+
+  addCollaboration: (data: AddCollaborationInput) => Promise<string>;
+  updateCollaboration: (collab: UpdateCollaborationInput) => Promise<void>;
   deleteCollaboration: (id: string) => Promise<void>;
 
-  addTransferAccount: (data: any) => Promise<void>;
-  updateTransferAccount: (data: any) => Promise<void>;
+  addTransferAccount: (data: AddTransferAccountInput) => Promise<void>;
+  updateTransferAccount: (data: UpdateTransferAccountInput) => Promise<void>;
   deleteTransferAccount: (id: string) => Promise<void>;
 
   refreshData: () => Promise<void>;
@@ -346,7 +484,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (rRes.data) setRecords(rRes.data);
       if (tRes.data) {
         setWorkspaceMembers(
-          (tRes.data as any[]).map((m) => ({
+          (tRes.data as unknown as WorkspaceMember[]).map((m) => ({
             id: m.id,
             org_id: m.org_id,
             user_id: m.user_id,
@@ -361,22 +499,22 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       if (cRes.data) {
         setCollaborations(
-          cRes.data.map((c: any) => ({ ...c, total_number: c.total_number ?? 0 })),
+          cRes.data.map((c) => ({ ...c, total_number: (c as Collaboration & { total_number?: number }).total_number ?? 0 })),
         );
       }
-      if (chRes.data) setChannels(chRes.data.map((c: any) => ({ ...c, is_active: c.status === 'active' })));
+      if (chRes.data) setChannels(chRes.data.map((c) => ({ ...c, is_active: c.status === 'active' })));
       if (lRes.data) {
-        setActivityLogs(lRes.data.map((item: any) => ({
+        setActivityLogs(lRes.data.map((item) => ({
           ...item,
           start_time: item.started_at,
           end_time: item.ended_at,
           duration_hours: item.duration_seconds ? item.duration_seconds / 3600 : 0,
-          status: item.is_active ? 'active' : 'completed',
+          status: (item.is_active ? 'active' : 'completed') as OperatorActivity['status'],
         })));
       }
 
       if (sRes.data) {
-        setSystemEvents(sRes.data.map((item: any) => ({
+        setSystemEvents(sRes.data.map((item) => ({
           id: item.id,
           timestamp: item.created_at,
           actor_user_id: item.actor_user_id,
@@ -551,7 +689,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (orgs) {
-        const orgMap = (orgs as any[]).reduce((acc, org) => ({ ...acc, [org.id]: org }), {} as Record<string, Organization>);
+        const orgMap = (orgs as Organization[]).reduce<Record<string, Organization>>((acc, org) => ({ ...acc, [org.id]: org }), {});
         setAvailableOrgs(orgMap);
       }
     } finally {
@@ -577,6 +715,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       supabase.from('records').select(DATA_SELECT.records).eq('org_id', orgId).order('created_at', { ascending: false }),
       supabase.from('entity_balances').select(DATA_SELECT.entity_balances).eq('org_id', orgId),
     ]);
+    if (rRes.error) {
+      console.warn('[flow-ops] records refresh failed:', rRes.error);
+    }
     if (rRes.data) setRecords(rRes.data);
     if (ebRes.error) {
       const hint =
@@ -600,12 +741,12 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       .eq('org_id', orgId)
       .order('started_at', { ascending: false });
     if (data) {
-      setActivityLogs(data.map((item: any) => ({
+      setActivityLogs(data.map((item) => ({
         ...item,
         start_time: item.started_at,
         end_time: item.ended_at,
         duration_hours: item.duration_seconds ? item.duration_seconds / 3600 : 0,
-        status: item.is_active ? 'active' : 'completed',
+        status: (item.is_active ? 'active' : 'completed') as OperatorActivity['status'],
       })));
     }
   };
@@ -622,7 +763,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // ─── Entity mutations (optimistic local update — 1 DB call, 0 refetch) ──
-  const addEntity = async (data: any) => {
+  const addEntity = async (data: AddEntityInput) => {
     const orgId = requireOrgScope();
     const key = `addEntity:${orgId}:${String(data.name).toLowerCase()}`;
     return withInflight(key, async () => {
@@ -640,11 +781,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .single();
       if (error) throw error;
       setEntities(prev => [...prev, row]);
+      // Refresh balances so starting_total is reflected in the UI
+      await refreshRecordsAndBalances(orgId);
       return row.id as string;
     });
   };
 
-  const updateEntity = async (entity: any) => {
+  const updateEntity = async (entity: UpdateEntityInput) => {
     return withInflight(`updateEntity:${entity.id}`, async () => {
       const { data: row, error } = await supabase!
         .from('entities')
@@ -680,11 +823,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // ─── Activity mutations (optimistic local update) ─────────────────────────
-  const addActivity = async (data: any) => {
+  const addActivity = async (data: AddActivityInput) => {
     const orgId = requireOrgScope();
     const label = String(data.label || data.name || '').trim() || 'Untitled activity';
     const dateStr = typeof data.date === 'string' ? data.date : '';
-    const timeStr = typeof (data.start_time ?? data.startTime) === 'string' ? (data.start_time ?? data.startTime) : '';
+    const timeStr = typeof (data.start_time ?? data.startTime) === 'string' ? (data.start_time ?? data.startTime) ?? '' : '';
     let dateIso: string;
     let startTimeIso: string;
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr) && /^\d{2}:\d{2}/.test(timeStr)) {
@@ -730,18 +873,19 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const updateActivity = async (activity: any) => {
+  const updateActivity = async (activity: Activity) => {
     return withInflight(`updateActivity:${activity.id}`, async () => {
       const resolvedDate = activity.date;
-      const updates: any = {
+      const extra = activity as Activity & { startTime?: string; channel?: string };
+      const updates: Record<string, unknown> = {
         label: activity.label || activity.name,
         date: resolvedDate,
-        start_time: activity.start_time || activity.startTime,
+        start_time: activity.start_time || extra.startTime,
         status: activity.status || 'active',
-        channel_label: activity.channel_label || activity.channel,
+        channel_label: activity.channel_label || extra.channel,
         assigned_user_id: activity.assigned_user_id,
       };
-      if (activity.activity_mode != null && activity.activity_mode !== '') {
+      if (activity.activity_mode != null) {
         updates.activity_mode = activity.activity_mode;
       }
 
@@ -774,7 +918,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // ─── Record mutations (targeted 2-query refresh — records + balances) ─────
-  const addRecord = async (data: any) => {
+  const addRecord = async (data: AddRecordInput) => {
     const orgId = requireOrgScope();
     const activityId = data.activity_id || await ensureWorkspaceLedgerActivityId();
 
@@ -785,16 +929,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (data.entity_id === data.target_entity_id) {
         throw new Error('Transfers must move between different entities.');
       }
+      const fromId = data.entity_id!;
+      const toId = data.target_entity_id!;
       const tgId = data.transfer_group_id || crypto.randomUUID();
-      const key = `transfer:${orgId}:${data.entity_id}:${data.target_entity_id}:${data.unit_amount}:${tgId}`;
+      const key = `transfer:${orgId}:${fromId}:${toId}:${data.unit_amount}:${tgId}`;
       return withInflight(key, async () => {
         await insertTransferPair({
           org_id: orgId,
           activity_id: activityId,
-          from_entity_id: data.entity_id,
-          to_entity_id: data.target_entity_id,
+          from_entity_id: fromId,
+          to_entity_id: toId,
           unit_amount: data.unit_amount,
-          status: data.status || 'pending',
+          status: (data.status as ActivityRecord['status']) || 'pending',
           transfer_group_id: tgId,
           channel_label: data.channel_label,
           source_note: data.notes || 'Transfer out',
@@ -807,7 +953,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const key = `addRecord:${orgId}:${data.entity_id}:${data.direction}:${data.unit_amount}:${activityId}`;
     return withInflight(key, async () => {
-      const recordData: any = {
+      const recordData: Record<string, unknown> = {
         org_id: orgId,
         activity_id: activityId,
         entity_id: data.entity_id,
@@ -828,7 +974,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const updateRecord = async (record: any) => {
+  const updateRecord = async (record: UpdateRecordInput) => {
     const orgId = requireOrgScope();
     return withInflight(`updateRecord:${record.id}`, async () => {
       const payload: Record<string, unknown> = {
@@ -858,7 +1004,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // ─── Operator activity log mutations ─────────────────────────────────────
-  const addActivityLog = async (data: any) => {
+  const addActivityLog = async (data: AddActivityLogInput) => {
     const orgId = requireOrgScope();
     const targetActorId = typeof data.actor_user_id === 'string' ? data.actor_user_id.trim() : '';
     const key = `addLog:${orgId}:${targetActorId || user?.id}`;
@@ -867,8 +1013,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (!authUser) throw new Error('Not authenticated');
 
       let actorUserId = authUser.id;
-      let actorRole = (data.actor_role as string | undefined) || 'operator';
-      let actorLabel = (data.actor_label as string | undefined) || authUser.email || '';
+      let actorRole = data.actor_role || 'operator';
+      let actorLabel = data.actor_label || authUser.email || '';
 
       if (targetActorId && targetActorId !== authUser.id) {
         const { data: callerMem, error: callerErr } = await supabase!
@@ -908,9 +1054,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           throw new Error('Selected user is not an active member of this workspace.');
         }
         actorUserId = targetActorId;
-        actorRole = (data.actor_role as string | undefined) || targetMem.role || 'operator';
+        actorRole = data.actor_role || targetMem.role || 'operator';
         actorLabel =
-          (data.actor_label as string | undefined) ||
+          data.actor_label ||
           (targetMem.display_name as string | undefined)?.trim() ||
           targetActorId;
       }
@@ -946,11 +1092,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // ─── Adjustment / channel record mutations ────────────────────────────────
-  const requestAdjustment = async (data: any) => {
+  const requestAdjustment = async (data: RequestAdjustmentInput) => {
     const orgId = requireOrgScope();
     const key = `adjust:${orgId}:${data.entity_id}:${data.type}:${data.amount}`;
     return withInflight(key, async () => {
-      const recordData: any = {
+      const recordData: Record<string, unknown> = {
         org_id: orgId,
         entity_id: data.entity_id,
         unit_amount: data.amount,
@@ -969,7 +1115,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const addChannelRecord = async (data: any) => {
+  const addChannelRecord = async (data: AddChannelRecordInput) => {
     const orgId = requireOrgScope();
     const activityId = await ensureWorkspaceLedgerActivityId();
     const amount = Number(data.amount);
@@ -988,7 +1134,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           org_id: orgId,
           activity_id: activityId,
           direction: data.type === 'increment' ? 'increase' : 'decrease',
-          status: data.status || 'applied',
+          status: (data.status as ActivityRecord['status']) || 'applied',
           unit_amount: amount,
           transfer_group_id: data.transfer_group_id,
           channel_label: method,
@@ -999,7 +1145,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const transferUnits = async (data: any) => {
+  const transferUnits = async (data: TransferUnitsInput) => {
     const orgId = requireOrgScope();
     const activityId = data.activity_id || await ensureWorkspaceLedgerActivityId();
     const tgId = data.transfer_group_id || crypto.randomUUID();
@@ -1011,7 +1157,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         from_entity_id: data.from_entity_id,
         to_entity_id: data.to_entity_id,
         unit_amount: data.amount,
-        status: data.status || 'applied',
+        status: (data.status as ActivityRecord['status']) || 'applied',
         transfer_group_id: tgId,
         channel_label: data.channel_label,
         source_note: data.from_note || `Transfer to ${data.to_entity_name || data.to_entity_id}`,
@@ -1022,7 +1168,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // ─── Collaboration mutations (optimistic local update) ────────────────────
-  const addCollaboration = async (data: any) => {
+  const addCollaboration = async (data: AddCollaborationInput) => {
     const orgId = requireOrgScope();
     const key = `addCollab:${orgId}:${String(data.name).toLowerCase()}`;
     return withInflight(key, async () => {
@@ -1045,7 +1191,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const updateCollaboration = async (collab: any) => {
+  const updateCollaboration = async (collab: UpdateCollaborationInput) => {
     return withInflight(`updateCollab:${collab.id}`, async () => {
       const { data: row, error } = await supabase!
         .from('collaborations')
@@ -1085,7 +1231,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // ─── Channel (transfer account) mutations (optimistic local update) ───────
-  const addTransferAccount = async (data: any) => {
+  const addTransferAccount = async (data: AddTransferAccountInput) => {
     const orgId = requireOrgScope();
     const key = `addChannel:${orgId}:${String(data.name).toLowerCase()}`;
     return withInflight(key, async () => {
@@ -1099,7 +1245,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   };
 
-  const updateTransferAccount = async (data: any) => {
+  const updateTransferAccount = async (data: UpdateTransferAccountInput) => {
     return withInflight(`updateChannel:${data.id}`, async () => {
       const { data: row, error } = await supabase!
         .from('channels')
@@ -1153,7 +1299,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const { data: { user } } = await supabase!.auth.getUser();
     if (user) {
       const selectedOrg = availableOrgs[orgId];
-      const updates: any = { active_org_id: orgId };
+      const updates: Record<string, string> = { active_org_id: orgId };
       if (selectedOrg?.cluster_id) {
         updates.active_cluster_id = selectedOrg.cluster_id;
       } else {

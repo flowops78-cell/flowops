@@ -8,16 +8,22 @@ const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? '';
 const SB_SERVICE_ROLE_KEY =
   Deno.env.get('SB_SERVICE_ROLE_KEY') || Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
-type ExportScope = 'cluster' | 'org';
-type ExportDataset =
-  | 'entities'
-  | 'activities'
-  | 'records'
-  | 'organization_memberships'
-  | 'collaborations'
-  | 'channels'
-  | 'audit_events'
-  | 'all';
+const ALLOWED_SCOPES = ['cluster', 'org'] as const;
+type ExportScope = typeof ALLOWED_SCOPES[number];
+
+const ALLOWED_DATASETS = [
+  'entities',
+  'activities',
+  'records',
+  'organization_memberships',
+  'collaborations',
+  'channels',
+  'audit_events',
+  'all',
+] as const;
+type ExportDataset = typeof ALLOWED_DATASETS[number];
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 interface ExportPayload {
   scope: ExportScope;
@@ -157,6 +163,30 @@ Deno.serve(async (req: Request) => {
 
     if (!scope || !dataset) {
       return new Response(JSON.stringify({ error: 'scope and dataset are required.' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!ALLOWED_SCOPES.includes(scope as ExportScope)) {
+      return new Response(JSON.stringify({ error: `Invalid scope. Must be one of: ${ALLOWED_SCOPES.join(', ')}` }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (!ALLOWED_DATASETS.includes(dataset as ExportDataset)) {
+      return new Response(JSON.stringify({ error: `Invalid dataset. Must be one of: ${ALLOWED_DATASETS.join(', ')}` }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (org_id !== undefined && !UUID_RE.test(org_id)) {
+      return new Response(JSON.stringify({ error: 'org_id must be a valid UUID.' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (cluster_id !== undefined && !UUID_RE.test(cluster_id)) {
+      return new Response(JSON.stringify({ error: 'cluster_id must be a valid UUID.' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }

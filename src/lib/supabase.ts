@@ -213,7 +213,7 @@ export async function getUserAuthorityContext(userId: string): Promise<UserAutho
       activeOrgId,
       managedOrgIds: dedupeStrings([...typedOrgTeamMemberships.map(m => m.org_id), ...allClusterOrgIds]),
       clusterId,
-      clusterRole: (typedClusterTeamMemberships.find(m => m.cluster_id === clusterId)?.role as any) || null,
+      clusterRole: (typedClusterTeamMemberships.find(m => m.cluster_id === clusterId)?.role as 'cluster_admin' | 'cluster_operator' | 'viewer' | null) || null,
       manageableClusters,
       manageableOrgsByCluster,
     };

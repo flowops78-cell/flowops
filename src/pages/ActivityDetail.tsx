@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useId } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import { useData } from '../context/DataContext';
 import { ArrowLeft, AlertCircle, User, Users, Activity, Play, Square, SlidersHorizontal, X, UserCheck, Timer } from 'lucide-react';
@@ -12,6 +12,7 @@ import ContextPanel from '../components/ContextPanel';
 import EntitySnapshot from '../components/EntitySnapshot';
 import CollapsibleActivitySection from '../components/CollapsibleActivitySection';
 import DataActionMenu from '../components/DataActionMenu';
+import ActivityEntityCombobox from '../components/ActivityEntityCombobox';
 import { useAppRole } from '../context/AppRoleContext';
 import { useNotification } from '../context/NotificationContext';
 import LoadingLine from '../components/LoadingLine';
@@ -19,142 +20,8 @@ import EmptyState from '../components/EmptyState';
 import { useLabels, LABELS } from '../lib/labels';
 import { useAuth } from '../context/AuthContext';
 import { EntriesRow } from './ActivityDetailEntriesRow';
-
-function ActivityEntityCombobox({
-  availableEntities,
-  selectedUnitId,
-  quickUnitName,
-  onInputChange,
-  onPick,
-  disabled,
-  inputRef,
-  placeholder = 'Entity',
-}: {
-  availableEntities: Entity[];
-  selectedUnitId: string;
-  quickUnitName: string;
-  onInputChange: (value: string) => void;
-  onPick: (entity: Entity) => void;
-  disabled?: boolean;
-  inputRef?: React.RefObject<HTMLInputElement | null>;
-  placeholder?: string;
-}) {
-  const baseId = useId();
-  const listId = `${baseId}-entity-suggest`;
-  const [open, setOpen] = useState(false);
-  const [highlight, setHighlight] = useState(0);
-  /** DOM timers are numeric IDs in the browser. */
-  const blurTimer = useRef<number | null>(null);
-
-  const displayValue = selectedUnitId
-    ? (availableEntities.find(e => e.id === selectedUnitId)?.name ?? '')
-    : quickUnitName;
-
-  const q = displayValue.trim().toLowerCase();
-  const suggestions = useMemo(() => {
-    if (!q) return availableEntities.slice(0, 45);
-    return [...availableEntities]
-      .filter(e => (e.name || '').toLowerCase().includes(q))
-      .sort((a, b) => {
-        const an = (a.name || '').toLowerCase();
-        const bn = (b.name || '').toLowerCase();
-        const ap = an.startsWith(q) ? 0 : 1;
-        const bp = bn.startsWith(q) ? 0 : 1;
-        if (ap !== bp) return ap - bp;
-        return an.localeCompare(bn);
-      })
-      .slice(0, 45);
-  }, [availableEntities, q]);
-
-  const cancelClose = () => {
-    if (blurTimer.current) {
-      window.clearTimeout(blurTimer.current);
-      blurTimer.current = null;
-    }
-  };
-
-  const scheduleClose = () => {
-    cancelClose();
-    blurTimer.current = window.setTimeout(() => setOpen(false), 200) as unknown as number;
-  };
-
-  useEffect(() => () => cancelClose(), []);
-
-  const showList = open && !disabled && suggestions.length > 0;
-
-  return (
-    <div className="relative">
-      <input
-        ref={inputRef}
-        type="text"
-        autoComplete="off"
-        aria-expanded={showList}
-        aria-controls={listId}
-        aria-autocomplete="list"
-        role="combobox"
-        className="w-full rounded-2xl bg-transparent px-4 py-3 text-stone-900 outline-none placeholder:text-stone-400 dark:text-stone-100"
-        placeholder={placeholder}
-        value={displayValue}
-        disabled={disabled}
-        onChange={e => {
-          cancelClose();
-          onInputChange(e.target.value);
-          setOpen(true);
-          setHighlight(0);
-        }}
-        onFocus={() => {
-          cancelClose();
-          setOpen(true);
-          setHighlight(0);
-        }}
-        onBlur={scheduleClose}
-        onKeyDown={e => {
-          if (!showList) return;
-          if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            setHighlight(i => Math.min(i + 1, suggestions.length - 1));
-          } else if (e.key === 'ArrowUp') {
-            e.preventDefault();
-            setHighlight(i => Math.max(i - 1, 0));
-          } else if (e.key === 'Enter' && suggestions[highlight]) {
-            e.preventDefault();
-            onPick(suggestions[highlight]!);
-            setOpen(false);
-          } else if (e.key === 'Escape') {
-            setOpen(false);
-          }
-        }}
-      />
-      {showList ? (
-        <ul
-          id={listId}
-          role="listbox"
-          className="absolute top-full left-0 right-0 z-50 mt-1 max-h-52 overflow-auto rounded-xl border border-stone-200 bg-white py-1 shadow-lg dark:border-stone-700 dark:bg-stone-900"
-        >
-          {suggestions.map((ent, i) => (
-            <li key={ent.id} role="option" aria-selected={i === highlight}>
-              <button
-                type="button"
-                className={cn(
-                  'flex w-full px-3 py-2 text-left text-sm text-stone-900 dark:text-stone-100',
-                  i === highlight ? 'bg-stone-100 dark:bg-stone-800' : 'hover:bg-stone-50 dark:hover:bg-stone-800/80',
-                )}
-                onMouseDown={e => {
-                  e.preventDefault();
-                  onPick(ent);
-                  cancelClose();
-                  setOpen(false);
-                }}
-              >
-                {ent.name || 'Unnamed Entity'}
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
+import { useActivityDetailData } from '../hooks/useActivityDetailData';
+import { useActivityKeyboardShortcuts, useOverlayEscape } from '../hooks/useActivityKeyboardShortcuts';
 
 export default function ActivityDetail() {
   const { id } = useParams<{ id: string }>();
@@ -169,12 +36,9 @@ export default function ActivityDetail() {
   const activity = activities.find(g => g.id === id);
   const activityEntries = records.filter(l => l.activity_id === id);
   const activeActivityEntries = activityEntries.filter(record => !record.left_at);
-  
+
   // Derived state
-  const totalInflow = activityEntries.reduce((sum, e) => sum + (e.direction === 'increase' ? e.unit_amount : 0), 0);
-  const totalOutflow = activityEntries.reduce((sum, e) => sum + (e.direction === 'decrease' ? e.unit_amount : 0), 0);
-  const discrepancy = totalOutflow - totalInflow;
-  const isTotald = Math.abs(discrepancy) < 0.01;
+  const { totalInflow, totalOutflow, discrepancy, isTotald, availableEntities } = useActivityDetailData(activityEntries, entities);
 
   // View State
   const [isTelemetryOpen, setIsTelemetryOpen] = useState(false);
@@ -315,67 +179,32 @@ export default function ActivityDetail() {
     navigate({ pathname: location.pathname, search: nextSearch ? `?${nextSearch}` : '' }, { replace: true });
   }, [activity?.status, isMobileViewport, location.pathname, location.search, navigate]);
 
-  useEffect(() => {
-    const handleShortcut = (event: KeyboardEvent) => {
-      const normalizedKey = typeof event.key === 'string' ? event.key.toLowerCase() : '';
-      const target = event.target as HTMLElement | null;
-      const isTypingTarget =
-        target?.tagName === 'INPUT' ||
-        target?.tagName === 'TEXTAREA' ||
-        target?.tagName === 'SELECT' ||
-        Boolean(target?.isContentEditable);
+  const toggleTelemetry = useCallback(() => setIsTelemetryOpen(prev => !prev), []);
 
-      if (isTypingTarget || event.metaKey || event.ctrlKey || event.altKey) return;
-      if (totalRecord) return;
+  // handleActivityTransition is defined after early-return guards; store a stable ref
+  // so the keyboard hook can call it safely even during loading renders.
+  const activityTransitionRef = useRef<(s: 'active' | 'completed' | 'archived') => Promise<void>>(async () => {});
 
-      if (normalizedKey === 'u') {
-        event.preventDefault();
-        focusAddEntity();
-        return;
-      }
+  useActivityKeyboardShortcuts({
+    totalRecord,
+    activityStatus: activity?.status,
+    isMobileViewport,
+    focusAddEntity,
+    focusActivityRecord: focusActivityRecordActivityRecord,
+    toggleTelemetry,
+    handleActivityTransition: (...args) => activityTransitionRef.current(...args),
+  });
 
-      if (normalizedKey === 'e') {
-        event.preventDefault();
-        focusActivityRecordActivityRecord();
-        return;
-      }
-
-      if (normalizedKey === 'o' && !isMobileViewport) {
-        event.preventDefault();
-        setIsTelemetryOpen(prev => !prev);
-        return;
-      }
-
-      if (normalizedKey === 'enter' && event.shiftKey && activity?.status === 'active') {
-        event.preventDefault();
-        void handleActivityTransition('completed');
-      }
-    };
-
-    window.addEventListener('keydown', handleShortcut);
-    return () => window.removeEventListener('keydown', handleShortcut);
-  }, [totalRecord, activity?.status, isMobileViewport]);
-
-  useEffect(() => {
-    const handleOverlayEscape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      if (isTotalActionPending || isAddingEntity || isUpdatingWorkforce || isActivityTransitioning) return;
-
-      if (isAddOptionsOpen) {
-        setIsAddOptionsOpen(false);
-        return;
-      }
-
-      if (isAdvancedOverlayOpen) {
-        setIsAdvancedOverlayOpen(false);
-      }
-    };
-
-    window.addEventListener('keydown', handleOverlayEscape);
-    return () => window.removeEventListener('keydown', handleOverlayEscape);
-  }, [isAddOptionsOpen, isAdvancedOverlayOpen, isTotalActionPending, isAddingEntity, isUpdatingWorkforce, isActivityTransitioning]);
-
-  const availableEntities = entities.filter(entity => !activeActivityEntries.some(record => record.entity_id === entity.id));
+  useOverlayEscape({
+    isAddOptionsOpen,
+    isAdvancedOverlayOpen,
+    isTotalActionPending,
+    isAddingEntity,
+    isUpdatingWorkforce,
+    isActivityTransitioning,
+    setIsAddOptionsOpen,
+    setIsAdvancedOverlayOpen,
+  });
   const entitiesAvailableForPosition = availableEntities;
   const unpositionedActiveEntries = activeActivityEntries.filter(record => !record.position_id || record.position_id <= 0);
   const selectedPositionActivityRecord = selectedPositionNumber !== null
@@ -579,8 +408,8 @@ export default function ActivityDetail() {
         type: 'success',
         message: recordValueingType === 'deferred' ? 'Entity record recorded and deferred record sent for admin approval.' : 'Entity record recorded.',
       });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to record entity record.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to record entity record.' });
     } finally {
       setIsAddingEntity(false);
     }
@@ -615,8 +444,8 @@ export default function ActivityDetail() {
         ...activity,
         assigned_user_id: assignedOperator,
       });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to update operations.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to update operations.' });
     }
   };
 
@@ -651,19 +480,20 @@ export default function ActivityDetail() {
         setRecentTransitionStatus(null);
         activityTransitionSuccessTimerRef.current = null;
       }, 2000);
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || `Unable to mark activity as ${nextStatus}.` });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : `Unable to mark activity as ${nextStatus}.` });
     } finally {
       setIsActivityTransitioning(false);
     }
   };
+  activityTransitionRef.current = handleActivityTransition;
 
   const guardedUpdateActivityRecord = async (record: ActivityRecord) => {
     if (!canManageEntries) {
       notify({ type: 'error', message: 'Entries changes are restricted to admin/operator before alignment.' });
       return;
     }
-    await updateRecord(record);
+    await updateRecord({ ...record });
   };
 
   const openOperatorSessionForProfile = async () => {
@@ -691,8 +521,8 @@ export default function ActivityDetail() {
       });
       setSelectedOperatorUserId('');
       notify({ type: 'success', message: 'Activity log opened.' });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to open activity log.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to open activity log.' });
     } finally {
       setIsUpdatingWorkforce(false);
     }
@@ -714,8 +544,8 @@ export default function ActivityDetail() {
       setIsUpdatingWorkforce(true);
       await endActivityLog(logId, endTime, durationHours, undefined);
       notify({ type: 'success', message: 'Activity log closed.' });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to close activity log.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to close activity log.' });
     } finally {
       setIsUpdatingWorkforce(false);
     }
@@ -729,8 +559,8 @@ export default function ActivityDetail() {
     try {
       await deleteRecord(recordId);
       notify({ type: 'success', message: 'Activity record deleted.' });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to delete activity record.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to delete activity record.' });
     }
   };
 
@@ -740,8 +570,8 @@ export default function ActivityDetail() {
       try {
         await updateEntity({ ...entity, tags });
         notify({ type: 'success', message: 'Entity tags updated.' });
-      } catch (error: any) {
-        notify({ type: 'error', message: error?.message || 'Unable to update entity tags.' });
+      } catch (error: unknown) {
+        notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to update entity tags.' });
       }
     }
   };
@@ -831,8 +661,8 @@ export default function ActivityDetail() {
     try {
       await updateRecord({ ...record, position_id: nextPosition });
       notify({ type: 'success', message: `Entity positioned at #${nextPosition}.` });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to assign position.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to assign position.' });
     }
   };
 
@@ -858,8 +688,8 @@ export default function ActivityDetail() {
         setIsPositionActionPending(true);
         await updateRecord({ ...record, position_id: undefined });
         notify({ type: 'success', message: 'Entity moved to waiting / sat-out area.' });
-      } catch (error: any) {
-        notify({ type: 'error', message: error?.message || 'Unable to set entity to waiting/sat-out.' });
+      } catch (error: unknown) {
+        notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to set entity to waiting/sat-out.' });
       } finally {
         setIsPositionActionPending(false);
       }
@@ -890,8 +720,8 @@ export default function ActivityDetail() {
       setIsPositionActionPending(true);
       await updateRecord({ ...record, position_id: nextPosition });
       notify({ type: 'success', message: `Entity moved to position #${nextPosition}.` });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to update position assignment.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to update position assignment.' });
     } finally {
       setIsPositionActionPending(false);
     }
@@ -974,8 +804,8 @@ export default function ActivityDetail() {
         setPositionPanelUnitQuery('');
         setSelectedPositionNumber(null);
         notify({ type: 'success', message: 'Entity re-positioned with additional record value.' });
-      } catch (error: any) {
-        notify({ type: 'error', message: error?.message || 'Unable to re-position entity from previous activity row.' });
+      } catch (error: unknown) {
+        notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to re-position entity from previous activity row.' });
       } finally {
         setIsPositionActionPending(false);
       }
@@ -1024,8 +854,8 @@ export default function ActivityDetail() {
       setPositionPanelUnitQuery('');
       setSelectedPositionNumber(null);
       notify({ type: 'success', message: `${poolEntity.name || 'Entity'} added and positioned at #${selectedPositionNumber}.` });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to add and position selected entity.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to add and position selected entity.' });
     } finally {
       setIsPositionActionPending(false);
     }
@@ -1052,10 +882,10 @@ export default function ActivityDetail() {
 
     try {
       setIsTotalActionPending(true);
-      await updateRecord(updates);
+      await updateRecord({ ...updates });
       notify({ type: 'success', message: 'Position total updated from position view.' });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to update position total.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to update position total.' });
     } finally {
       setIsTotalActionPending(false);
     }
@@ -1103,7 +933,8 @@ export default function ActivityDetail() {
       if (totalMode === 'leave' && parsedAmount > 0) {
         try {
           await requestAdjustment({
-            entity_id: latestActivityRecord.entity_id,
+            entity_id: latestActivityRecord.entity_id!,
+            type: 'output',
             amount: parsedAmount,
             activity_id: activity.id,
             alignment_source: totalAlignmentSource || undefined
@@ -1130,8 +961,8 @@ export default function ActivityDetail() {
               : 'Entity marked as inactive with final total.')
           : 'Total updated successfully.',
       });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to save total update.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to save total update.' });
     } finally {
       setIsTotalActionPending(false);
     }
@@ -1205,9 +1036,9 @@ export default function ActivityDetail() {
         <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
           <div>
             <h2 className="text-xl sm:text-2xl font-light text-stone-900 dark:text-stone-100">
-              {activity.name || formatDate(activity.date)}
+              {activity.label || formatDate(activity.date)}
             </h2>
-            {activity.name && (
+            {activity.label && (
               <p className="text-sm text-stone-500 dark:text-stone-400 mt-1">
                 {formatDate(activity.date)}
               </p>
@@ -1217,7 +1048,7 @@ export default function ActivityDetail() {
                 <span className="font-medium text-stone-700 dark:text-stone-300">Platform:</span> {activity.channel_label || 'Unknown'}
               </span>
               <span className="flex items-center gap-1">
-                <span className="font-medium text-stone-700 dark:text-stone-300">Format:</span> {activity.label || 'Standard'}
+                <span className="font-medium text-stone-700 dark:text-stone-300">Mode:</span> {activity.activity_mode || 'Standard'}
               </span>
             </div>
           </div>
@@ -1340,9 +1171,9 @@ export default function ActivityDetail() {
             <CollapsibleActivitySection
               title="Activity Entries"
               summary={activityEntries.length === 0 ? 'No activity recorded' : `${activityEntries.length} records`}
-              defaultExpanded={false}
+              defaultExpanded={true}
               maxExpandedHeightClass="max-h-[560px]"
-              maxCollapsedHeightClass="max-h-[96px]"
+              maxCollapsedHeightClass="max-h-[200px]"
               contentClassName="border-t border-stone-200 dark:border-stone-800"
             >
             {activityEntries.length === 0 ? (

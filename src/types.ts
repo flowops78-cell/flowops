@@ -184,7 +184,7 @@ export interface Collaboration {
   /** Not a DB column; UI defaults from API via DataContext (`total_number ?? 0`). */
   total_number?: number;
   status: 'active' | 'inactive' | 'archived';
-  rules: any;
+  rules: Record<string, unknown>;
   created_at?: string;
   updated_at?: string;
 }

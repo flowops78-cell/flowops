@@ -39,7 +39,7 @@ export default function ShortcutIconButton({
         "flex items-center justify-center transition-transform duration-200 group-hover:scale-110",
         variant === 'primary' ? "text-white dark:text-stone-900" : "text-amber-500 dark:text-amber-400"
       )}>
-        {React.cloneElement(icon as React.ReactElement<any>, { size: 18, strokeWidth: 2.5 })}
+        {React.cloneElement(icon as React.ReactElement<Record<string, unknown>>, { size: 18, strokeWidth: 2.5 })}
       </div>
       
       {showLabel && (

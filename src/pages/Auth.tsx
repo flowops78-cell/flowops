@@ -78,9 +78,9 @@ export default function Auth() {
       const normalizedEmail = email.trim().toLowerCase();
       await signInWithPassword(normalizedEmail, password);
       notify({ type: 'success', message: 'Signed in successfully.' });
-    } catch (authError: any) {
-      const rawMessage = authError?.message || 'Request failed.';
-      const lowered = String(rawMessage).toLowerCase();
+    } catch (authError: unknown) {
+      const rawMessage = authError instanceof Error ? authError.message : 'Request failed.';
+      const lowered = rawMessage.toLowerCase();
       if (lowered.includes('access_requests') || lowered.includes('access_invites') || lowered.includes('submit-access-request') || lowered.includes('pgrst205') || lowered.includes('schema cache')) {
         setError('Access request workflow is not enabled yet. Apply supabase/migrations/00000000000000_init_canonical_schema.sql, deploy the submit-access-request edge function, and set SB_SERVICE_ROLE_KEY (and CORS origins) in function secrets.');
         notify({ type: 'error', message: 'Access workflow not enabled.' });
@@ -88,8 +88,8 @@ export default function Auth() {
         setError('Invalid credentials. If recently approved, use the initial password set during approval.');
         notify({ type: 'error', message: 'Invalid login credentials.' });
       } else {
-        setError(authError?.message || 'Unable to sign in.');
-        notify({ type: 'error', message: authError?.message || 'Unable to sign in.' });
+        setError(rawMessage);
+        notify({ type: 'error', message: rawMessage });
       }
     } finally {
       setSubmitting(false);

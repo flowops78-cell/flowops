@@ -5,42 +5,19 @@ import { useData } from '../context/DataContext';
 import { useAppRole } from '../context/AppRoleContext';
 import { useAuth } from '../context/AuthContext';
 import { cn } from '../lib/utils';
-import { DbRole, dbRoleToAppRole } from '../lib/roles';
 import { FunctionsHttpError } from '@supabase/supabase-js';
-import { getSupabaseAccessToken, isSupabaseConfigured, SUPABASE_ANON_KEY, supabase } from '../lib/supabase';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { useNotification } from '../context/NotificationContext';
 import { useConfirm } from '../context/ConfirmContext';
 import LoadingLine from '../components/LoadingLine';
 import LiveOperatorsTracker from '../components/LiveOperatorsTracker';
 import { LABELS, getRoleLabel, sanitizeLabel } from '../lib/labels';
 import { SETTINGS_PASSWORD_HASH } from '../lib/settingsDeepLinks';
+import { usePasswordManagement } from '../hooks/usePasswordManagement';
+import { useAccessRequests } from '../hooks/useAccessRequests';
+import { useAccessInvites } from '../hooks/useAccessInvites';
 
-type AccessRequestRow = {
-  id: string;
-  created_at: string;
-  login_id: string;
-  requested_role: DbRole;
-  status: 'pending' | 'approved' | 'rejected';
-  reviewed_at?: string | null;
-};
-
-type AccessInviteRow = {
-  id: string;
-  label?: string | null;
-  created_at: string;
-  expires_at?: string | null;
-  revoked_at?: string | null;
-  last_used_at?: string | null;
-  use_count: number;
-  max_uses: number;
-};
-
-type ProvisionResult = {
-  ok?: boolean;
-  login_id?: string;
-  app_role?: DbRole;
-  user_already_exists?: boolean;
-};
+// AccessRequestRow, AccessInviteRow, ProvisionResult — exported from hooks
 
 type ManagedClusterAccount = {
   user_id: string;
@@ -69,32 +46,7 @@ type ManageClusterAdminsResult = {
   admins?: ManagedClusterAccount[];
 };
 
-const buildInviteShareMessage = (token: string) => {
-  return [
-    'Flow Ops access invite',
-    '',
-    '1. Open the Flow Ops sign-in page.',
-    '2. Switch to Request Access.',
-    '3. Paste this invite token exactly as shown below.',
-    '',
-    `Invite token: ${token}`,
-  ].join('\n');
-};
-
-const sha256Hex = async (input: string) => {
-  const encoded = new TextEncoder().encode(input);
-  const digest = await crypto.subtle.digest('SHA-256', encoded);
-  return Array.from(new Uint8Array(digest))
-    .map((byte) => byte.toString(16).padStart(2, '0'))
-    .join('');
-};
-
-const generateInviteToken = () => {
-  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  const bytes = new Uint8Array(24);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (value) => alphabet[value % alphabet.length]).join('');
-};
+// generateInviteToken, sha256Hex, buildInviteShareMessage — moved to lib/settingsInviteUtils.ts
 
 export default function Settings({ embedded = false }: { embedded?: boolean }) {
   // Pull only canonical DataContext properties
@@ -118,11 +70,11 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const systemEvents = rawSystemEvents ?? [];
 
   // Removed APIs — stubbed as safe no-ops until Settings is fully migrated
-  const expenses: any[] = [];
-  const adjustments: any[] = [];
-  const channelEntries: any[] = [];
-  const operatorLogs: any[] = [];
-  const recordSystemEvent = async (_data: any) => {};
+  const expenses: Record<string, unknown>[] = [];
+  const adjustments: Record<string, unknown>[] = [];
+  const channelEntries: Record<string, unknown>[] = [];
+  const operatorLogs: Record<string, unknown>[] = [];
+  const recordSystemEvent = async (_data: Record<string, unknown>) => {};
   const updateProfileOrgId = async (_id: string) => {};
   // NOTE: these are wired to real state below after useState declarations
   // clusterId and managedOrgIds are declared after the useState block
@@ -140,10 +92,9 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
   const { notify } = useNotification();
   const { confirm } = useConfirm();
-  const { user, loading: authLoading, signOut: supabaseSignOut, updatePassword: supabaseUpdatePassword } = useAuth();
-  const refreshPromiseRef = React.useRef<Promise<any> | null>(null);
+  const { user, loading: authLoading, signOut: supabaseSignOut } = useAuth();
+  const refreshPromiseRef = React.useRef<Promise<void> | null>(null);
 
-  const toDisplayMessage = React.useCallback((message: string) => sanitizeLabel(message), []);
   const toDisplayError = React.useCallback((error: unknown, fallback = 'Something went wrong.') => {
     if (error instanceof Error && error.message) return sanitizeLabel(error.message);
     if (typeof error === 'string' && error.trim()) return sanitizeLabel(error);
@@ -162,15 +113,15 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
       if (!ok) return;
       await supabaseSignOut({ scope: 'global' });
       notify({ type: 'success', message: 'Signed out of all devices.' });
-    } catch (err: any) {
-      notify({ type: 'error', message: err.message || 'Failed to sign out globally.' });
+    } catch (err: unknown) {
+      notify({ type: 'error', message: err instanceof Error ? err.message : 'Failed to sign out globally.' });
     }
   };
 
-  const invokeSafe = React.useCallback(async <T = any>(
+  const invokeSafe = React.useCallback(async <T = unknown>(
     functionName: string,
-    body: any
-  ): Promise<{ data: T | null; error: any }> => {
+    body: Record<string, unknown>
+  ): Promise<{ data: T | null; error: Error | null }> => {
     // 1. Safe Session Guard
     const { data: { session } } = await supabase!.auth.getSession();
     if (!session) {
@@ -208,36 +159,46 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     return result;
   }, []);
 
-  
-  // Password Management State
-  const [newPassword, setNewPassword] = React.useState('');
-  const [confirmPassword, setConfirmPassword] = React.useState('');
-  const [isUpdatingPassword, setIsUpdatingPassword] = React.useState(false);
+
+  // Extracted hooks
+  const {
+    newPassword, setNewPassword,
+    confirmPassword, setConfirmPassword,
+    isUpdatingPassword,
+    handleUpdatePassword,
+  } = usePasswordManagement();
+
+  const {
+    accessRequests,
+    requestsNotice,
+    busyRequestId,
+    pendingProvisionDisplayNames, setPendingProvisionDisplayNames,
+    pendingPasswords, setPendingPasswords,
+    pendingApprovedRoles, setPendingApprovedRoles,
+    fetchAccessRequests,
+    reviewAccessRequest,
+  } = useAccessRequests();
+
+  const {
+    inviteLabel, setInviteLabel,
+    inviteExpiryDays, setInviteExpiryDays,
+    inviteMaxUses, setInviteMaxUses,
+    inviteSearch, setInviteSearch,
+    inviteNotice,
+    inviteTokenValue,
+    inviteTokenCopied, setInviteTokenCopied,
+    inviteMessageCopied, setInviteMessageCopied,
+    busyInviteId,
+    filteredInvites,
+    fetchAccessInvites,
+    createAccessInvite,
+    revokeAccessInvite,
+    buildInviteShareMessage,
+  } = useAccessInvites();
 
   const canViewOperatorLogs = canAccessAdminUi;
   const canManageMetaOrgAdmins = role === 'admin';
   const [isClearingGlobalData, setIsClearingGlobalData] = React.useState(false);
-  const [accessInvites, setAccessInvites] = React.useState<AccessInviteRow[]>([]);
-  const [inviteLabel, setInviteLabel] = React.useState('');
-  const [inviteExpiryDays, setInviteExpiryDays] = React.useState('7');
-  const [inviteMaxUses, setInviteMaxUses] = React.useState('1');
-  const [inviteLoading, setInviteLoading] = React.useState(false);
-  const [inviteSearch, setInviteSearch] = React.useState('');
-  const [inviteNotice, setInviteNotice] = React.useState<string | null>(null);
-  const [inviteTokenValue, setInviteTokenValue] = React.useState<string | null>(null);
-  const [inviteTokenCopied, setInviteTokenCopied] = React.useState(false);
-  const [inviteMessageCopied, setInviteMessageCopied] = React.useState(false);
-  const [busyInviteId, setBusyInviteId] = React.useState<string | null>(null);
-  const [accessRequests, setAccessRequests] = React.useState<AccessRequestRow[]>([]);
-  const [requestsLoading, setRequestsLoading] = React.useState(false);
-  const [requestsNotice, setRequestsNotice] = React.useState<string | null>(null);
-  const [requestsNoticeLoginValue, setRequestsNoticeLoginValue] = React.useState<string | null>(null);
-  const [requestsNoticeCopied, setRequestsNoticeCopied] = React.useState<'login' | null>(null);
-  const [busyRequestId, setBusyRequestId] = React.useState<string | null>(null);
-  /** Optional `organization_memberships.display_name` when approving access. */
-  const [pendingProvisionDisplayNames, setPendingProvisionDisplayNames] = React.useState<Record<string, string>>({});
-  const [pendingPasswords, setPendingPasswords] = React.useState<Record<string, string>>({});
-  const [pendingApprovedRoles, setPendingApprovedRoles] = React.useState<Record<string, DbRole>>({});
   const [clusterAdmins, setClusterAdmins] = React.useState<ManagedClusterAccount[]>([]);
   const [managedClusterId, setManagedClusterId] = React.useState<string | null>(null);
   const [newOrgAdminEmail, setNewOrgAdminEmail] = React.useState('');
@@ -389,72 +350,14 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
 
       await refreshData();
       notify({ type: 'success', message: 'Cloud operational data cleared.' });
-    } catch (error: any) {
-      notify({ type: 'error', message: error?.message || 'Unable to clear global data.' });
+    } catch (error: unknown) {
+      notify({ type: 'error', message: error instanceof Error ? error.message : 'Unable to clear global data.' });
     } finally {
       setIsClearingGlobalData(false);
     }
   };
 
-  const fetchAccessRequests = React.useCallback(async () => {
-    if (!isSupabaseConfigured || !supabase || !canViewOperatorLogs) return;
-    setRequestsLoading(true);
-    setRequestsNotice(null);
-    setRequestsNoticeLoginValue(null);
-    setRequestsNoticeCopied(null);
-    try {
-      const { data, error } = await supabase
-        .from('access_requests')
-        .select('id, created_at, login_id, requested_role, status, reviewed_at')
-        .eq('status', 'pending')
-        .order('created_at', { ascending: false })
-        .limit(120);
-      if (error) {
-        setAccessRequests([]);
-        const normalizedErrorMessage = (error.message ?? '').toLowerCase();
-        setRequestsNotice(normalizedErrorMessage.includes('access_requests')
-          ? 'access_requests table not found. Apply supabase/migrations/00000000000000_init_canonical_schema.sql.'
-          : `Unable to load access requests: ${toDisplayError(error.message)}`);
-        return;
-      }
-      setAccessRequests((data ?? []) as AccessRequestRow[]);
-    } catch (error) {
-      const detailedError = toDisplayError(error, 'Transport request failed.');
-      setAccessRequests([]);
-      setRequestsNotice(`Unable to load access requests: ${detailedError}`);
-    } finally {
-      setRequestsLoading(false);
-    }
-  }, [canViewOperatorLogs]);
-
-  const fetchAccessInvites = React.useCallback(async () => {
-    if (!isSupabaseConfigured || !supabase || !canViewOperatorLogs) return;
-    setInviteLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('access_invites')
-        .select('id, label, created_at, expires_at, revoked_at, last_used_at, use_count, max_uses')
-        .order('created_at', { ascending: false })
-        .limit(120);
-
-      if (error) {
-        setAccessInvites([]);
-        const normalizedErrorMessage = (error.message ?? '').toLowerCase();
-        setInviteNotice(normalizedErrorMessage.includes('access_invites')
-          ? 'access_invites table not found. Apply supabase/migrations/00000000000000_init_canonical_schema.sql.'
-          : `Unable to load invite tokens: ${toDisplayError(error.message)}`);
-        return;
-      }
-
-      setAccessInvites((data ?? []) as AccessInviteRow[]);
-    } catch (error) {
-      const detailedError = toDisplayError(error, 'Transport request failed.');
-      setAccessInvites([]);
-      setInviteNotice(`Unable to load invite tokens: ${detailedError}`);
-    } finally {
-      setInviteLoading(false);
-    }
-  }, [canViewOperatorLogs]);
+  // fetchAccessRequests and fetchAccessInvites — provided by useAccessRequests / useAccessInvites hooks
 
   const fetchClusterAdmins = React.useCallback(async (
     orgIdOverride?: string,
@@ -510,96 +413,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     if (isClusterAdmin) void fetchPlatformDirectory();
   }, [authLoading, fetchAccessInvites, fetchAccessRequests, fetchClusterAdmins, isClusterAdmin, fetchPlatformDirectory]);
 
-  const reviewAccessRequest = async (request: AccessRequestRow, status: 'approved' | 'rejected') => {
-    if (!supabase || !user) return;
-    await refreshAuthority();
-    setBusyRequestId(request.id);
-    setRequestsNotice(null);
-    setRequestsNoticeLoginValue(null);
-    setRequestsNoticeCopied(null);
-
-    if (status === 'approved') {
-      const initialPassword = pendingPasswords[request.id]?.trim() || '';
-      if (initialPassword.length < 8) {
-        setRequestsNotice('Approval requires an initial password with at least 8 characters.');
-        notify({ type: 'error', message: 'Initial password must be at least 8 characters.' });
-        setBusyRequestId(null);
-        return;
-      }
-
-      const displayNameOverride = pendingProvisionDisplayNames[request.id]?.trim() || '';
-
-      const { data, error } = await invokeSafe<ProvisionResult>('provision-user', {
-        access_request_id: request.id,
-        display_name: displayNameOverride || undefined,
-        password: initialPassword,
-        approved_role: pendingApprovedRoles[request.id] || request.requested_role,
-      });
-      if (error) {
-        const detailedError = toDisplayError(error);
-        setRequestsNotice(`Approval failed: ${detailedError}`);
-        notify({ type: 'error', message: `Approval failed: ${detailedError}` });
-        setBusyRequestId(null);
-        return;
-      }
-      const approvedLoginId = data?.login_id ?? request.login_id;
-      await fetchAccessRequests();
-      setBusyRequestId(null);
-      setPendingPasswords(prev => {
-        const next = { ...prev };
-        delete next[request.id];
-        return next;
-      });
-      setPendingProvisionDisplayNames(prev => {
-        const next = { ...prev };
-        delete next[request.id];
-        return next;
-      });
-      setPendingApprovedRoles(prev => {
-        const next = { ...prev };
-        delete next[request.id];
-        return next;
-      });
-      if (data?.user_already_exists) {
-        setRequestsNotice(`Approved for ${approvedLoginId}. Existing account was updated.`);
-        notify({ type: 'success', message: `Approved for ${approvedLoginId}. Existing account updated.` });
-      } else {
-        setRequestsNotice(`Approved for ${approvedLoginId}.`);
-        notify({ type: 'success', message: `Approved for ${approvedLoginId}.` });
-      }
-      setRequestsNoticeLoginValue(approvedLoginId);
-      return;
-    }
-
-    const { error } = await supabase.from('access_requests').update({
-      status,
-      reviewed_by: user.id,
-      reviewed_at: new Date().toISOString(),
-    }).eq('id', request.id);
-    if (error) {
-      const detailedError = toDisplayError(error.message);
-      setRequestsNotice(`Unable to update request: ${detailedError}`);
-      notify({ type: 'error', message: `Unable to update request: ${detailedError}` });
-      setBusyRequestId(null);
-      return;
-    }
-    if (status === 'rejected') {
-      setRequestsNotice('Request rejected.');
-      notify({ type: 'info', message: 'Request rejected.' });
-      setPendingProvisionDisplayNames(prev => {
-        const next = { ...prev };
-        delete next[request.id];
-        return next;
-      });
-      setPendingPasswords(prev => {
-        const next = { ...prev };
-        delete next[request.id];
-        return next;
-      });
-    }
-    await fetchAccessRequests();
-    setBusyRequestId(null);
-  };
+  // reviewAccessRequest — provided by useAccessRequests hook
 
   const updateClusterAccountRole = async (account: ManagedClusterAccount) => {
     if (!supabase || !activeOrgId) return;
@@ -629,32 +443,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     setBusyClusterUserId(null);
   };
 
-  const handleUpdatePassword = async () => {
-    if (!newPassword || !confirmPassword) {
-      notify({ type: 'error', message: 'All fields are required.' });
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      notify({ type: 'error', message: 'Passwords do not match.' });
-      return;
-    }
-    if (newPassword.length < 8) {
-      notify({ type: 'error', message: 'Password must be at least 8 characters.' });
-      return;
-    }
-
-    setIsUpdatingPassword(true);
-    try {
-      await supabaseUpdatePassword(newPassword);
-      notify({ type: 'success', message: 'Password updated successfully.' });
-      setNewPassword('');
-      setConfirmPassword('');
-    } catch (err) {
-      notify({ type: 'error', message: `Update failed: ${err instanceof Error ? err.message : String(err)}` });
-    } finally {
-      setIsUpdatingPassword(false);
-    }
-  };
+  // handleUpdatePassword — provided by usePasswordManagement hook
 
   const resetUserPassword = async (targetUserId: string) => {
     setBusyClusterUserId(targetUserId);
@@ -664,7 +453,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         target_user_id: targetUserId 
       });
       if (error) throw error;
-      notify({ type: 'success', message: (data as any)?.message || 'Reset email sent.' });
+      notify({ type: 'success', message: (data as { message?: string } | null)?.message || 'Reset email sent.' });
     } catch (err) {
       notify({ type: 'error', message: `Reset failed: ${err instanceof Error ? err.message : String(err)}` });
     } finally {
@@ -701,68 +490,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     setBusyClusterUserId(null);
   };
 
-  const createAccessInvite = async () => {
-    if (!supabase || !user || !activeOrgId) return;
-    setInviteNotice(null);
-    setInviteTokenValue(null);
-    setInviteTokenCopied(false);
-
-    const parsedMaxUses = Math.max(1, Math.floor(Number(inviteMaxUses) || 1));
-    const parsedExpiryDays = Math.max(0, Math.floor(Number(inviteExpiryDays) || 0));
-    const rawToken = generateInviteToken();
-    const tokenHash = await sha256Hex(rawToken);
-    const expiresAt = parsedExpiryDays > 0
-      ? new Date(Date.now() + parsedExpiryDays * 24 * 60 * 60 * 1000).toISOString()
-      : null;
-
-    const { error } = await supabase.from('access_invites').insert([
-      {
-        org_id: activeOrgId,
-        token_hash: tokenHash,
-        label: inviteLabel.trim() || null,
-        created_by: user.id,
-        expires_at: expiresAt,
-        max_uses: parsedMaxUses,
-      },
-    ]);
-
-    if (error) {
-      const detailedError = toDisplayError(error.message);
-      setInviteNotice(`Unable to create invite token: ${detailedError}`);
-      notify({ type: 'error', message: `Unable to create invite token: ${detailedError}` });
-      return;
-    }
-
-    setInviteLabel('');
-    setInviteExpiryDays('7');
-    setInviteMaxUses('1');
-    setInviteNotice(toDisplayMessage('Invite token created. Copy it now; the raw token is not stored.'));
-    setInviteTokenValue(rawToken);
-    setInviteMessageCopied(false);
-    notify({ type: 'success', message: 'Invite token created.' });
-    await fetchAccessInvites();
-  };
-
-  const revokeAccessInvite = async (inviteId: string) => {
-    if (!supabase) return;
-    setBusyInviteId(inviteId);
-    const { error } = await supabase
-      .from('access_invites')
-      .update({ revoked_at: new Date().toISOString() })
-      .eq('id', inviteId);
-
-    if (error) {
-      const detailedError = toDisplayError(error.message);
-      setInviteNotice(`Unable to revoke invite token: ${detailedError}`);
-      notify({ type: 'error', message: `Unable to revoke invite token: ${detailedError}` });
-      setBusyInviteId(null);
-      return;
-    }
-
-    notify({ type: 'success', message: 'Invite token revoked.' });
-    setBusyInviteId(null);
-    await fetchAccessInvites();
-  };
+  // createAccessInvite, revokeAccessInvite — provided by useAccessInvites hook
 
   const backendStatus = isSupabaseConfigured ? 'Connected' : 'Not configured';
   
@@ -794,7 +522,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
         return;
       }
 
-      const newOrgId = (data as any)?.org_id;
+      const newOrgId = (data as { org_id?: string } | null)?.org_id;
       
       if (newOrgId && newOrgAdminEmail.trim()) {
         const { error: assignError } = await invokeSafe('manage-organizations', {
@@ -891,13 +619,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     );
   }, [platformAccounts, platformDirectorySearch]);
 
-  const filteredInvites = accessInvites.filter(invite =>
-    !invite.revoked_at &&
-    (
-      (invite.label ?? '').toLowerCase().includes(inviteSearch.toLowerCase()) ||
-      invite.id.toLowerCase().includes(inviteSearch.toLowerCase())
-    )
-  );
+  // filteredInvites — provided by useAccessInvites hook
 
   const switcherOrgs = React.useMemo(() => {
     if (isClusterAdmin) {
@@ -1142,7 +864,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                     cluster_id: contextClusterId || ''
                   });
                   if (error) throw error;
-                  const result = data as any;
+                  const result = data as { total_rows?: number; exported_at?: string; audit_event_id?: string } | null;
                   const blob = new Blob([JSON.stringify(result, null, 2)], { type: 'application/json' });
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
@@ -1150,8 +872,8 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                   a.download = `flow-ops-export-${new Date().toISOString().slice(0, 10)}.json`;
                   a.click();
                   URL.revokeObjectURL(url);
-                  setLastExportMeta({ rows: result.total_rows ?? 0, ts: result.exported_at ?? new Date().toISOString() });
-                  notify({ type: 'success', message: `Export complete. Audit ID: ${String(result.audit_event_id ?? '').slice(0, 8)}` });
+                  setLastExportMeta({ rows: result?.total_rows ?? 0, ts: result?.exported_at ?? new Date().toISOString() });
+                  notify({ type: 'success', message: `Export complete. Audit ID: ${String(result?.audit_event_id ?? '').slice(0, 8)}` });
                 } catch (err) {
                   notify({ type: 'error', message: `Export failed: ${String(err)}` });
                 } finally { setIsExporting(false); }
