@@ -115,6 +115,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [clearClientSessionState]);
 
+  // Auth state listener — runs ONCE. Do NOT add activity to deps or the
+  // listener will be torn down & re-created on every session change, causing
+  // Web Locks API deadlocks ("lock was not released within 5000ms").
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) {
       setLoading(false);
@@ -123,25 +126,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const sb = supabase;
     let mounted = true;
-
-    void (async () => {
-      try {
-        const { error } = await sb.auth.getSession();
-        if (!mounted) return;
-        if (error && isCorruptRefreshError(error)) {
-          clearClientSessionState();
-        }
-      } catch (err) {
-        if (!mounted) return;
-        if (isCorruptRefreshError(err)) {
-          clearClientSessionState();
-        }
-      }
-    })();
+    // Use a ref-like variable so adoptSession always sees the latest token
+    // without needing `activity` in the dependency array.
+    let lastToken: string | null = null;
 
     const adoptSession = async (nextSession: Session | null, options?: { persistSessionId?: boolean }) => {
-      const client = sb;
-      if (!client || !mounted) return;
+      if (!sb || !mounted) return;
 
       if (!nextSession?.access_token) {
         setActivity(null);
@@ -150,12 +140,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       // Avoid redundant adoption if token is unchanged
-      if (activity?.access_token === nextSession.access_token) {
+      if (lastToken === nextSession.access_token) {
         setLoading(false);
         return;
       }
 
-      const { data: authUserData, error: authUserError } = await client.auth.getUser(nextSession.access_token);
+      const { data: authUserData, error: authUserError } = await sb.auth.getUser(nextSession.access_token);
       if (!mounted) return;
 
       if (authUserError || !authUserData.user) {
@@ -164,11 +154,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return;
       }
 
+      lastToken = nextSession.access_token;
       setActivity(nextSession);
       setLoading(false);
 
       if (options?.persistSessionId !== false) {
-        await client
+        await sb
           .from('profiles')
           .update({ current_session_id: sessionId })
           .eq('id', nextSession.user.id);
@@ -176,12 +167,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const { data } = sb.auth.onAuthStateChange(async (event, nextSession) => {
+      if (!mounted) return;
+
       if (event === 'SIGNED_OUT') {
+        lastToken = null;
         clearClientSessionState();
         return;
       }
 
+      // No session recovered on init — stale/missing storage; show login
+      if (event === 'INITIAL_SESSION' && !nextSession) {
+        setLoading(false);
+        return;
+      }
+
       if (event === 'TOKEN_REFRESHED' && (!nextSession || !nextSession.access_token)) {
+        lastToken = null;
         clearClientSessionState();
         return;
       }
@@ -191,44 +192,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // New login: revoke other refresh sessions via Edge Function. Defer so the Supabase
       // client has committed the session before functions.invoke attaches Authorization.
       if (event === 'SIGNED_IN') {
-        const invoke = () => {
-          void invokeRevokeOtherSessions(sb);
-        };
-        queueMicrotask(invoke);
+        queueMicrotask(() => void invokeRevokeOtherSessions(sb));
       }
     });
-
-    // Realtime enforcement for Single Session
-    let channel: any;
-    const client = sb;
-    if (activity?.user && client) {
-      channel = client
-        .channel(`single-session-${activity.user.id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: 'UPDATE',
-            schema: 'public',
-            table: 'profiles',
-            filter: `id=eq.${activity.user.id}`,
-          },
-          (payload: any) => {
-            const remoteSessionId = payload.new.current_session_id;
-            if (remoteSessionId && remoteSessionId !== sessionId) {
-              console.warn('Concurrent session detected. Signing out...');
-              void performSignOut('local');
-            }
-          }
-        )
-        .subscribe();
-    }
 
     return () => {
       mounted = false;
       data.subscription.unsubscribe();
-      if (channel && client) client.removeChannel(channel);
     };
-  }, [activity?.user?.id, clearClientSessionState, performSignOut, sessionId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clearClientSessionState, performSignOut, sessionId]);
+
+  // Realtime single-session enforcement — re-subscribes when user changes.
+  useEffect(() => {
+    if (!supabase || !activity?.user) return;
+    const userId = activity.user.id;
+
+    const channel = supabase
+      .channel(`single-session-${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'profiles',
+          filter: `id=eq.${userId}`,
+        },
+        (payload: any) => {
+          const remoteSessionId = payload.new.current_session_id;
+          if (remoteSessionId && remoteSessionId !== sessionId) {
+            console.warn('Concurrent session detected. Signing out...');
+            void performSignOut('local');
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activity?.user?.id, sessionId, performSignOut]);
 
   const signInWithPassword = async (email: string, password: string) => {
     if (!supabase) throw new Error('Supabase is not configured.');
