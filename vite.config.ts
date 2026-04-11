@@ -70,11 +70,6 @@ export default defineConfig(({ mode }) => {
     esbuild: {
       target: ['es2020', 'chrome87', 'safari14', 'firefox90', 'edge88'],
     },
-    resolve: {
-      alias: {
-        '@': path.resolve(__dirname, '.'),
-      },
-    },
     build: {
       target: ['es2020', 'chrome87', 'safari14', 'firefox90', 'edge88'],
       minify: 'esbuild',
@@ -142,6 +137,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     test: {
+      include: ['src/**/*.{test,spec}.{ts,tsx}'],
       environment: 'jsdom',
       globals: true,
     },

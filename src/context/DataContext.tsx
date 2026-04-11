@@ -31,19 +31,21 @@ async function fetchOrganizationMemberships(orgId: string) {
   if (!supabase) {
     return { data: null, error: new Error('Supabase not configured') } as const;
   }
-  let res = await supabase
+  const res = await supabase
     .from('organization_memberships')
     .select(DATA_SELECT.organization_memberships)
     .eq('org_id', orgId)
     .eq('status', 'active')
     .order('display_name', { ascending: true });
   if (res.error && isMissingAccountEmailPostgrestError(res.error)) {
-    res = await supabase
+    // Fallback query omits account_email; widen to `any` to satisfy both shapes.
+    const fallback: { data: any[] | null; error: null } = await supabase
       .from('organization_memberships')
       .select(DATA_SELECT.organization_memberships_no_account_email)
       .eq('org_id', orgId)
       .eq('status', 'active')
-      .order('display_name', { ascending: true });
+      .order('display_name', { ascending: true }) as any;
+    return fallback;
   }
   return res;
 }
@@ -142,6 +144,15 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // In-flight deduplication: prevents double-submit from rapid clicks
   const inflightRef = React.useRef<Set<string>>(new Set());
 
+  // Tracks the most recently committed activeOrgId for stale-closure guards
+  const activeOrgIdRef = React.useRef<string | null>(null);
+
+  // Tracks last org ID persisted to the server to skip redundant writes
+  const lastPersistedOrgIdRef = React.useRef<string | null>(null);
+
+  // Guards against concurrent refreshAvailableOrgs calls
+  const refreshOrgsInFlightRef = React.useRef(false);
+
   const [loading, setLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(() => {
@@ -151,6 +162,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const { loading: roleLoading, managedOrgIds, serverActiveOrgId, isClusterAdmin, clusterId } = useAppRole();
   const { user, loading: authLoading, signOut } = useAuth();
+
+  // Keep the ref in sync so async callbacks can read the latest value
+  activeOrgIdRef.current = activeOrgId;
 
 
   const resetClientDataState = useCallback(() => {
@@ -309,7 +323,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         supabase.from('entity_balances').select(DATA_SELECT.entity_balances).eq('org_id', orgSnapshot),
       ]);
 
-      if (orgSnapshot !== activeOrgId) return;
+      if (orgSnapshot !== activeOrgIdRef.current) return;
 
       const phase1All = [eRes, aRes, rRes, tRes, cRes, chRes, sRes, lRes, ebRes];
       const authError = phase1All.map((r) => r.error).find((error) => isAuthFailure(error));
@@ -408,7 +422,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         supabase.from('audit_record_anomalies').select(DATA_SELECT.audit_record_anomalies).eq('org_id', orgSnapshot).order('severity').order('anomaly_type'),
       ]);
 
-      if (orgSnapshot !== activeOrgId) return;
+      if (orgSnapshot !== activeOrgIdRef.current) return;
 
       const optionalResponseEntries = [
         ['audit_activity_integrity', aaRes],
@@ -487,6 +501,9 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setActiveOrgId(target);
     localStorage.setItem('flow_ops_last_org_id', target);
 
+    // Skip redundant server persistence if we already persisted this org
+    if (lastPersistedOrgIdRef.current === target) return;
+
     // Persist to server so the next session resolves instantly too (include cluster for RLS + edge authority).
     if (supabase && user?.id) {
       void (async () => {
@@ -502,6 +519,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (clusterToPersist) updates.active_cluster_id = clusterToPersist;
         const { error } = await supabase.from('profiles').update(updates).eq('id', user.id);
         if (error) console.error('Error persisting org context:', error);
+        else lastPersistedOrgIdRef.current = target;
       })();
     }
   }, [roleLoading, authLoading, serverActiveOrgId, managedOrgIds.join(','), activeOrgId, user?.id, availableOrgs]);
@@ -513,25 +531,31 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setAvailableOrgs({});
       return;
     }
-    const { data: orgs, error } = await supabase
-      .from('organizations')
-      .select('*')
-      .in('id', managedOrgIds);
+    if (refreshOrgsInFlightRef.current) return;
+    refreshOrgsInFlightRef.current = true;
+    try {
+      const { data: orgs, error } = await supabase
+        .from('organizations')
+        .select('*')
+        .in('id', managedOrgIds);
 
-    if (error) {
-      if (isAuthFailure(error)) {
-        console.warn('Authentication failed while refreshing available orgs. Resetting local session state.', error);
-        await signOut({ scope: 'local' });
+      if (error) {
+        if (isAuthFailure(error)) {
+          console.warn('Authentication failed while refreshing available orgs. Resetting local session state.', error);
+          await signOut({ scope: 'local' });
+          return;
+        }
+
+        console.error('Error fetching available organizations:', error);
         return;
       }
 
-      console.error('Error fetching available organizations:', error);
-      return;
-    }
-
-    if (orgs) {
-      const orgMap = (orgs as any[]).reduce((acc, org) => ({ ...acc, [org.id]: org }), {} as Record<string, Organization>);
-      setAvailableOrgs(orgMap);
+      if (orgs) {
+        const orgMap = (orgs as any[]).reduce((acc, org) => ({ ...acc, [org.id]: org }), {} as Record<string, Organization>);
+        setAvailableOrgs(orgMap);
+      }
+    } finally {
+      refreshOrgsInFlightRef.current = false;
     }
   };
 

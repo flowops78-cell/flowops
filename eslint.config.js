@@ -55,7 +55,7 @@ export default [
     ignores: ['dist/**', 'node_modules/**', 'supabase/**'],
   },
   {
-    files: ['src/pages/**/*.{ts,tsx}', 'src/components/**/*.{ts,tsx}', 'src/context/NotificationContext.tsx'],
+    files: ['src/pages/**/*.{ts,tsx}', 'src/components/**/*.{ts,tsx}', 'src/context/**/*.{ts,tsx}', 'src/lib/**/*.{ts,tsx}'],
     languageOptions: {
       parser: tsParser,
       parserOptions: {

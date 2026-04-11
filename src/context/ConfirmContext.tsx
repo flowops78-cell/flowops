@@ -26,26 +26,33 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const handleCancel = useCallback(() => {
-    pending?.resolve(false);
-    setPending(null);
-  }, [pending]);
+    setPending(prev => {
+      prev?.resolve(false);
+      return null;
+    });
+  }, []);
 
   const handleConfirm = useCallback(() => {
-    pending?.resolve(true);
-    setPending(null);
-  }, [pending]);
+    setPending(prev => {
+      prev?.resolve(true);
+      return null;
+    });
+  }, []);
 
   useEffect(() => {
     if (!pending) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         e.preventDefault();
-        handleCancel();
+        setPending(prev => {
+          prev?.resolve(false);
+          return null;
+        });
       }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [pending, handleCancel]);
+  }, [pending]);
 
   const value = useMemo(() => ({ confirm }), [confirm]);
 

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 
 type Theme = 'dark' | 'light';
 
@@ -17,26 +17,27 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
   });
 
+  const switchTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove('light', 'dark');
     root.classList.add(theme);
+    root.classList.add('theme-switching');
     localStorage.setItem('flow_ops_theme', theme);
+
+    clearTimeout(switchTimerRef.current);
+    switchTimerRef.current = setTimeout(() => {
+      root.classList.remove('theme-switching');
+    }, 90);
+
+    return () => {
+      clearTimeout(switchTimerRef.current);
+    };
   }, [theme]);
 
   const toggleTheme = () => {
-    setTheme(prev => {
-      const next = prev === 'dark' ? 'light' : 'dark';
-      const root = window.document.documentElement;
-      root.classList.add('theme-switching');
-      root.classList.remove('light', 'dark');
-      root.classList.add(next);
-      localStorage.setItem('flow_ops_theme', next);
-      window.setTimeout(() => {
-        root.classList.remove('theme-switching');
-      }, 90);
-      return next;
-    });
+    setTheme(prev => (prev === 'dark' ? 'light' : 'dark'));
   };
 
   return (

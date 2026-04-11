@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect } from 'react';
+import { Component, lazy, Suspense, useEffect } from 'react';
+import type { ErrorInfo, ReactNode } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-dom';
 import Layout from './components/Layout';
 import { DataProvider } from './context/DataContext';
@@ -29,6 +30,43 @@ const Channels = lazy(() => import('./pages/Channels'));
 const Settings = lazy(() => import('./pages/Settings'));
 const Auth = lazy(() => import('./pages/Auth'));
 const WaitingAssignment = lazy(() => import('./pages/WaitingAssignment'));
+
+class AppErrorBoundary extends Component<
+  { children: ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('AppErrorBoundary caught an error:', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-8 text-center">
+          <h1 className="text-xl font-semibold">Something went wrong</h1>
+          <p className="text-sm text-gray-500">An unexpected error occurred while rendering the app.</p>
+          <button
+            type="button"
+            className="mt-2 rounded bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+            onClick={() => window.location.reload()}
+          >
+            Reload page
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 function ActivityDetailRedirect() {
   const { id } = useParams<{ id: string }>();
@@ -126,28 +164,30 @@ function AppShell() {
 
   return (
     <BrowserRouter>
-      <StaleChunkBoundary>
-        <Suspense
-          fallback={
-            <div className="min-h-screen flex items-center justify-center px-4">
-              <div className="w-full max-w-sm">
-                <LoadingLine label="Loading page…" />
+      <AppErrorBoundary>
+        <StaleChunkBoundary>
+          <Suspense
+            fallback={
+              <div className="min-h-screen flex items-center justify-center px-4">
+                <div className="w-full max-w-sm">
+                  <LoadingLine label="Loading page…" />
+                </div>
               </div>
-            </div>
-          }
-        >
-          <Routes>
-            <Route
-              path="/auth"
-              element={(!isSupabaseConfigured || !user) ? <Auth /> : <Navigate to="/" replace />}
-            />
-            <Route
-              path="/*"
-              element={(!isSupabaseConfigured || !user) ? <Navigate to="/auth" replace /> : <AppRoutes />}
-            />
-          </Routes>
-        </Suspense>
-      </StaleChunkBoundary>
+            }
+          >
+            <Routes>
+              <Route
+                path="/auth"
+                element={(!isSupabaseConfigured || !user) ? <Auth /> : <Navigate to="/" replace />}
+              />
+              <Route
+                path="/*"
+                element={(!isSupabaseConfigured || !user) ? <Navigate to="/auth" replace /> : <AppRoutes />}
+              />
+            </Routes>
+          </Suspense>
+        </StaleChunkBoundary>
+      </AppErrorBoundary>
     </BrowserRouter>
   );
 }

@@ -4,6 +4,7 @@ export interface Profile {
   id: string;
   active_cluster_id?: string;
   active_org_id?: string;
+  current_session_id?: string;
   created_at: string;
   updated_at: string;
 }
@@ -202,8 +203,10 @@ export interface Channel {
   org_id: string;
   name: string;
   status: 'active' | 'inactive' | 'archived';
-  is_active?: boolean; 
-  category?: string; 
+  /** @computed Derived from `status === 'active'` by DataContext. */
+  is_active?: boolean;
+  /** @computed Mapped to/from `notes` in the DB by DataContext. */
+  category?: string;
   notes?: string;
   created_at?: string;
   updated_at?: string;
@@ -217,12 +220,15 @@ export interface OperatorActivity {
   actor_role: AppRole;
   actor_label?: string;
   started_at: string;
-  start_time?: string; 
+  /** @computed Alias of `started_at`, added by DataContext. */
+  start_time?: string;
   last_active_at: string;
   ended_at?: string;
-  end_time?: string; 
+  /** @computed Alias of `ended_at`, added by DataContext. */
+  end_time?: string;
   duration_seconds?: number;
-  duration_hours?: number; 
+  /** @computed Derived from `duration_seconds / 3600` by DataContext. */
+  duration_hours?: number;
   is_active: boolean;
   status?: 'active' | 'completed'; 
   created_at?: string;

@@ -8,7 +8,7 @@ import { useConfirm } from '../context/ConfirmContext';
 import { useAppRole } from '../context/AppRoleContext';
 import { useAuth } from '../context/AuthContext';
 import LoadingLine from '../components/LoadingLine';
-import { useLiveFeedUI } from '../context/LiveFeedUIContext';
+import { useWorkspaceHealth } from '../context/WorkspaceHealthContext';
 import { useLabels, LABELS } from '../lib/labels';
 import EmptyState from '../components/EmptyState';
 import { Activity, ActivityRecord } from '../types';
@@ -35,7 +35,7 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
   const { role, canOperateLog, canManageImpact, canAccessAdminUi } = useAppRole();
   const { user } = useAuth();
   const { tx } = useLabels();
-  const liveFeedUi = useLiveFeedUI();
+  const workspaceHealth = useWorkspaceHealth();
   
   // States
   const [isCreating, setIsCreating] = useState(false);
@@ -288,10 +288,10 @@ export default function Activities({ embedded = false }: { embedded?: boolean })
               TOTAL: <span className="font-bold text-stone-900 dark:text-stone-100">{activities.length}</span>
             </span>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-              {liveFeedUi && canAccessAdminUi && (
+              {workspaceHealth && canAccessAdminUi && (
                 <button
                   type="button"
-                  onClick={() => { liveFeedUi.openWorkspaceHealth(); }}
+                  onClick={() => { workspaceHealth.openWorkspaceHealth(); }}
                   className="action-btn-secondary w-full sm:w-auto h-11 border-stone-200/80 text-stone-800 hover:bg-stone-50 dark:border-stone-700 dark:text-stone-200 dark:hover:bg-stone-900/60"
                   title={LABELS.workspacePanels.workspaceHealth.titleHint}
                   aria-label={LABELS.workspacePanels.workspaceHealth.title}

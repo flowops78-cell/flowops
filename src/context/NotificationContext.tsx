@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { CheckCircle2, AlertCircle, Info, AlertTriangle, X } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { sanitizeLabel } from '../lib/labels';
@@ -41,8 +41,14 @@ const classByType: Record<NotificationType, string> = {
 
 export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [items, setItems] = useState<NotificationItem[]>([]);
+  const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
   const dismiss = useCallback((id: string) => {
+    const timerId = timersRef.current.get(id);
+    if (timerId != null) {
+      clearTimeout(timerId);
+      timersRef.current.delete(id);
+    }
     setItems(prev => prev.filter(item => item.id !== id));
   }, []);
 
@@ -57,9 +63,11 @@ export const NotificationProvider: React.FC<{ children: React.ReactNode }> = ({ 
     const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
     setItems(prev => [...prev, { id, type, message: trimmedMessage, durationMs: resolvedDuration }]);
 
-    window.setTimeout(() => {
+    const timerId = window.setTimeout(() => {
+      timersRef.current.delete(id);
       setItems(prev => prev.filter(item => item.id !== id));
     }, resolvedDuration);
+    timersRef.current.set(id, timerId as unknown as ReturnType<typeof setTimeout>);
   }, []);
 
   const value = useMemo<NotificationContextType>(() => ({ notify, dismiss }), [notify, dismiss]);

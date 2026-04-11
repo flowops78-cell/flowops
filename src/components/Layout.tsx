@@ -17,7 +17,7 @@ import { ChevronDown, Globe } from 'lucide-react';
 import EntitiesIcon from './icons/EntitiesIcon';
 import { getRoleLabel, LABELS } from '../lib/labels';
 import { SETTINGS_PASSWORD_HASH } from '../lib/settingsDeepLinks';
-import { LiveFeedUIProvider } from '../context/LiveFeedUIContext';
+import { WorkspaceHealthProvider } from '../context/WorkspaceHealthContext';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { theme, toggleTheme } = useTheme();
@@ -597,11 +597,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           isFocusFullscreen ? "pt-4 lg:pt-4" : "pt-[calc(4rem+env(safe-area-inset-top,0px))] lg:pt-8"
         )}
         >
-          <LiveFeedUIProvider openWorkspaceHealth={openWorkspaceHealth}>
+          <WorkspaceHealthProvider openWorkspaceHealth={openWorkspaceHealth}>
             <div className="desktop-pro w-full min-w-0">
               {children}
             </div>
-          </LiveFeedUIProvider>
+          </WorkspaceHealthProvider>
         </div>
       </main>
 
