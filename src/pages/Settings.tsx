@@ -214,7 +214,8 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   const [confirmPassword, setConfirmPassword] = React.useState('');
   const [isUpdatingPassword, setIsUpdatingPassword] = React.useState(false);
 
-  const canViewOperatorLogs = canAccessAdminUi;
+  /** Workspace admin UI: invites, access requests, default invites — not “view logs” literally. */
+  const canManageWorkspaceAccess = canAccessAdminUi;
   const canManageMetaOrgAdmins = role === 'admin';
   const [isClearingGlobalData, setIsClearingGlobalData] = React.useState(false);
   const [accessInvites, setAccessInvites] = React.useState<AccessInviteRow[]>([]);
@@ -397,7 +398,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
   };
 
   const fetchAccessRequests = React.useCallback(async () => {
-    if (!isSupabaseConfigured || !supabase || !canViewOperatorLogs) return;
+    if (!isSupabaseConfigured || !supabase || !canManageWorkspaceAccess) return;
     setRequestsLoading(true);
     setRequestsNotice(null);
     setRequestsNoticeLoginValue(null);
@@ -425,10 +426,10 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     } finally {
       setRequestsLoading(false);
     }
-  }, [canViewOperatorLogs]);
+  }, [canManageWorkspaceAccess]);
 
   const fetchAccessInvites = React.useCallback(async () => {
-    if (!isSupabaseConfigured || !supabase || !canViewOperatorLogs) return;
+    if (!isSupabaseConfigured || !supabase || !canManageWorkspaceAccess) return;
     setInviteLoading(true);
     try {
       const { data, error } = await supabase
@@ -454,7 +455,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
     } finally {
       setInviteLoading(false);
     }
-  }, [canViewOperatorLogs]);
+  }, [canManageWorkspaceAccess]);
 
   const fetchClusterAdmins = React.useCallback(async (
     orgIdOverride?: string,
@@ -1033,7 +1034,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
             </div>
           )}
 
-          {canViewOperatorLogs && (
+          {canManageWorkspaceAccess && (
             <div id="settings-grant-access" className={cn(slot, 'scroll-mt-24')}>
               <div className="mb-3 flex items-center justify-between gap-2">
                 <p className="text-sm font-medium text-stone-800 dark:text-stone-200">People</p>
@@ -1184,7 +1185,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
           ) : null}
         </div>
 
-        {canViewOperatorLogs && accessRequests.length > 0 && (
+        {canManageWorkspaceAccess && accessRequests.length > 0 && (
           <div className={slot}>
             <div className="mb-3 flex items-center justify-between">
               <p className="text-sm font-medium text-stone-800 dark:text-stone-200">Access requests</p>
@@ -1323,7 +1324,7 @@ export default function Settings({ embedded = false }: { embedded?: boolean }) {
                 </div>
               </div>
 
-              {canViewOperatorLogs && (
+              {canManageWorkspaceAccess && (
                 <div className={slot}>
                   <p className="mb-3 text-sm font-medium text-stone-800 dark:text-stone-200">Default invites</p>
                   <div className="grid max-w-lg grid-cols-3 gap-2">

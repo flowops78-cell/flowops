@@ -23,6 +23,7 @@ import { useNotification } from '../context/NotificationContext';
 import { useConfirm } from '../context/ConfirmContext';
 import { Collaboration, Entity, Activity } from '../types';
 import { cn, formatValue, parseNonNegativeNumber } from '../lib/utils';
+import { LABELS } from '../lib/labels';
 
 const getProfileName = (name?: string) => name?.trim() || 'Untitled';
 
@@ -236,7 +237,7 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
     if (!canManageImpact || deletingProfileId === profileId) return;
 
     const ok = await confirm({
-      title: 'Remove network profile?',
+      title: LABELS.collaborationsPage.removeConfirmTitle,
       message: 'Remove this profile permanently? This cannot be undone.',
       danger: true,
       confirmLabel: 'Remove',
@@ -265,6 +266,10 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
         </div>
       )}
 
+      <div className="rounded-xl border border-sky-200/80 bg-sky-50/90 px-4 py-3 text-xs leading-relaxed text-sky-900 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100/90">
+        {LABELS.collaborationsPage.channelVsChannelsHint}
+      </div>
+
       {!embedded && (
         <div className="section-card flex items-center justify-between gap-4 p-5 lg:p-6">
           <div className="flex items-center gap-4">
@@ -272,8 +277,8 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
               <Handshake size={24} className="text-stone-900 dark:text-stone-100" />
             </div>
             <div>
-              <h2 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">Network</h2>
-              <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">Profiles, linked entities, and recent activity touchpoints.</p>
+              <h2 className="text-2xl font-bold tracking-tight text-stone-900 dark:text-stone-100">{LABELS.collaborationsPage.title}</h2>
+              <p className="mt-1 text-xs text-stone-500 dark:text-stone-400">{LABELS.collaborationsPage.subtitle}</p>
             </div>
           </div>
           {activeProfiles.length > 0 && (
@@ -295,7 +300,9 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
           <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-stone-200 bg-stone-50 text-stone-400 dark:border-stone-700 dark:bg-stone-800/80 dark:text-stone-500">
             <Handshake size={28} strokeWidth={1.5} aria-hidden />
           </div>
-          {!embedded && <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">No network profiles yet</h3>}
+          {!embedded && (
+            <h3 className="text-lg font-semibold text-stone-900 dark:text-stone-100">{LABELS.collaborationsPage.emptyTitle}</h3>
+          )}
           <p className="max-w-sm text-sm text-stone-500 dark:text-stone-400">Add a profile to attribute entities and route flow.</p>
           <button
             type="button"
@@ -582,6 +589,9 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
 
                     {isDetailAdvancedOpen && (
                       <div className="mt-4 space-y-4 border-t border-stone-200 pt-4 dark:border-stone-800">
+                        <p className="text-[11px] leading-relaxed text-stone-600 dark:text-stone-400">
+                          {LABELS.collaborationsPage.advancedWeightsIntro}
+                        </p>
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                           <div className="space-y-1.5">
                             <label className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Profile type</label>
@@ -605,27 +615,45 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
                               <option value="hybrid">Hybrid</option>
                             </select>
                           </div>
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Factor</label>
-                            <input
-                              className="control-input"
-                              type="number"
-                              step="0.01"
-                              value={editParticipationFactor}
-                              onChange={event => setEditParticipationFactor(event.target.value)}
-                              disabled={!canManageImpact}
-                            />
-                          </div>
-                          <div className="space-y-1.5">
-                            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Overhead</label>
-                            <input
-                              className="control-input"
-                              type="number"
-                              step="0.1"
-                              value={editOverheadWeight}
-                              onChange={event => setEditOverheadWeight(event.target.value)}
-                              disabled={!canManageImpact}
-                            />
+                          <div className="space-y-1.5 sm:col-span-2">
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">
+                                  {LABELS.collaborationsPage.participationFactorLabel}
+                                </label>
+                                <input
+                                  className="control-input"
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  placeholder={LABELS.collaborationsPage.participationFactorPlaceholder}
+                                  value={editParticipationFactor}
+                                  onChange={event => setEditParticipationFactor(event.target.value)}
+                                  disabled={!canManageImpact}
+                                />
+                                <p className="text-[11px] leading-relaxed text-stone-500 dark:text-stone-400">
+                                  {LABELS.collaborationsPage.participationFactorHint}
+                                </p>
+                              </div>
+                              <div className="space-y-1.5">
+                                <label className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">
+                                  {LABELS.collaborationsPage.overheadWeightLabel}
+                                </label>
+                                <NumericInputWithSuffix
+                                  suffix="%"
+                                  type="number"
+                                  step="0.1"
+                                  min="0"
+                                  placeholder={LABELS.collaborationsPage.overheadWeightPlaceholder}
+                                  value={editOverheadWeight}
+                                  onChange={event => setEditOverheadWeight(event.target.value)}
+                                  disabled={!canManageImpact}
+                                />
+                                <p className="text-[11px] leading-relaxed text-stone-500 dark:text-stone-400">
+                                  {LABELS.collaborationsPage.overheadWeightHint}
+                                </p>
+                              </div>
+                            </div>
                           </div>
                         </div>
 
@@ -650,7 +678,7 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
                   <Handshake size={22} strokeWidth={1.5} aria-hidden />
                 </span>
                 <p className="text-sm font-medium text-stone-600 dark:text-stone-300">Choose a profile</p>
-                <p className="max-w-xs text-xs text-stone-500 dark:text-stone-400">Select a network profile on the left to see linked entities and metrics.</p>
+                <p className="max-w-xs text-xs text-stone-500 dark:text-stone-400">{LABELS.collaborationsPage.selectProfileHint}</p>
               </div>
             )}
           </section>
@@ -731,6 +759,9 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
 
                   {isAddAdvancedOpen && (
                     <div className="mt-4 space-y-3 border-t border-stone-200 pt-4 dark:border-stone-800">
+                      <p className="text-[11px] leading-relaxed text-stone-600 dark:text-stone-400">
+                        {LABELS.collaborationsPage.advancedWeightsIntro}
+                      </p>
                       <div className="space-y-1.5">
                         <label className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Profile type</label>
                         <select className="control-input" value={role} onChange={event => setRole(event.target.value as 'collaboration' | 'channel' | 'hybrid')}>
@@ -741,12 +772,38 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
                       </div>
                       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                         <div className="space-y-1.5">
-                          <label className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Factor</label>
-                          <input className="control-input" type="number" step="0.01" value={newParticipationFactor} onChange={event => setNewParticipationFactor(event.target.value)} />
+                          <label className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">
+                            {LABELS.collaborationsPage.participationFactorLabel}
+                          </label>
+                          <input
+                            className="control-input"
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            placeholder={LABELS.collaborationsPage.participationFactorPlaceholder}
+                            value={newParticipationFactor}
+                            onChange={event => setNewParticipationFactor(event.target.value)}
+                          />
+                          <p className="text-[11px] leading-relaxed text-stone-500 dark:text-stone-400">
+                            {LABELS.collaborationsPage.participationFactorHint}
+                          </p>
                         </div>
                         <div className="space-y-1.5">
-                          <label className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">Overhead</label>
-                          <input className="control-input" type="number" step="0.1" value={newOverheadWeight} onChange={event => setNewOverheadWeight(event.target.value)} />
+                          <label className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500 dark:text-stone-400">
+                            {LABELS.collaborationsPage.overheadWeightLabel}
+                          </label>
+                          <NumericInputWithSuffix
+                            suffix="%"
+                            type="number"
+                            step="0.1"
+                            min="0"
+                            placeholder={LABELS.collaborationsPage.overheadWeightPlaceholder}
+                            value={newOverheadWeight}
+                            onChange={event => setNewOverheadWeight(event.target.value)}
+                          />
+                          <p className="text-[11px] leading-relaxed text-stone-500 dark:text-stone-400">
+                            {LABELS.collaborationsPage.overheadWeightHint}
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -767,6 +824,24 @@ export default function CollaborationNetwork({ embedded = false }: { embedded?: 
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function NumericInputWithSuffix({
+  suffix,
+  className,
+  ...props
+}: React.ComponentProps<'input'> & { suffix: string }) {
+  return (
+    <div className="relative">
+      <input {...props} className={cn('control-input pr-9', className)} />
+      <span
+        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-stone-400 dark:text-stone-500"
+        aria-hidden
+      >
+        {suffix}
+      </span>
     </div>
   );
 }

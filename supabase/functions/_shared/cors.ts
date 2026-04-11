@@ -1,9 +1,10 @@
-const STATIC_ORIGINS = [
-  'https://flow-ops78.netlify.app',
-  'https://flowops.flowops78.workers.dev',
-  'https://cloudflare-workers-autoconfig-flowops.flowops78.workers.dev',
-  'https://flowops.pages.dev',
-  'https://flow-ops.pages.dev',
+/**
+ * Browser origins allowed to call Edge Functions.
+ *
+ * Production: set `FLOW_OPS_ALLOWED_ORIGINS` (comma-separated exact origins, e.g. https://app.example.com).
+ * Local dev: localhost / 127.0.0.1 ports below are always allowed for OPTIONS + API calls.
+ */
+const LOCAL_DEV_ORIGINS = [
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'http://localhost:5173',
@@ -13,6 +14,7 @@ const STATIC_ORIGINS = [
   'http://localhost:3001',
   'http://127.0.0.1:3001',
   'http://localhost:3002',
+  'http://127.0.0.1:3002',
 ];
 
 const ALLOWED_ORIGIN_ENV_KEYS = [
@@ -45,7 +47,7 @@ const parseOriginList = (value: string | null | undefined): string[] => {
 };
 
 const ALLOWED_ORIGINS = Array.from(new Set([
-  ...STATIC_ORIGINS,
+  ...LOCAL_DEV_ORIGINS,
   ...ALLOWED_ORIGIN_ENV_KEYS.flatMap((key) => parseOriginList(Deno.env.get(key))),
 ]));
 

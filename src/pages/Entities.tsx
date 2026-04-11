@@ -1633,13 +1633,13 @@ function EntityRow({ entity, stats, updateEntity, onOpenOverlay, onOpenProfile, 
           </span>
         </td>
         <td className="px-4 py-3">
-          <label className="sr-only">Network profile</label>
+          <label className="sr-only">Collaboration profile</label>
           <select
             className="w-full p-1 border border-stone-300 dark:border-stone-600 rounded bg-white dark:bg-stone-700 text-stone-900 dark:text-stone-100 text-xs"
             value={data.collaboration_id || ''}
             onChange={e => setData({...data, collaboration_id: e.target.value || undefined})}
           >
-            <option value="">Network profile (optional)</option>
+            <option value="">Collaboration profile (optional)</option>
             {collaborations.map(a => (
               <option key={a.id} value={a.id}>{a.name}</option>
             ))}
@@ -1677,7 +1677,7 @@ function EntityRow({ entity, stats, updateEntity, onOpenOverlay, onOpenProfile, 
             {getEntityDisplayName(entity.name)}
             {entity.collaboration_id ? (
               <span className="block text-[10px] font-normal text-stone-400 truncate max-w-[200px]">
-                {collaborations.find(c => c.id === entity.collaboration_id)?.name ?? 'Network profile'}
+                {collaborations.find(c => c.id === entity.collaboration_id)?.name ?? 'Collaboration profile'}
               </span>
             ) : null}
           </span>

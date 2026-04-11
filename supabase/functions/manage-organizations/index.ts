@@ -1,7 +1,12 @@
 /// <reference path="../_shared/edge-runtime.d.ts" />
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { ensureOrgMembership, getCallerAuthorityContext, syncOrgGraph } from '../_shared/auth-model.ts';
+import {
+  ensureOrgMembership,
+  getCallerAuthorityContext,
+  syncOrgGraph,
+  type CallerAuthorityContext,
+} from '../_shared/auth-model.ts';
 import { getCorsHeaders } from '../_shared/cors.ts';
 import { checkRateLimit, resolveClientIp, rateLimitResponse } from '../_shared/rate-limiter.ts';
 
@@ -106,6 +111,58 @@ function secureStringEqual(a: string, b: string): boolean {
   let x = 0;
   for (let i = 0; i < a.length; i++) x |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return x === 0;
+}
+
+async function resolveAuditOrgId(
+  adminClient: SupabaseAdmin,
+  authority: CallerAuthorityContext,
+  clusterId?: string | null,
+  preferredOrgId?: string | null,
+): Promise<string | null> {
+  if (preferredOrgId && authority.managedOrgIds.includes(preferredOrgId)) {
+    return preferredOrgId;
+  }
+  if (authority.workspaceAdminOrgIds[0]) return authority.workspaceAdminOrgIds[0];
+  if (authority.managedOrgIds[0]) return authority.managedOrgIds[0];
+  const cid = clusterId ?? authority.clusterId;
+  if (cid) {
+    const { data } = await adminClient
+      .from('organizations')
+      .select('id')
+      .eq('cluster_id', cid)
+      .limit(1)
+      .maybeSingle();
+    return data?.id ?? null;
+  }
+  return null;
+}
+
+async function insertManageOrgAudit(
+  adminClient: SupabaseAdmin,
+  params: {
+    orgId: string | null;
+    actorUserId: string;
+    actorLabel: string;
+    action: string;
+    entity: string;
+    details: string;
+  },
+): Promise<void> {
+  if (!params.orgId) return;
+  const details =
+    params.details.length > 120 ? `${params.details.slice(0, 117)}...` : params.details;
+  const { error } = await adminClient.from('audit_events').insert({
+    org_id: params.orgId,
+    actor_user_id: params.actorUserId,
+    actor_label: params.actorLabel,
+    actor_role: 'admin',
+    action: params.action,
+    entity: params.entity,
+    entity_id: null,
+    amount: null,
+    details,
+  });
+  if (error) console.error('manage-organizations audit:', error);
 }
 
 Deno.serve(async (request: Request) => {
@@ -436,6 +493,17 @@ Deno.serve(async (request: Request) => {
 
       if (upsertError) return json(400, { error: upsertError.message }, origin);
 
+      const actorLabel = user.email ?? callerUserId;
+      const auditOrgId = await resolveAuditOrgId(adminClient, authority, clusterId);
+      await insertManageOrgAudit(adminClient, {
+        orgId: auditOrgId,
+        actorUserId: callerUserId,
+        actorLabel,
+        action: 'cluster_role_set',
+        entity: 'cluster_membership',
+        details: JSON.stringify({ target_user_id: targetUserId, cluster_id: clusterId, role }),
+      });
+
       return json(200, { ok: true }, origin);
     }
 
@@ -465,6 +533,17 @@ Deno.serve(async (request: Request) => {
       // Basic scope check for now - improve if needed
       const { error: deleteError } = await adminClient.auth.admin.deleteUser(targetUserId);
       if (deleteError) return json(400, { error: deleteError.message }, origin);
+
+      const actorLabelDelete = user.email ?? callerUserId;
+      const auditOrgIdDelete = await resolveAuditOrgId(adminClient, authority, clusterId);
+      await insertManageOrgAudit(adminClient, {
+        orgId: auditOrgIdDelete,
+        actorUserId: callerUserId,
+        actorLabel: actorLabelDelete,
+        action: 'admin_delete_user',
+        entity: 'auth_user',
+        details: JSON.stringify({ target_user_id: targetUserId }),
+      });
 
       return json(200, { ok: true }, origin);
     }
@@ -506,12 +585,38 @@ Deno.serve(async (request: Request) => {
         return json(403, { error: 'Target user is outside of your administrative scope.' }, origin);
       }
 
+      const logPasswordAudit = async (via: string) => {
+        const actorLabelPw = user.email ?? callerUserId;
+        const sharedClusterId = sharesAdminCluster
+          ? (targetClusterRows ?? []).map((r: { cluster_id: string }) => r.cluster_id).find((cid) =>
+            authority.administeredClusterIds.includes(cid)
+          ) ?? null
+          : null;
+        const firstManagedTargetOrg = (targetOrgRows ?? []).map((r: { org_id: string }) => r.org_id)
+          .find((id) => authority.managedOrgIds.includes(id)) ?? null;
+        const auditOrgIdPw = await resolveAuditOrgId(
+          adminClient,
+          authority,
+          sharedClusterId ?? authority.clusterId,
+          firstManagedTargetOrg,
+        );
+        await insertManageOrgAudit(adminClient, {
+          orgId: auditOrgIdPw,
+          actorUserId: callerUserId,
+          actorLabel: actorLabelPw,
+          action: 'admin_reset_password',
+          entity: 'auth_user',
+          details: JSON.stringify({ target_user_id: targetUserId, via }),
+        });
+      };
+
       if (newPassword) {
         const { error: resetError } = await adminClient.auth.admin.updateUserById(
           targetUserId,
           { password: newPassword }
         );
         if (resetError) return json(400, { error: resetError.message }, origin);
+        await logPasswordAudit('direct_password');
         return json(200, { ok: true, message: 'Password updated.' }, origin);
       }
 
@@ -522,6 +627,7 @@ Deno.serve(async (request: Request) => {
       const { error: sendError } = await adminClient.auth.resetPasswordForEmail(targetUser.user.email);
       if (sendError) return json(400, { error: sendError.message }, origin);
 
+      await logPasswordAudit('reset_email');
       return json(200, { ok: true, message: 'Reset email sent.' }, origin);
     }
 

@@ -4,6 +4,8 @@ export interface Profile {
   id: string;
   active_cluster_id?: string;
   active_org_id?: string;
+  /** Operator session row id when session tracking is enabled (`public.profiles.current_session_id`). */
+  current_session_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -166,7 +168,7 @@ export interface WorkspaceMember {
   updated_at?: string;
 }
 
-/** Network profile row. UI calls this a “network profile”; stored `collaboration_type` values are historic names (`channel` = reserve/flow routing, not the Channels reserve-account list). */
+/** Collaboration (“network”) profile row. `collaboration_type` “channel” is flow routing for linked entities, not the Channels reserve-account list. */
 export interface Collaboration {
   id: string;
   org_id: string;
@@ -202,8 +204,10 @@ export interface Channel {
   org_id: string;
   name: string;
   status: 'active' | 'inactive' | 'archived';
-  is_active?: boolean; 
-  category?: string; 
+  /** Client-only: derived as `status === 'active'` in `DataContext` for UI filters. */
+  is_active?: boolean;
+  /** Client-only: transfer routing label mapped from DB column `notes` in channel forms. */
+  category?: string;
   notes?: string;
   created_at?: string;
   updated_at?: string;

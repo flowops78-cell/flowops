@@ -16,6 +16,7 @@ import { enableHorizontalMouseDrag } from './lib/enableHorizontalMouseDrag';
 import { useData } from './context/DataContext';
 import { LABELS } from './lib/labels';
 import { StaleChunkBoundary } from './components/StaleChunkBoundary';
+import { AppErrorBoundary } from './components/AppErrorBoundary';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const ActivityOverview = lazy(() => import('./pages/ActivityOverview'));
@@ -157,13 +158,15 @@ export default function App() {
     <ThemeProvider>
       <AuthProvider>
         <AppRoleProvider>
-          <NotificationProvider>
-            <ConfirmProvider>
-              <DataProvider>
-                <AppShell />
-              </DataProvider>
-            </ConfirmProvider>
-          </NotificationProvider>
+          <AppErrorBoundary>
+            <NotificationProvider>
+              <ConfirmProvider>
+                <DataProvider>
+                  <AppShell />
+                </DataProvider>
+              </ConfirmProvider>
+            </NotificationProvider>
+          </AppErrorBoundary>
         </AppRoleProvider>
       </AuthProvider>
     </ThemeProvider>

@@ -31,21 +31,21 @@ async function fetchOrganizationMemberships(orgId: string) {
   if (!supabase) {
     return { data: null, error: new Error('Supabase not configured') } as const;
   }
-  let res = await supabase
+  const resWithEmail = await supabase
     .from('organization_memberships')
     .select(DATA_SELECT.organization_memberships)
     .eq('org_id', orgId)
     .eq('status', 'active')
     .order('display_name', { ascending: true });
-  if (res.error && isMissingAccountEmailPostgrestError(res.error)) {
-    res = await supabase
+  if (resWithEmail.error && isMissingAccountEmailPostgrestError(resWithEmail.error)) {
+    return supabase
       .from('organization_memberships')
       .select(DATA_SELECT.organization_memberships_no_account_email)
       .eq('org_id', orgId)
       .eq('status', 'active')
       .order('display_name', { ascending: true });
   }
-  return res;
+  return resWithEmail;
 }
 
 export interface EntityBalance {
@@ -141,6 +141,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // In-flight deduplication: prevents double-submit from rapid clicks
   const inflightRef = React.useRef<Set<string>>(new Set());
+  /** Supersedes stale async profile writes when org or role deps change quickly. */
+  const orgProfilePersistGen = React.useRef(0);
+  /** Latest `switchOrg` wins if invoked again before awaits complete. */
+  const switchOrgGen = React.useRef(0);
 
   const [loading, setLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
@@ -489,6 +493,8 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     // Persist to server so the next session resolves instantly too (include cluster for RLS + edge authority).
     if (supabase && user?.id) {
+      orgProfilePersistGen.current += 1;
+      const persistGen = orgProfilePersistGen.current;
       void (async () => {
         const fromMap = availableOrgs[target]?.cluster_id;
         const clusterToPersist =
@@ -496,11 +502,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           (await supabase.from('organizations').select('cluster_id').eq('id', target).maybeSingle()).data
             ?.cluster_id ??
           null;
+        if (persistGen !== orgProfilePersistGen.current) return;
         const updates: { active_org_id: string; active_cluster_id?: string | null } = {
           active_org_id: target,
         };
         if (clusterToPersist) updates.active_cluster_id = clusterToPersist;
         const { error } = await supabase.from('profiles').update(updates).eq('id', user.id);
+        if (persistGen !== orgProfilePersistGen.current) return;
         if (error) console.error('Error persisting org context:', error);
       })();
     }
@@ -597,11 +605,18 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return fn().finally(() => { inflightRef.current.delete(key); });
   };
 
-  // ─── Entity mutations (optimistic local update — 1 DB call, 0 refetch) ──
+  // ─── Entity mutations ─────────────────────────────────────────────────────
   const addEntity = async (data: any) => {
     const orgId = requireOrgScope();
     const key = `addEntity:${orgId}:${String(data.name).toLowerCase()}`;
     return withInflight(key, async () => {
+      const rawTotal = data?.total;
+      const startingTotal =
+        rawTotal === undefined || rawTotal === null || rawTotal === ''
+          ? 0
+          : Number(rawTotal);
+      const starting_total = Number.isFinite(startingTotal) ? startingTotal : 0;
+
       const { data: row, error } = await supabase!
         .from('entities')
         .insert([{
@@ -610,31 +625,42 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
           collaboration_id: data.collaboration_id,
           referred_by_entity_id: data.referred_by_entity_id,
           referring_collaboration_id: data.referring_collaboration_id,
-          starting_total: Number(data.total) || 0,
+          starting_total,
         }])
         .select('*')
         .single();
       if (error) throw error;
       setEntities(prev => [...prev, row]);
+      // entity_balances / list "Total" come from the view map — refresh so starting_total shows immediately.
+      await refreshRecordsAndBalances(orgId);
       return row.id as string;
     });
   };
 
   const updateEntity = async (entity: any) => {
     return withInflight(`updateEntity:${entity.id}`, async () => {
+      const orgId = entity.org_id as string | undefined;
+      const updatePayload: Record<string, unknown> = {
+        name: entity.name,
+        collaboration_id: entity.collaboration_id,
+        referred_by_entity_id: entity.referred_by_entity_id,
+        referring_collaboration_id: entity.referring_collaboration_id,
+      };
+      if (entity.starting_total !== undefined && entity.starting_total !== null) {
+        const n = Number(entity.starting_total);
+        if (Number.isFinite(n)) updatePayload.starting_total = n;
+      }
       const { data: row, error } = await supabase!
         .from('entities')
-        .update({
-          name: entity.name,
-          collaboration_id: entity.collaboration_id,
-          referred_by_entity_id: entity.referred_by_entity_id,
-          referring_collaboration_id: entity.referring_collaboration_id,
-        })
+        .update(updatePayload)
         .eq('id', entity.id)
         .select('*')
         .single();
       if (error) throw error;
       if (row) setEntities(prev => prev.map(e => e.id === entity.id ? row : e));
+      if (orgId && updatePayload.starting_total !== undefined) {
+        await refreshRecordsAndBalances(orgId);
+      }
     });
   };
 
@@ -1121,28 +1147,33 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { refreshAuthority } = useAppRole();
 
   const switchOrg = async (orgId: string) => {
+    switchOrgGen.current += 1;
+    const switchId = switchOrgGen.current;
     setActiveOrgId(orgId);
     if (typeof window !== 'undefined') {
       localStorage.setItem('flow_ops_last_org_id', orgId);
     }
-    
+
     const { data: { user } } = await supabase!.auth.getUser();
+    if (switchId !== switchOrgGen.current) return;
     if (user) {
       const selectedOrg = availableOrgs[orgId];
-      const updates: any = { active_org_id: orgId };
+      const updates: { active_org_id: string; active_cluster_id?: string | null } = { active_org_id: orgId };
       if (selectedOrg?.cluster_id) {
         updates.active_cluster_id = selectedOrg.cluster_id;
       } else {
         // Fallback: fetch org cluster_id if not in availableOrgs map yet
         const { data: orgData } = await supabase!.from('organizations').select('cluster_id').eq('id', orgId).maybeSingle();
+        if (switchId !== switchOrgGen.current) return;
         if (orgData?.cluster_id) updates.active_cluster_id = orgData.cluster_id;
       }
+      if (switchId !== switchOrgGen.current) return;
       await supabase!.from('profiles').update(updates).eq('id', user.id);
-      
-      // CRITICAL: Refresh role context after profile update to sync authority
+      if (switchId !== switchOrgGen.current) return;
+
       await refreshAuthority();
     }
-    
+
     // fetchData will be triggered by useEffect dependency on activeOrgId
   };
 

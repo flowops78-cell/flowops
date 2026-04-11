@@ -72,7 +72,7 @@ export default defineConfig(({ mode }) => {
     },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(__dirname, 'src'),
       },
     },
     build: {
@@ -144,6 +144,7 @@ export default defineConfig(({ mode }) => {
     test: {
       environment: 'jsdom',
       globals: true,
+      include: ['src/**/*.{test,spec}.{ts,tsx}'],
     },
   };
 });

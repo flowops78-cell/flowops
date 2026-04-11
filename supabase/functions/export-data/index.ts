@@ -26,6 +26,56 @@ interface ExportPayload {
   dataset: ExportDataset;
 }
 
+const EXPORT_SCOPES: readonly ExportScope[] = ['cluster', 'org'];
+const EXPORT_DATASETS: readonly ExportDataset[] = [
+  'entities',
+  'activities',
+  'records',
+  'organization_memberships',
+  'collaborations',
+  'channels',
+  'audit_events',
+  'all',
+];
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value: unknown): value is string {
+  return typeof value === 'string' && UUID_RE.test(value);
+}
+
+function parseExportPayload(raw: unknown): { ok: true; payload: ExportPayload } | { ok: false; message: string } {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { ok: false, message: 'Request body must be a JSON object.' };
+  }
+  const o = raw as Record<string, unknown>;
+  const scope = o.scope;
+  const dataset = o.dataset;
+  if (typeof scope !== 'string' || !EXPORT_SCOPES.includes(scope as ExportScope)) {
+    return { ok: false, message: 'Invalid or missing scope (expected cluster | org).' };
+  }
+  if (typeof dataset !== 'string' || !EXPORT_DATASETS.includes(dataset as ExportDataset)) {
+    return { ok: false, message: 'Invalid or missing dataset.' };
+  }
+  const org_id = o.org_id;
+  const cluster_id = o.cluster_id;
+  if (org_id !== undefined && org_id !== null && org_id !== '' && !isUuid(org_id)) {
+    return { ok: false, message: 'Invalid org_id (expected UUID).' };
+  }
+  if (cluster_id !== undefined && cluster_id !== null && cluster_id !== '' && !isUuid(cluster_id)) {
+    return { ok: false, message: 'Invalid cluster_id (expected UUID).' };
+  }
+  return {
+    ok: true,
+    payload: {
+      scope: scope as ExportScope,
+      dataset: dataset as ExportDataset,
+      org_id: typeof org_id === 'string' && org_id ? org_id : undefined,
+      cluster_id: typeof cluster_id === 'string' && cluster_id ? cluster_id : undefined,
+    },
+  };
+}
+
 // Fields that must never appear in any export output
 const REDACTED_FIELDS = new Set([
   'password', 'password_hash', 'token_hash', 'raw_token', 'secret',
@@ -152,14 +202,23 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const body: ExportPayload = await req.json();
-    const { scope, org_id, cluster_id, dataset } = body;
-
-    if (!scope || !dataset) {
-      return new Response(JSON.stringify({ error: 'scope and dataset are required.' }), {
+    let rawBody: unknown;
+    try {
+      rawBody = await req.json();
+    } catch {
+      return new Response(JSON.stringify({ error: 'Invalid JSON body.' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    const parsed = parseExportPayload(rawBody);
+    if (!parsed.ok) {
+      return new Response(JSON.stringify({ error: parsed.message }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const { scope, org_id, cluster_id, dataset } = parsed.payload;
 
     let resolvedOrgId: string | null = org_id ?? null;
     let resolvedClusterScope = false;

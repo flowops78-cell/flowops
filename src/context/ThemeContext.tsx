@@ -25,13 +25,10 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, [theme]);
 
   const toggleTheme = () => {
-    setTheme(prev => {
+    setTheme((prev) => {
       const next = prev === 'dark' ? 'light' : 'dark';
       const root = window.document.documentElement;
       root.classList.add('theme-switching');
-      root.classList.remove('light', 'dark');
-      root.classList.add(next);
-      localStorage.setItem('flow_ops_theme', next);
       window.setTimeout(() => {
         root.classList.remove('theme-switching');
       }, 90);

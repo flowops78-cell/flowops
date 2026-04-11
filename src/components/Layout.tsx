@@ -46,7 +46,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         { to: '/activity', icon: <History size={18} />, label: 'Activities', hint: 'Activity records and management' },
         { to: '/entities', icon: <EntitiesIcon size={18} />, label: 'Entities', hint: 'Entity list and detailed profiles' },
         { to: '/channels', icon: <Circle size={18} />, label: 'Channels', hint: 'Channel tracking and settings overview' },
-        { to: '/collaborations', icon: <Handshake size={18} />, label: 'Network', hint: 'Network profiles and linked entities' },
+        { to: '/collaborations', icon: <Handshake size={18} />, label: 'Collaborations', hint: 'Profiles linked to entities; not the reserve list under Channels' },
         { to: '/roster', icon: <UserCog size={18} />, label: 'Members', hint: 'Workspace accounts and operator sessions' },
         { to: '/settings', icon: <Settings size={18} />, label: 'Settings', hint: 'System preferences and access control' },
 
@@ -54,13 +54,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     },
   ];
 
-  // Match App.tsx: non-admins are redirected away from dashboard, entities, channels, collaborations; Settings is open to any signed-in member with a workspace (password, export, etc.).
+  // Match App.tsx: non-admins are redirected away from dashboard, entities, channels, /collaborations; Settings is open to any signed-in member with a workspace (password, export, etc.).
   const operatorNavGroups = [
     {
       label: '',
       items: [
         { to: '/activity', icon: <History size={18} />, label: 'Activities', hint: 'Activity records and management' },
         { to: '/roster', icon: <UserCog size={18} />, label: 'Members', hint: 'Workspace accounts and operator sessions' },
+        { to: '/settings', icon: <Settings size={18} />, label: 'Settings', hint: 'Password, export, and workspace preferences' },
       ],
     },
   ];
@@ -178,7 +179,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               c: '/activity',
               v: '/activity',
               t: '/roster',
-              s: '/activity',
+              s: '/settings',
             };
         const route = goRouteMap[normalizedKey];
         if (route) {

@@ -20,20 +20,27 @@ export function ConfirmProvider({ children }: { children: React.ReactNode }) {
   const [pending, setPending] = useState<Pending | null>(null);
 
   const confirm = useCallback((options: ConfirmOptions) => {
-    return new Promise<boolean>(resolve => {
-      setPending({ ...options, resolve });
+    return new Promise<boolean>((resolve) => {
+      setPending((prev) => {
+        if (prev) prev.resolve(false);
+        return { ...options, resolve };
+      });
     });
   }, []);
 
   const handleCancel = useCallback(() => {
-    pending?.resolve(false);
-    setPending(null);
-  }, [pending]);
+    setPending((prev) => {
+      if (prev) prev.resolve(false);
+      return null;
+    });
+  }, []);
 
   const handleConfirm = useCallback(() => {
-    pending?.resolve(true);
-    setPending(null);
-  }, [pending]);
+    setPending((prev) => {
+      if (prev) prev.resolve(true);
+      return null;
+    });
+  }, []);
 
   useEffect(() => {
     if (!pending) return;

@@ -28,10 +28,10 @@ const shortcutGroups: Array<{ title: string; items: ShortcutItem[] }> = [
       { keys: 'B', action: 'Overview (Dashboard for admin; Activities home for operator/viewer)' },
       { keys: 'A', action: 'Activities' },
       { keys: 'P', action: 'Entities (admin); operators stay on Activities' },
-      { keys: 'C', action: 'Network (admin)' },
+      { keys: 'C', action: 'Collaborations (admin)' },
       { keys: 'V', action: 'Channels (admin)' },
       { keys: 'T', action: 'Members' },
-      { keys: 'S', action: 'Settings (admin)' },
+      { keys: 'S', action: 'Settings (any member with workspace access)' },
     ],
   },
   {
@@ -61,8 +61,8 @@ const shortcutGroups: Array<{ title: string; items: ShortcutItem[] }> = [
   {
     title: 'Channels Page',
     items: [
-      { keys: 'I', action: 'Record inflow' },
-      { keys: 'O', action: 'Record outflow' },
+      { keys: 'I', action: 'Open add channel record (inflow preset)' },
+      { keys: 'O', action: 'Open add channel record (outflow preset)' },
       { keys: 'A', action: 'Add account' },
       { keys: 'F', action: 'Toggle filters' },
     ],

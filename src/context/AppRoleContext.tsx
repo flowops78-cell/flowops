@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { getUserAuthorityContext, isSupabaseConfigured, supabase, type ClusterMeta, type OrgMeta } from '../lib/supabase';
 import { AppRole, normalizeAppRole } from '../lib/roles';
 import { useAuth } from './AuthContext';
@@ -58,6 +58,12 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [manageableClustersState, setManageableClustersState] = useState<ClusterMeta[]>([]);
   const [manageableOrgsByClusterState, setManageableOrgsByClusterState] = useState<Record<string, OrgMeta[]>>({});
   const [profileRoleLoading, setProfileRoleLoading] = useState(false);
+
+  /** Always latest auth user id for async authority refresh (avoids stale closure after sign-out). */
+  const userIdRef = useRef<string | null>(null);
+  userIdRef.current = user?.id ?? null;
+  /** Latest refresh wins; ignores superseded in-flight `getUserAuthorityContext` results. */
+  const authorityRefreshGen = useRef(0);
 
   const roleFromMetadata = user?.user_metadata?.app_role;
   const metadataRole = normalizeAppRole(roleFromMetadata);
@@ -124,9 +130,13 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
     };
   }, [metadataRole, resetAuthorityState, user?.id]);
 
-  const refreshAuthority = async () => {
-    if (!supabase || !user?.id) return;
-    const authority = await getUserAuthorityContext(user.id);
+  const refreshAuthority = useCallback(async () => {
+    if (!supabase || !userIdRef.current) return;
+    const uid = userIdRef.current;
+    const myGen = ++authorityRefreshGen.current;
+    const authority = await getUserAuthorityContext(uid);
+    if (myGen !== authorityRefreshGen.current) return;
+    if (!supabase || userIdRef.current !== uid) return;
     if (authority.source === 'none') {
       resetAuthorityState();
       return;
@@ -140,7 +150,7 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
     setManageableOrgsByClusterState(authority.manageableOrgsByCluster);
     const roleFromProfile = normalizeAppRole(authority.role);
     setProfileRole(roleFromProfile);
-  };
+  }, [resetAuthorityState]);
 
   useEffect(() => {
     if (effectiveServerRole) {
@@ -178,7 +188,19 @@ export const AppRoleProvider: React.FC<{ children: React.ReactNode }> = ({ child
       manageableClusters: manageableClustersState,
       manageableOrgsByCluster: manageableOrgsByClusterState,
     };
-  }, [loading, role, roleLocked, clusterRoleState, isClusterAdminState, clusterIdState, managedOrgIdsState, serverActiveOrgIdState, manageableClustersState, manageableOrgsByClusterState]);
+  }, [
+    loading,
+    role,
+    roleLocked,
+    clusterRoleState,
+    isClusterAdminState,
+    clusterIdState,
+    managedOrgIdsState,
+    serverActiveOrgIdState,
+    manageableClustersState,
+    manageableOrgsByClusterState,
+    refreshAuthority,
+  ]);
 
 
   return <AppRoleContext.Provider value={value}>{children}</AppRoleContext.Provider>;

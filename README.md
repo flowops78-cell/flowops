@@ -80,6 +80,7 @@ Deploy edge functions:
   `supabase secrets set SB_SERVICE_ROLE_KEY=your-service-role-key FLOW_OPS_ALLOWED_ORIGINS=https://your-app.example.com`
 - Verify functions in Supabase Dashboard → Edge Functions.
 - `FLOW_OPS_ALLOWED_ORIGINS` must be a comma-separated list of exact browser origins allowed to call the edge functions. Wildcard preview domains are not trusted.
+- Production and staging app URLs are **not** hardcoded in the Edge CORS helper: every non-localhost origin you use must appear in `FLOW_OPS_ALLOWED_ORIGINS` (or `APP_ALLOWED_ORIGINS` / `PUBLIC_APP_URL` / `SITE_URL`). Local dev ports (3000, 4173, 5173, etc.) remain allowed for convenience.
 - If the functions are not deployed, create/invite the account manually in Supabase Auth and set `app_role` plus organization scope id.
 
 Role-account checklist (recommended):
@@ -135,6 +136,7 @@ Cloudflare response headers:
 - `npm run build` — production build to `dist/`
 - `npm run preview` — preview built app on port 4173
 - `npm run deploy:check` — clean + typecheck + build
+- `npm run debug:admin-user` — service-role check for `admin@admin.os` in Auth (requires Node 20+ and `node --env-file=.env`; same env vars as other debug scripts)
 
 ## Keyboard Shortcuts (Highlights)
 

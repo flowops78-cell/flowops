@@ -33,6 +33,9 @@ export default function WaitingAssignment() {
               <p className="mt-1 text-stone-500 dark:text-stone-400">
                 {LABELS.states.awaitingAccessNextSteps}
               </p>
+              {LABELS.states.awaitingAccessRoleNote ? (
+                <p className="mt-2 text-xs text-stone-500 dark:text-stone-400">{LABELS.states.awaitingAccessRoleNote}</p>
+              ) : null}
             </div>
           </div>
         </div>

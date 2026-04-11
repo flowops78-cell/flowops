@@ -410,6 +410,10 @@ export default function ActivityDetail() {
   const canAddUnits = canOperateLog && activity?.status === 'active';
   const canManageWorkforce = canOperateLog && activity?.status === 'active';
   const canManageEntries = canManageImpact && !isCompleted && !isArchived;
+  const entriesRestrictionMessage =
+    isCompleted || isArchived
+      ? 'Entries, positions, and totals cannot be changed while this activity is completed or archived.'
+      : 'Only workspace admins or operators can change entries, positions, and totals on an active activity.';
   const positionFinderOptions = [
     ...unpositionedActiveEntries.map(record => {
       const unit = entities.find(candidate => candidate.id === record.entity_id);
@@ -630,7 +634,7 @@ export default function ActivityDetail() {
     }
     if (nextStatus === 'completed') {
       if (!canAlign) {
-        notify({ type: 'error', message: 'Only admin/operator can complete activities.' });
+        notify({ type: 'error', message: 'Only a workspace admin can complete activities.' });
         return;
       }
       if (!isTotald) {
@@ -660,7 +664,7 @@ export default function ActivityDetail() {
 
   const guardedUpdateActivityRecord = async (record: ActivityRecord) => {
     if (!canManageEntries) {
-      notify({ type: 'error', message: 'Entries changes are restricted to admin/operator before alignment.' });
+      notify({ type: 'error', message: entriesRestrictionMessage });
       return;
     }
     await updateRecord(record);
@@ -723,7 +727,7 @@ export default function ActivityDetail() {
 
   const guardedDeleteActivityRecord = async (recordId: string) => {
     if (!canManageEntries) {
-      notify({ type: 'error', message: 'Entries changes are restricted to admin/operator before alignment.' });
+      notify({ type: 'error', message: entriesRestrictionMessage });
       return;
     }
     try {
@@ -752,7 +756,7 @@ export default function ActivityDetail() {
 
   const openTotalModal = (record: ActivityRecord) => {
     if (!canManageEntries) {
-      notify({ type: 'error', message: 'Total updates are restricted to admin/operator before alignment.' });
+      notify({ type: 'error', message: entriesRestrictionMessage });
       return;
     }
     setTotalRecord(record);
@@ -766,7 +770,7 @@ export default function ActivityDetail() {
       return;
     }
     if (!canManageEntries) {
-      notify({ type: 'error', message: 'Leave position is restricted to admin/operator before alignment.' });
+      notify({ type: 'error', message: entriesRestrictionMessage });
       return;
     }
     if (record.left_at) {
@@ -785,7 +789,7 @@ export default function ActivityDetail() {
       return;
     }
     if (!canManageEntries) {
-      notify({ type: 'error', message: 'Leave position is restricted to admin/operator before alignment.' });
+      notify({ type: 'error', message: entriesRestrictionMessage });
       return;
     }
     if (record.left_at) {
@@ -813,7 +817,7 @@ export default function ActivityDetail() {
 
   const handlePositionUnit = async (record: ActivityRecord) => {
     if (!canManageEntries) {
-      notify({ type: 'error', message: 'Position assignment is restricted to admin/operator before alignment.' });
+      notify({ type: 'error', message: entriesRestrictionMessage });
       return;
     }
 
@@ -840,7 +844,7 @@ export default function ActivityDetail() {
     if (isPositionActionPending) return;
 
     if (!canManageEntries) {
-      notify({ type: 'error', message: 'Position assignment is restricted to admin/operator before alignment.' });
+      notify({ type: 'error', message: entriesRestrictionMessage });
       return;
     }
 
@@ -1034,8 +1038,12 @@ export default function ActivityDetail() {
   const handleActivityPositionTotalSave = async () => {
     if (isTotalActionPending) return;
 
-    if (!selectedPositionActivityRecord || !canManageEntries) {
-      notify({ type: 'error', message: 'Only admin/operator can update totals before alignment.' });
+    if (!selectedPositionActivityRecord) {
+      notify({ type: 'error', message: 'Select a position to update its total.' });
+      return;
+    }
+    if (!canManageEntries) {
+      notify({ type: 'error', message: entriesRestrictionMessage });
       return;
     }
 
@@ -1065,7 +1073,7 @@ export default function ActivityDetail() {
     if (isTotalActionPending) return;
     if (!totalRecord) return;
     if (!canManageEntries) {
-      notify({ type: 'error', message: 'Total updates are restricted to admin/operator before alignment.' });
+      notify({ type: 'error', message: entriesRestrictionMessage });
       return;
     }
 

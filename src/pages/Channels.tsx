@@ -114,9 +114,18 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   const resolveAdjustmentRequest = async (id: string, status: string) => {
     const record = records.find(r => r.id === id);
     if (!record) return;
+    if (status === 'rejected') {
+      await updateRecord({ ...record, status: 'voided' });
+      return;
+    }
+    /** Activity-linked proposals: approve → deferred for settlement. Channel-only pending (no entity): approve → applied so the reserve updates. */
+    const channelOnlyPending =
+      record.status === 'pending' &&
+      !record.entity_id &&
+      Boolean(String(record.channel_label ?? '').trim());
     await updateRecord({
-       ...record,
-       status: status === 'approved' ? 'deferred' : 'voided'
+      ...record,
+      status: channelOnlyPending ? 'applied' : 'deferred',
     });
   };
   const transferChannelValues = async (data: any) => {
@@ -158,6 +167,8 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
   const [isAddingActivityRecord, setIsAddingActivityRecord] = useState(false);
   const [isTransferringToChannel, setIsTransferringToChannel] = useState(false);
   const [transType, setTransType] = useState<'increment' | 'decrement'>('increment');
+  /** Posted channel lines: applied hits reserve totals; pending shows under Needs action until approved. */
+  const [channelRecordPosting, setChannelRecordPosting] = useState<'applied' | 'pending'>('applied');
   const [transAmount, setTransAmount] = useState('');
   const [transMethodBase, setTransMethodBase] = useState('');
   const [transAccountLabel, setTransAccountLabel] = useState('');
@@ -345,6 +356,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       setIsTxControlsVisible(value => !value);
     } else {
       setTransType(action === 'add-immediate' ? 'decrement' : 'increment');
+      setChannelRecordPosting('applied');
       setIsAddingActivityRecord(true);
       recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
@@ -662,6 +674,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
     setIsAddingActivityRecord(true);
     setTransType('increment');
+    setChannelRecordPosting('applied');
 
     const hasMatchingCategory = availableChannelCategories.some(category => category.value === base);
     if (base === 'value' || !hasMatchingCategory) {
@@ -772,6 +785,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       if (normalizedKey === 'i') {
         event.preventDefault();
         setTransType('increment');
+        setChannelRecordPosting('applied');
         setIsAddingActivityRecord(true);
         recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         return;
@@ -780,6 +794,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       if (normalizedKey === 'o') {
         event.preventDefault();
         setTransType('decrement');
+        setChannelRecordPosting('applied');
         setIsAddingActivityRecord(true);
         recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
         return;
@@ -887,12 +902,14 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
 
     setActivityRecordState('saving');
     const today = new Date().toISOString().split('T')[0];
+    const postingMode = channelRecordPosting;
     try {
       await addChannelRecord({
         type: transType,
         amount: parseFloat(transAmount),
         method: composeMethod(resolvedMethodBase, transAccountLabel),
-        date: today
+        date: today,
+        status: postingMode,
       });
       setActivityRecordState('success');
       setTimeout(() => {
@@ -901,8 +918,12 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
         setTransAmount('');
         setTransMethodBase(defaultChannelCategory);
         setTransAccountLabel('');
+        setChannelRecordPosting('applied');
       }, 1500);
-      notify({ type: 'success', message: 'Record saved.' });
+      notify({
+        type: 'success',
+        message: postingMode === 'pending' ? 'Pending record saved — approve under Needs action.' : 'Posted record saved — reserve updated.',
+      });
     } catch (error: any) {
       setActivityRecordState('error');
       notify({ type: 'error', message: error?.message || 'Unable to save record.' });
@@ -929,10 +950,10 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
         setAdjustmentUnitId('');
         setAdjustmentAmount('');
       }, 1500);
-      notify({ type: 'success', message: 'Live deferred record recorded.' });
+      notify({ type: 'success', message: 'Deferred entity proposal saved.' });
     } catch (error: any) {
       setAdjustmentState('error');
-      notify({ type: 'error', message: error?.message || 'Unable to add live deferred record.' });
+      notify({ type: 'error', message: error?.message || 'Unable to save entity proposal.' });
     }
   };
 
@@ -942,7 +963,10 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
       await resolveAdjustmentRequest(requestId, status);
       notify({
         type: 'success',
-        message: status === 'approved' ? 'Deferred record approved and posted.' : 'Deferred record rejected.',
+        message:
+          status === 'rejected'
+            ? 'Proposal rejected.'
+            : 'Approved. Reserve-only pending records post immediately; activity-linked lines stay deferred until settled.',
       });
     } catch (error: any) {
       notify({ type: 'error', message: error?.message || 'Unable to resolve deferred record request.' });
@@ -1520,33 +1544,27 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     type="button"
                     onClick={() => setIsAddingAdjustment(true)}
                     className="action-btn-secondary text-xs"
-                    title="Add live deferred record"
+                    title="Log a proposed entity movement (deferred — not the same as posting to the reserve)"
                   >
                     <Plus size={13} />
-                    Add live record
+                    Propose entity record
                   </button>
                 )}
                 {canOperateValue && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => { setTransType('increment'); setIsAddingActivityRecord(true); recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/30 px-2.5 py-1.5 text-xs font-medium text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900/50"
-                      title="Record Inflow (I)"
-                    >
-                      <Plus size={13} />
-                      Inflow
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setTransType('decrement'); setIsAddingActivityRecord(true); recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/30 px-2.5 py-1.5 text-xs font-medium text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/50"
-                      title="Record Outflow (O)"
-                    >
-                      <ArrowDownLeft size={13} />
-                      Outflow
-                    </button>
-                  </>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTransType('increment');
+                      setChannelRecordPosting('applied');
+                      setIsAddingActivityRecord(true);
+                      recordHistoryRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-stone-300 dark:border-stone-600 bg-stone-50 dark:bg-stone-800/80 px-2.5 py-1.5 text-xs font-medium text-stone-800 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800"
+                    title="Add to channel reserve (choose inflow/outflow in the form; shortcuts I / O)"
+                  >
+                    <Plus size={13} />
+                    Add channel record
+                  </button>
                 )}
                 <DataActionMenu
                   className="text-xs"
@@ -1716,9 +1734,12 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
               <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm animate-in fade-in duration-200">
                 <div className="w-full max-w-lg bg-white dark:bg-stone-900 rounded-2xl shadow-xl border border-stone-200 dark:border-stone-800 overflow-hidden animate-in zoom-in-95 duration-200">
                   <div className="px-6 py-4 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between">
-                    <h3 className="font-semibold text-stone-900 dark:text-stone-100">Add Record</h3>
+                    <h3 className="font-semibold text-stone-900 dark:text-stone-100">Add channel record</h3>
                     <button 
-                      onClick={() => setIsAddingActivityRecord(false)}
+                      onClick={() => {
+                        setIsAddingActivityRecord(false);
+                        setChannelRecordPosting('applied');
+                      }}
                       className="p-1 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-full transition-colors"
                     >
                       <X size={18} className="text-stone-400" />
@@ -1740,9 +1761,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                       />
                     ) : (
                       <form onSubmit={handleAddActivityRecord} className="space-y-4">
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           <div className="space-y-1.5">
-                            <label className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Type</label>
+                            <label className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Direction</label>
                             <select 
                               className="control-input"
                               value={transType}
@@ -1764,6 +1785,21 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                               required 
                             />
                           </div>
+                        </div>
+                        <div className="space-y-1.5">
+                          <label className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">Record type</label>
+                          <select
+                            className="control-input"
+                            value={channelRecordPosting}
+                            onChange={e => setChannelRecordPosting(e.target.value as 'applied' | 'pending')}
+                            disabled={!canOperateValue}
+                          >
+                            <option value="applied">Posted record (updates reserve now)</option>
+                            <option value="pending">Pending record (approve under Needs action)</option>
+                          </select>
+                          <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                            Choose <span className="font-medium">Pending record</span> so the reserve total does not move until someone approves. For entity-linked proposals that stay off the reserve until settled, use <span className="font-medium">Propose entity record</span>.
+                          </p>
                         </div>
 
                         <div className="space-y-1.5">
@@ -1819,7 +1855,10 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                         <div className="pt-4 flex gap-3">
                           <button 
                             type="button" 
-                            onClick={() => setIsAddingActivityRecord(false)}
+                            onClick={() => {
+                              setIsAddingActivityRecord(false);
+                              setChannelRecordPosting('applied');
+                            }}
                             className="flex-1 px-4 py-2.5 bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 rounded-xl font-medium hover:bg-stone-200 dark:hover:bg-stone-700 transition-colors"
                           >
                             Cancel
@@ -1957,7 +1996,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
               <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/40 backdrop-blur-sm animate-in fade-in duration-200">
                 <div className="w-full max-w-lg bg-white dark:bg-stone-900 rounded-2xl shadow-xl border border-stone-200 dark:border-stone-800 overflow-hidden animate-in zoom-in-95 duration-200">
                   <div className="px-6 py-4 border-b border-stone-100 dark:border-stone-800 flex items-center justify-between">
-                    <h3 className="font-semibold text-stone-900 dark:text-stone-100">Add Live Record</h3>
+                    <h3 className="font-semibold text-stone-900 dark:text-stone-100">Propose entity record</h3>
                     <button
                       onClick={() => setIsAddingAdjustment(false)}
                       className="p-1 hover:bg-stone-100 dark:hover:bg-stone-800 rounded-full transition-colors"
@@ -2104,11 +2143,14 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                 const unit = entities.find(p => p.id === l.entity_id);
                 const src = l as ActivityRecord;
                 const linkAid = linkedActivityIdForSourceRecord(src.source_record_id);
+                const pendingLineTitle =
+                  unit?.name?.trim()
+                  || (src.channel_label ? formatMethodLabel(String(src.channel_label)) : 'Proposal');
                 if (row.rowKind === 'pending') {
                   return (
                     <MobileActivityRecordCard
                       key={l.id}
-                      title={unit?.name || 'Unknown'}
+                      title={pendingLineTitle}
                       right={<p className="font-mono text-stone-900 dark:text-stone-100">{formatValue(l.amount)}</p>}
                       meta={(
                         <span className="inline-flex flex-wrap items-center gap-1.5">
@@ -2352,6 +2394,9 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                     const unit = entities.find(p => p.id === l.entity_id);
                     const src = l as ActivityRecord;
                     const linkAid = linkedActivityIdForSourceRecord(src.source_record_id);
+                    const pendingLineTitleDesktop =
+                      unit?.name?.trim()
+                      || (src.channel_label ? formatMethodLabel(String(src.channel_label)) : 'Proposal');
                     if (row.rowKind === 'pending') {
                       return (
                         <div
@@ -2366,7 +2411,7 @@ export default function Channels({ embedded = false }: { embedded?: boolean }) {
                               <span className="text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-200/80 text-amber-900 dark:bg-amber-900/50 dark:text-amber-200">
                                 Pending
                               </span>
-                              <p className="text-sm font-medium text-stone-900 dark:text-stone-100">{unit?.name || 'Unknown'}</p>
+                              <p className="text-sm font-medium text-stone-900 dark:text-stone-100">{pendingLineTitleDesktop}</p>
                             </div>
                             <p className="text-[11px] text-stone-500 dark:text-stone-400 mt-0.5">
                               {formatDate(l.date)} · {l.type === 'input' ? 'Outflow' : 'Inflow'} · {formatValue(l.amount)}

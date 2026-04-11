@@ -21,7 +21,31 @@ export const LABELS = {
 		awaitingAccess: 'You need workspace access',
 		/** Shown on the waiting screen — avoid “group manager” alone; in-app that label means cluster operator, not the person who grants org access. */
 		awaitingAccessNextSteps: 'Ask an admin to add you in Settings, then use Check status.',
+		/** Clarifies login metadata vs workspace membership (reduces “I look like admin but see this screen”). */
+		awaitingAccessRoleNote:
+			'What you can do here depends on a workspace membership row, not only the label on your login.',
 		awaitingAccessFooter: '',
+	},
+	/** Collaborations screen (`/collaborations`) — same data as “network profiles” in older copy. */
+	collaborationsPage: {
+		title: 'Collaborations',
+		subtitle: 'Profiles linked to entities and flow routing.',
+		emptyTitle: 'No collaboration profiles yet',
+		channelVsChannelsHint:
+			'Profile type “channel” here is routing for linked entities. It is not the reserve list under the Channels screen.',
+		removeConfirmTitle: 'Remove collaboration profile?',
+		selectProfileHint: 'Select a collaboration profile on the left to see linked entities and metrics.',
+		/** Shown above participation / overhead fields in Advanced. */
+		advancedWeightsIntro:
+			'Optional weights for comparing profiles and attributing share across entities linked to each profile.',
+		participationFactorLabel: 'Participation weight',
+		participationFactorPlaceholder: 'e.g. 1',
+		participationFactorHint:
+			'Unitless relative weight: use higher numbers for profiles that should represent a larger share when you compare linked-entity flow side by side. Use 0 for a neutral default.',
+		overheadWeightLabel: 'Overhead share',
+		overheadWeightPlaceholder: 'e.g. 12.5',
+		overheadWeightHint:
+			'Shared or indirect burden attributed to this profile. Enter a plain number as a percent (e.g. 12.5 means 12.5%).',
 	},
 	/**
 	 * Keep these distinct from each other and from Settings → Export → Audit trail (exportable `audit_events`).
@@ -57,7 +81,9 @@ export const LABELS = {
 		modalTitle: 'Options',
 		modalSubtitle: '',
 		statusSectionTitle: 'Status',
-		statusSectionHint: '',
+		/** Complete activity is admin-only (`canAlign`); operators can archive/restore per role rules. */
+		statusSectionHint:
+			'Marking an activity completed requires a workspace admin. Operators can still work entries until then.',
 		assignmentSectionTitle: 'Assignee',
 		assignmentFieldLabel: 'Assignee',
 		assignmentFieldHint: '',

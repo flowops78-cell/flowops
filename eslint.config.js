@@ -73,4 +73,21 @@ export default [
       'flowops/no-raw-system-terms': 'error',
     },
   },
+  {
+    files: ['src/context/**/*.{ts,tsx}', 'src/lib/**/*.{ts,tsx}'],
+    languageOptions: {
+      parser: tsParser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+        ecmaFeatures: {
+          jsx: true,
+        },
+      },
+    },
+    rules: {
+      'no-eval': 'error',
+      'no-implied-eval': 'error',
+    },
+  },
 ];
