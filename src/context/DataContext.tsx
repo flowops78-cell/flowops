@@ -50,6 +50,32 @@ async function fetchOrganizationMemberships(orgId: string) {
   return res;
 }
 
+/** PostgREST rejects unknown columns; retry without position/roster columns until migration is applied. */
+function isMissingPositionColumnsError(error: unknown): boolean {
+  const msg = `${(error as { message?: string })?.message ?? ''} ${(error as { details?: string })?.details ?? ''}`.toLowerCase();
+  return msg.includes('position_id') || msg.includes('sort_order') || msg.includes('left_at');
+}
+
+async function fetchRecords(orgId: string) {
+  if (!supabase) {
+    return { data: null, error: new Error('Supabase not configured') } as const;
+  }
+  const res = await supabase
+    .from('records')
+    .select(DATA_SELECT.records)
+    .eq('org_id', orgId)
+    .order('created_at', { ascending: false });
+  if (res.error && isMissingPositionColumnsError(res.error)) {
+    const fallback = await supabase
+      .from('records')
+      .select(DATA_SELECT.records_no_position)
+      .eq('org_id', orgId)
+      .order('created_at', { ascending: false }) as unknown as { data: ActivityRecord[] | null; error: null };
+    return fallback;
+  }
+  return res;
+}
+
 export interface EntityBalance {
   id: string;
   org_id: string;
@@ -452,7 +478,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const [eRes, aRes, rRes, tRes, cRes, chRes, sRes, lRes, ebRes] = await Promise.all([
         supabase.from('entities').select(DATA_SELECT.entities).eq('org_id', orgSnapshot).order('name'),
         supabase.from('activities').select(DATA_SELECT.activities).eq('org_id', orgSnapshot).order('date', { ascending: false }),
-        supabase.from('records').select(DATA_SELECT.records).eq('org_id', orgSnapshot).order('created_at', { ascending: false }),
+        fetchRecords(orgSnapshot),
         fetchOrganizationMemberships(orgSnapshot),
         supabase.from('collaborations').select(DATA_SELECT.collaborations).eq('org_id', orgSnapshot).order('name'),
         supabase.from('channels').select(DATA_SELECT.channels).eq('org_id', orgSnapshot).order('name'),
@@ -712,7 +738,7 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshRecordsAndBalances = async (orgId: string) => {
     if (!supabase) return;
     const [rRes, ebRes] = await Promise.all([
-      supabase.from('records').select(DATA_SELECT.records).eq('org_id', orgId).order('created_at', { ascending: false }),
+      fetchRecords(orgId),
       supabase.from('entity_balances').select(DATA_SELECT.entity_balances).eq('org_id', orgId),
     ]);
     if (rRes.error) {

@@ -9,6 +9,9 @@ export const DATA_SELECT = {
     'id, org_id, label, date, start_time, status, channel_label, assigned_user_id, activity_mode, created_at, updated_at',
   records:
     'id, org_id, activity_id, entity_id, direction, status, unit_amount, transfer_group_id, notes, channel_label, source_record_id, target_entity_id, position_id, sort_order, left_at, created_at, updated_at',
+  /** Same row shape minus position/roster columns — use if DB migration not applied yet. */
+  records_no_position:
+    'id, org_id, activity_id, entity_id, direction, status, unit_amount, transfer_group_id, notes, channel_label, source_record_id, target_entity_id, created_at, updated_at',
   organization_memberships:
     'id, org_id, user_id, role, status, display_name, account_email, is_default_org, created_at, updated_at',
   /** Same row shape minus `account_email` — use if DB migration not applied yet. */
