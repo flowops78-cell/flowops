@@ -4,7 +4,10 @@
  * Production: set `FLOW_OPS_ALLOWED_ORIGINS` (comma-separated exact origins, e.g. https://app.example.com).
  * Local dev: localhost / 127.0.0.1 ports below are always allowed for OPTIONS + API calls.
  */
-const LOCAL_DEV_ORIGINS = [
+const HARDCODED_ORIGINS = [
+  // Production
+  'https://flowops.flowops78.workers.dev',
+  // Local dev
   'http://localhost:3000',
   'http://127.0.0.1:3000',
   'http://localhost:5173',
@@ -47,7 +50,7 @@ const parseOriginList = (value: string | null | undefined): string[] => {
 };
 
 const ALLOWED_ORIGINS = Array.from(new Set([
-  ...LOCAL_DEV_ORIGINS,
+  ...HARDCODED_ORIGINS,
   ...ALLOWED_ORIGIN_ENV_KEYS.flatMap((key) => parseOriginList(Deno.env.get(key))),
 ]));
 
